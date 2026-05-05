@@ -1,0 +1,99 @@
+@import "tailwindcss";
+
+/* ── Thème FYNIX ── */
+@theme {
+  /* Surfaces */
+  --color-bg:         #080808;
+  --color-surface:    #111111;
+  --color-surface-2:  #181818;
+  --color-border:     #222222;
+  --color-border-2:   #2a2a2a;
+
+  /* Texte */
+  --color-primary:    #f4f4f5;
+  --color-secondary:  #71717a;
+  --color-muted:      #3f3f46;
+
+  /* Accent — Émeraude */
+  --color-accent:       #10b981;
+  --color-accent-hover: #059669;
+  --color-accent-muted: #10b98120;
+
+  /* Sémantique */
+  --color-danger:        #ef4444;
+  --color-danger-muted:  #ef444420;
+  --color-warning:       #f59e0b;
+  --color-warning-muted: #f59e0b20;
+  --color-info:          #3b82f6;
+
+  /* Polices */
+  --font-sans: var(--font-geist-sans), Inter, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), monospace;
+
+  /* Rayons */
+  --radius:    8px;
+  --radius-sm: 6px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  /* Ombres */
+  --shadow-card:       0 0 0 1px #222222;
+  --shadow-card-hover: 0 0 0 1px #2a2a2a;
+  --shadow-glow:       0 0 20px #10b98115;
+}
+
+/* ── Base ── */
+@layer base {
+  *, *::before, *::after { box-sizing: border-box; }
+
+  :root { color-scheme: dark; }
+
+  html {
+    background-color: var(--color-bg);
+    color: var(--color-primary);
+    font-feature-settings: "cv02","cv03","cv04","cv11";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 99px; }
+  ::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
+
+  /* Sélection */
+  ::selection { background: #10b98130; color: #10b981; }
+
+  /* Focus visible uniforme */
+  :focus-visible { outline: 2px solid #10b981; outline-offset: 2px; }
+}
+
+/* ── Composants utilitaires ── */
+@layer components {
+  .card {
+    background-color: var(--color-surface);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--color-border);
+  }
+
+  .financial-value {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.025em;
+  }
+
+  .positive { color: var(--color-accent); }
+  .negative { color: var(--color-danger); }
+
+  .skeleton {
+    background-color: var(--color-surface-2);
+    border-radius: var(--radius);
+    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+}
+
+/* ── Recharts overrides (thème sombre) ── */
+.recharts-cartesian-axis-tick text { fill: #71717a !important; font-size: 11px; }
+.recharts-cartesian-grid line       { stroke: #1f1f1f !important; }
+.recharts-tooltip-wrapper           { outline: none !important; }
