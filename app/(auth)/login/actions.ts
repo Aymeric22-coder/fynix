@@ -24,7 +24,7 @@ export async function magicLinkAction(formData: FormData) {
   const supabase = await createServerClient()
   const { error } = await supabase.auth.signInWithOtp({
     email,
-    options: { emailRedirectTo: 'http://localhost:3000/dashboard' },
+    options: { emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL ?? 'https://fynix-mu.vercel.app'}/dashboard` },
   })
 
   if (error) return { error: error.message }
