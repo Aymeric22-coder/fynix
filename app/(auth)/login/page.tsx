@@ -1,39 +1,56 @@
 'use client'
 
-import { useState, useTransition } from 'react'
-import { signInAction, magicLinkAction } from './actions'
+import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 
 export default function LoginPage() {
-  const [mode, setMode]   = useState<'signin' | 'magic'>('signin')
-  const [error, setError] = useState<string | null>(null)
-  const [sent, setSent]   = useState(false)
-  const [isPending, startTransition] = useTransition()
+  const router = useRouter()
+  const [mode, setMode]     = useState<'signin' | 'magic'>('signin')
+  const [email, setEmail]   = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError]   = useState<string | null>(null)
+  const [sent, setSent]     = useState(false)
+  const [loading, setLoading] = useState(false)
 
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
-    const formData = new FormData(e.currentTarget)
+    setLoading(true)
 
-    startTransition(async () => {
-      const result = mode === 'signin'
-        ? await signInAction(formData)
-        : await magicLinkAction(formData)
+    try {
+      const body = mode === 'signin'
+        ? { email, password }
+        : { email }
 
-      if (result?.error) {
-        setError(result.error)
-      } else if (mode === 'magic') {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+
+      const data = await res.json()
+
+      if (data.error) {
+        setError(data.error)
+      } else if (data.magic) {
         setSent(true)
+      } else {
+        router.push('/dashboard')
+        router.refresh()
       }
-      // Si signin OK, signInAction fait redirect() côté serveur
-    })
+    } catch {
+      setError('Erreur de connexion. Veuillez reessayer.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   if (sent) {
     return (
       <div className="card p-8 text-center space-y-3">
-        <div className="text-4xl">✉️</div>
-        <p className="text-primary font-medium">Lien envoyé</p>
-        <p className="text-secondary text-sm">Vérifiez votre boîte mail — le lien est valable 1h.</p>
+        <div className="text-4xl">&#x2709;&#xFE0F;</div>
+        <p className="text-primary font-medium">Lien envoy&#233;</p>
+        <p className="text-secondary text-sm">V&#233;rifiez votre bo&#238;te mail &#8212; le lien est valable 1h.</p>
         <button onClick={() => setSent(false)} className="text-accent text-sm hover:underline">
           Renvoyer
         </button>
@@ -65,11 +82,12 @@ export default function LoginPage() {
         <div>
           <label className="block text-sm text-secondary mb-1.5">Adresse e-mail</label>
           <input
-            name="email"
             type="email"
             required
             autoComplete="email"
             placeholder="vous@exemple.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
             className="w-full bg-surface-2 border border-border rounded-lg px-3 py-2.5 text-sm
                        text-primary placeholder:text-muted focus:outline-none focus:border-accent
                        transition-colors"
@@ -80,11 +98,12 @@ export default function LoginPage() {
           <div>
             <label className="block text-sm text-secondary mb-1.5">Mot de passe</label>
             <input
-              name="password"
               type="password"
               required
               autoComplete="current-password"
               placeholder="••••••••"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
               className="w-full bg-surface-2 border border-border rounded-lg px-3 py-2.5 text-sm
                          text-primary placeholder:text-muted focus:outline-none focus:border-accent
                          transition-colors"
@@ -98,12 +117,12 @@ export default function LoginPage() {
 
         <button
           type="submit"
-          disabled={isPending}
+          disabled={loading}
           className="w-full bg-accent hover:bg-accent-hover text-white font-medium py-2.5 rounded-lg
                      transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
         >
-          {isPending
-            ? 'Connexion…'
+          {loading
+            ? 'Connexion...'
             : mode === 'signin' ? 'Se connecter' : 'Envoyer le lien'}
         </button>
       </form>
