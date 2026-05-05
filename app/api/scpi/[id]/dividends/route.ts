@@ -6,7 +6,7 @@ import type { ScpiDividendInsert } from '@/types/database.types'
 type Ctx = { params: Promise<{ id: string }> }
 
 // GET /api/scpi/[id]/dividends
-export const GET = withAuth(async (_req: Request, user: User, ctx?: Ctx) => {
+export const GET = withAuth(async (_req: Request, user: User, ctx: Ctx) => {
   const { id } = await ctx!.params
   const supabase = await createServerClient()
 
@@ -27,7 +27,7 @@ export const GET = withAuth(async (_req: Request, user: User, ctx?: Ctx) => {
 
 // POST /api/scpi/[id]/dividends — enregistrer un dividende (append-only)
 // Crée aussi une transaction de type 'dividend' liée à l'asset.
-export const POST = withAuth(async (req: Request, user: User, ctx?: Ctx) => {
+export const POST = withAuth(async (req: Request, user: User, ctx: Ctx) => {
   const { id: scpiAssetId } = await ctx!.params
   const body = await parseBody<Omit<ScpiDividendInsert, 'user_id' | 'scpi_asset_id'>>(req)
   if (!body) return err('Invalid JSON body')

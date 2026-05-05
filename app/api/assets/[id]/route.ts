@@ -6,7 +6,7 @@ import type { AssetUpdate } from '@/types/database.types'
 type Ctx = { params: Promise<{ id: string }> }
 
 // GET /api/assets/[id]
-export const GET = withAuth(async (_req: Request, user: User, ctx?: Ctx) => {
+export const GET = withAuth(async (_req: Request, user: User, ctx: Ctx) => {
   const { id } = await ctx!.params
   const supabase = await createServerClient()
 
@@ -22,7 +22,7 @@ export const GET = withAuth(async (_req: Request, user: User, ctx?: Ctx) => {
 })
 
 // PUT /api/assets/[id]
-export const PUT = withAuth(async (req: Request, user: User, ctx?: Ctx) => {
+export const PUT = withAuth(async (req: Request, user: User, ctx: Ctx) => {
   const { id } = await ctx!.params
   const body = await parseBody<AssetUpdate>(req)
   if (!body) return err('Invalid JSON body')
@@ -45,7 +45,7 @@ export const PUT = withAuth(async (req: Request, user: User, ctx?: Ctx) => {
 })
 
 // DELETE /api/assets/[id] — soft delete (status = sold/closed)
-export const DELETE = withAuth(async (_req: Request, user: User, ctx?: Ctx) => {
+export const DELETE = withAuth(async (_req: Request, user: User, ctx: Ctx) => {
   const { id } = await ctx!.params
   const supabase = await createServerClient()
 

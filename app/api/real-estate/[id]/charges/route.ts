@@ -7,7 +7,7 @@ type Ctx = { params: Promise<{ id: string }> }
 
 // GET /api/real-estate/[id]/charges — charges par année
 // ?year=2024 pour filtrer une année spécifique
-export const GET = withAuth(async (req: Request, user: User, ctx?: Ctx) => {
+export const GET = withAuth(async (req: Request, user: User, ctx: Ctx) => {
   const { id } = await ctx!.params
   const { searchParams } = new URL(req.url)
   const supabase = await createServerClient()
@@ -28,7 +28,7 @@ export const GET = withAuth(async (req: Request, user: User, ctx?: Ctx) => {
 })
 
 // POST /api/real-estate/[id]/charges — créer/mettre à jour les charges d'une année
-export const POST = withAuth(async (req: Request, user: User, ctx?: Ctx) => {
+export const POST = withAuth(async (req: Request, user: User, ctx: Ctx) => {
   const { id: propertyId } = await ctx!.params
   const body = await parseBody<Omit<PropertyChargesInsert, 'user_id' | 'property_id'>>(req)
   if (!body) return err('Invalid JSON body')
@@ -61,7 +61,7 @@ export const POST = withAuth(async (req: Request, user: User, ctx?: Ctx) => {
 })
 
 // PUT /api/real-estate/[id]/charges?year=2024 — mise à jour partielle
-export const PUT = withAuth(async (req: Request, user: User, ctx?: Ctx) => {
+export const PUT = withAuth(async (req: Request, user: User, ctx: Ctx) => {
   const { id: propertyId } = await ctx!.params
   const { searchParams } = new URL(req.url)
   const year = searchParams.get('year')

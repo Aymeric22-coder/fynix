@@ -7,7 +7,7 @@ type Ctx = { params: Promise<{ id: string }> }
 // GET /api/dca/plans/[id]/occurrences
 // ?status=pending|validated|skipped|cancelled
 // ?from=2024-01-01&to=2024-12-31
-export const GET = withAuth(async (req: Request, user: User, ctx?: Ctx) => {
+export const GET = withAuth(async (req: Request, user: User, ctx: Ctx) => {
   const { id: planId } = await ctx!.params
   const { searchParams } = new URL(req.url)
   const supabase = await createServerClient()

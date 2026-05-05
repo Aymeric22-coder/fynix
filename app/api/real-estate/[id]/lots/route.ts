@@ -6,7 +6,7 @@ import type { RealEstateLotInsert, RealEstateLotUpdate } from '@/types/database.
 type Ctx = { params: Promise<{ id: string }> }
 
 // GET /api/real-estate/[id]/lots
-export const GET = withAuth(async (_req: Request, user: User, ctx?: Ctx) => {
+export const GET = withAuth(async (_req: Request, user: User, ctx: Ctx) => {
   const { id } = await ctx!.params
   const supabase = await createServerClient()
 
@@ -22,7 +22,7 @@ export const GET = withAuth(async (_req: Request, user: User, ctx?: Ctx) => {
 })
 
 // POST /api/real-estate/[id]/lots — ajouter un lot
-export const POST = withAuth(async (req: Request, user: User, ctx?: Ctx) => {
+export const POST = withAuth(async (req: Request, user: User, ctx: Ctx) => {
   const { id: propertyId } = await ctx!.params
   const body = await parseBody<Omit<RealEstateLotInsert, 'user_id' | 'property_id'>>(req)
   if (!body) return err('Invalid JSON body')
@@ -52,7 +52,7 @@ export const POST = withAuth(async (req: Request, user: User, ctx?: Ctx) => {
 })
 
 // PUT /api/real-estate/[id]/lots?lot_id=xxx — mettre à jour un lot
-export const PUT = withAuth(async (req: Request, user: User, ctx?: Ctx) => {
+export const PUT = withAuth(async (req: Request, user: User, ctx: Ctx) => {
   const { id: propertyId } = await ctx!.params
   const { searchParams } = new URL(req.url)
   const lotId = searchParams.get('lot_id')

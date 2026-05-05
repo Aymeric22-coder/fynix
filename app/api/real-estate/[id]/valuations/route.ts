@@ -6,7 +6,7 @@ import type { PropertyValuationInsert } from '@/types/database.types'
 type Ctx = { params: Promise<{ id: string }> }
 
 // GET /api/real-estate/[id]/valuations — historique des estimations
-export const GET = withAuth(async (_req: Request, user: User, ctx?: Ctx) => {
+export const GET = withAuth(async (_req: Request, user: User, ctx: Ctx) => {
   const { id } = await ctx!.params
   const supabase = await createServerClient()
 
@@ -23,7 +23,7 @@ export const GET = withAuth(async (_req: Request, user: User, ctx?: Ctx) => {
 
 // POST /api/real-estate/[id]/valuations — ajouter une estimation (append-only)
 // Met également à jour current_value dans l'asset parent.
-export const POST = withAuth(async (req: Request, user: User, ctx?: Ctx) => {
+export const POST = withAuth(async (req: Request, user: User, ctx: Ctx) => {
   const { id: propertyId } = await ctx!.params
   const body = await parseBody<Omit<PropertyValuationInsert, 'user_id' | 'property_id'>>(req)
   if (!body) return err('Invalid JSON body')

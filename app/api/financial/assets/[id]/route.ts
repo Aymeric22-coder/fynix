@@ -8,7 +8,7 @@ import { round2 } from '@/lib/finance/formulas'
 type Ctx = { params: Promise<{ id: string }> }
 
 // GET /api/financial/assets/[id] — détail avec prix live
-export const GET = withAuth(async (_req: Request, user: User, ctx?: Ctx) => {
+export const GET = withAuth(async (_req: Request, user: User, ctx: Ctx) => {
   const { id } = await ctx!.params
   const supabase = await createServerClient()
 
@@ -61,7 +61,7 @@ export const GET = withAuth(async (_req: Request, user: User, ctx?: Ctx) => {
 })
 
 // PUT /api/financial/assets/[id] — mise à jour (quantité, PRU, enveloppe)
-export const PUT = withAuth(async (req: Request, user: User, ctx?: Ctx) => {
+export const PUT = withAuth(async (req: Request, user: User, ctx: Ctx) => {
   const { id } = await ctx!.params
   const body = await parseBody<FinancialAssetUpdate>(req)
   if (!body) return err('Invalid JSON body')

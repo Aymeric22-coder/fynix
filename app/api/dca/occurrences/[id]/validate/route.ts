@@ -24,7 +24,7 @@ interface ValidateBody {
  * - Met à jour le financial_asset (quantité + PRU recalculé)
  * - Marque l'occurrence comme validated
  */
-export const POST = withAuth(async (req: Request, user: User, ctx?: Ctx) => {
+export const POST = withAuth(async (req: Request, user: User, ctx: Ctx) => {
   const { id: occurrenceId } = await ctx!.params
   const body = await parseBody<ValidateBody>(req)
   if (!body) return err('Invalid JSON body')

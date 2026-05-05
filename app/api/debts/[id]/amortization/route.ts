@@ -8,7 +8,7 @@ type Ctx = { params: Promise<{ id: string }> }
 // GET /api/debts/[id]/amortization
 // Génère le tableau à la volée ou le retourne depuis la DB si déjà calculé.
 // ?force=true force le recalcul et la persistance en DB.
-export const GET = withAuth(async (req: Request, user: User, ctx?: Ctx) => {
+export const GET = withAuth(async (req: Request, user: User, ctx: Ctx) => {
   const { id } = await ctx!.params
   const { searchParams } = new URL(req.url)
   const forceRecalc = searchParams.get('force') === 'true'

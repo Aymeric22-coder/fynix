@@ -6,7 +6,7 @@ import { grossYield, netYield, propertyCashFlow, round2 } from '@/lib/finance/fo
 type Ctx = { params: Promise<{ id: string }> }
 
 // GET /api/real-estate/[id] — détail complet du bien avec indicateurs calculés
-export const GET = withAuth(async (_req: Request, user: User, ctx?: Ctx) => {
+export const GET = withAuth(async (_req: Request, user: User, ctx: Ctx) => {
   const { id } = await ctx!.params
   const supabase = await createServerClient()
 
@@ -64,7 +64,7 @@ export const GET = withAuth(async (_req: Request, user: User, ctx?: Ctx) => {
 })
 
 // PUT /api/real-estate/[id] — mise à jour du bien
-export const PUT = withAuth(async (req: Request, user: User, ctx?: Ctx) => {
+export const PUT = withAuth(async (req: Request, user: User, ctx: Ctx) => {
   const { id } = await ctx!.params
   const body = await parseBody<Record<string, unknown>>(req)
   if (!body) return err('Invalid JSON body')
