@@ -42,8 +42,19 @@ export const PUT = withAuth(async (req: Request, user: User, ctx: Ctx) => {
 
   const merged = { ...existing, ...body }
   const deferralMonths = merged.deferral_months ?? 0
-  const amortMonths = merged.duration_months - deferralMonths
-  const monthlyPayment = round2(pmt(merged.interest_rate, amortMonths, merged.initial_amount))
+
+  // Calcul de la mensualité uniquement si tous les champs requis sont présents.
+  // Depuis migration 005, interest_rate / duration_months / start_date sont nullable
+  // (saisie step-by-step) — on ne force pas le calcul si le crédit est incomplet.
+  let monthlyPayment: number | null = existing.monthly_payment ?? null
+  if (
+    merged.interest_rate != null &&
+    merged.duration_months != null &&
+    merged.initial_amount != null
+  ) {
+    const amortMonths = merged.duration_months - deferralMonths
+    monthlyPayment = round2(pmt(merged.interest_rate, amortMonths, merged.initial_amount))
+  }
 
   const { user_id: _u, id: _i, created_at: _c, ...safe } = body as Record<string, unknown>
 

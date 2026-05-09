@@ -13,6 +13,8 @@ export type TransactionType =
 export type DebtType = 'mortgage' | 'consumer' | 'professional'
 export type DebtStatus = 'active' | 'paid_off' | 'restructured'
 export type DeferralType = 'none' | 'partial' | 'total'
+export type AmortizationType = 'constant' | 'linear' | 'in_fine'
+export type AcquisitionFeesTreatment = 'expense_y1' | 'amortized'
 export type EnvelopeType = 'pea' | 'cto' | 'assurance_vie' | 'per' | 'wallet_crypto' | 'other'
 export type HoldingMode = 'direct' | 'assurance_vie' | 'sci' | 'other'
 export type LotStatus = 'rented' | 'vacant' | 'owner_occupied' | 'works'
@@ -81,15 +83,22 @@ export interface Debt {
   lender: string | null
   initial_amount: number
   currency: CurrencyCode
-  interest_rate: number
+  /** Taux nominal annuel en %. Nullable depuis migration 005 (saisie step-by-step). */
+  interest_rate: number | null
   insurance_rate: number
-  duration_months: number
-  start_date: string
+  /** Durée en mois. Nullable depuis migration 005. */
+  duration_months: number | null
+  /** Date de début du crédit. Nullable depuis migration 005. */
+  start_date: string | null
   deferral_type: DeferralType
   deferral_months: number
   monthly_payment: number | null
   capital_remaining: number | null
   notes: string | null
+  // ── Ajoutés en migration 005 ──────────────────────────────────
+  bank_fees: number
+  guarantee_fees: number
+  amortization_type: AmortizationType
   created_at: string
   updated_at: string
 }
@@ -127,6 +136,23 @@ export interface RealEstateProperty {
   fiscal_regime: FiscalRegime | null
   is_multi_lot: boolean
   notes: string | null
+  // ── Ajoutés en migration 005 — paramètres de simulation ───────
+  rental_index_pct: number
+  charges_index_pct: number
+  property_index_pct: number
+  land_share_pct: number
+  amort_building_years: number
+  amort_works_years: number
+  amort_furniture_years: number
+  furniture_amount: number
+  /** Override loyer total. NULL = utiliser la somme des lots. */
+  assumed_total_rent: number | null
+  gli_pct: number
+  management_pct: number
+  vacancy_months: number
+  lmp_ssi_rate: number
+  acquisition_fees_treatment: AcquisitionFeesTreatment
+  lmnp_micro_abattement_pct: number
   created_at: string
   updated_at: string
 }

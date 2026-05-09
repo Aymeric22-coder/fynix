@@ -28,22 +28,26 @@ export function generateAmortizationSchedule(debt: Debt): AmortizationRow[] {
     deferral_months,
   } = debt
 
+  // Depuis migration 005, interest_rate / duration_months / start_date sont nullable.
+  // Si les champs critiques manquent, on renvoie un tableau vide (crédit incomplet).
+  if (interest_rate == null || duration_months == null) return []
+
   const monthlyRate = interest_rate / 100 / 12
   const monthlyInsuranceRate = insurance_rate / 100 / 12
 
-  // Durée réelle d'amortissement (hors différé total)
-  const amortMonths =
-    deferral_type === 'total'
-      ? duration_months - deferral_months
-      : duration_months - deferral_months
+  // Durée réelle d'amortissement (hors différé)
+  const amortMonths = duration_months - deferral_months
 
   const monthlyCapitalPayment = pmt(interest_rate, amortMonths, initial_amount)
+
+  // Date de départ : aujourd'hui si start_date est null
+  const startDateObj = start_date ? new Date(start_date) : new Date()
 
   const rows: AmortizationRow[] = []
   let capitalRemaining = initial_amount
 
   for (let period = 1; period <= duration_months; period++) {
-    const paymentDate = format(addMonths(new Date(start_date), period - 1), 'yyyy-MM-dd')
+    const paymentDate = format(addMonths(startDateObj, period - 1), 'yyyy-MM-dd')
     const isDeferred = period <= deferral_months
     const insuranceAmount = round2(capitalRemaining * monthlyInsuranceRate)
 

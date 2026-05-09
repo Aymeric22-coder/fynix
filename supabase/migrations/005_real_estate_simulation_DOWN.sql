@@ -11,6 +11,13 @@
 -- TABLE debts
 -- ─────────────────────────────────────────────────────────────
 
+-- Restore NOT NULL sur les colonnes relâchées en 005
+-- Attention : échoue si des lignes ont ces champs à NULL au moment du rollback.
+ALTER TABLE debts
+  ALTER COLUMN interest_rate   SET NOT NULL,
+  ALTER COLUMN duration_months SET NOT NULL,
+  ALTER COLUMN start_date      SET NOT NULL;
+
 ALTER TABLE debts
   DROP COLUMN IF EXISTS amortization_type,
   DROP COLUMN IF EXISTS guarantee_fees,

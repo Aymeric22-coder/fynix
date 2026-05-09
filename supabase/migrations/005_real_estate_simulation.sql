@@ -119,6 +119,15 @@ COMMENT ON COLUMN debts.guarantee_fees IS
 COMMENT ON COLUMN debts.amortization_type IS
   'Type d''amortissement du prêt. Phase 1 : seul ''constant'' est calculé.';
 
+-- Permet la saisie d'un crédit en plusieurs étapes (formulaire step-by-step).
+-- Ces 3 colonnes étaient NOT NULL en migration 001 — on les passe nullable
+-- pour pouvoir enregistrer un crédit partiel avant que l'utilisateur ait
+-- renseigné tous les champs. La lib gère l'incomplétude via incompleteData.
+ALTER TABLE debts
+  ALTER COLUMN interest_rate   DROP NOT NULL,
+  ALTER COLUMN duration_months DROP NOT NULL,
+  ALTER COLUMN start_date      DROP NOT NULL;
+
 
 -- ─────────────────────────────────────────────────────────────
 -- VÉRIFICATION POST-MIGRATION (commentaires informatifs)

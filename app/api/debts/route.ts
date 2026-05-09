@@ -35,8 +35,11 @@ export const POST = withAuth(async (req: Request, user: User) => {
   const deferralType = body.deferral_type ?? 'none'
 
   // Durée d'amortissement réelle (après différé)
-  const amortMonths = body.duration_months - deferralMonths
-  const monthlyPayment = round2(pmt(body.interest_rate, amortMonths, body.initial_amount))
+  // interest_rate et duration_months sont nullable depuis migration 005.
+  // Si fournis à la création (via le formulaire qui les requiert), on calcule.
+  const monthlyPayment = (body.interest_rate != null && body.duration_months != null)
+    ? round2(pmt(body.interest_rate, body.duration_months - deferralMonths, body.initial_amount))
+    : null
 
   const supabase = await createServerClient()
   const { data, error } = await supabase
