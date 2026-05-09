@@ -9,6 +9,10 @@ import { ConfidenceBadge } from '@/components/shared/confidence-badge'
 import { PropertyLotActions, PropertyValuationActions } from '@/components/pages/property-detail-actions'
 import { LotEditButton } from '@/components/pages/lot-edit-button'
 import { SimulationPanel } from '@/components/real-estate/simulation-panel'
+import { ActualVsSimulation } from '@/components/real-estate/actual-vs-simulation'
+import { loadActualData } from '@/lib/real-estate/actual'
+import { compareActualToSimulation } from '@/lib/real-estate/compare'
+import { buildSimulationInputFromDb, runSimulation } from '@/lib/real-estate'
 import { formatCurrency, formatPercent, formatDate } from '@/lib/utils/format'
 import type { DbProperty, DbAsset, DbLot, DbCharges, DbDebt, DbProfile } from '@/lib/real-estate/build-from-db'
 
@@ -42,7 +46,7 @@ export default async function ImmobilierDetailPage({ params }: Props) {
   const { data: debtRow } = await supabase
     .from('debts')
     .select(`
-      initial_amount, interest_rate, insurance_rate,
+      id, initial_amount, interest_rate, insurance_rate,
       duration_months, start_date, bank_fees, guarantee_fees, amortization_type
     `)
     .eq('asset_id', prop.asset_id)
@@ -139,6 +143,29 @@ export default async function ImmobilierDetailPage({ params }: Props) {
   } : null
 
   const dbProfile: DbProfile | null = profileRow ? { tmi_rate: profileRow.tmi_rate } : null
+
+  // ── Phase 2 : suivi réel vs simulation ──────────────────────────────────
+  // On lance une simulation snapshot (paramètres DB) pour comparer aux données réelles.
+  // Note : le SimulationPanel interactif peut diverger si l'utilisateur joue avec les inputs,
+  //        mais la comparaison se base sur l'état *enregistré* en DB (source de vérité).
+  const downPayment = Math.max(0, acqCost - (dbDebt?.initial_amount ?? 0))
+  const simInput    = buildSimulationInputFromDb(
+    dbProperty, dbAsset, dbLots, dbCharges, dbDebt, dbProfile,
+    { downPayment },
+  )
+  const simResult   = runSimulation(simInput)
+
+  const actualData  = await loadActualData(
+    supabase, user!.id, prop.asset_id, prop.id, debtRow?.id ?? null,
+  )
+
+  // Année de départ de la simulation : si on a un crédit avec start_date, on l'utilise,
+  // sinon on prend l'année de la première donnée réelle, sinon l'année courante.
+  const simStartYear = debtRow?.start_date
+    ? new Date(debtRow.start_date).getUTCFullYear()
+    : (actualData.firstYear ?? new Date().getUTCFullYear())
+
+  const comparison  = compareActualToSimulation(simResult, actualData, simStartYear)
 
   return (
     <div className="space-y-8">
@@ -281,6 +308,11 @@ export default async function ImmobilierDetailPage({ params }: Props) {
           debt={dbDebt}
           profile={dbProfile}
         />
+      </div>
+
+      {/* ── Suivi réel vs Simulation (Phase 2) ─────────────────────────── */}
+      <div className="border-t border-border pt-8">
+        <ActualVsSimulation comparison={comparison} propertyName={prop.asset?.name} />
       </div>
     </div>
   )
