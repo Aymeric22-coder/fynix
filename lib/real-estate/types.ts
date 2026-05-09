@@ -287,6 +287,45 @@ export interface SimulationInput {
 
 export interface SimulationResult {
   amortization:    AmortizationSchedule | null  // null si pas de prêt
-  projection:      ProjectionYear[]
+  projection:      ProjectionYear[]              // [] si données incomplètes
   kpis:            PropertyKPIs
+  /**
+   * `true` si certains champs critiques manquent (typiquement sur un crédit
+   * existant en DB qui n'a pas encore été complété : pas de start_date,
+   * principal absent, durée 0, etc.). Quand `true`, la projection est
+   * vide ([]) et les KPIs financiers (renta, cashflow) sont à 0.
+   * L'UI peut afficher un état "Données incomplètes" avec un CTA
+   * vers le formulaire de financement.
+   */
+  incompleteData?: boolean
+  /** Liste des champs manquants (ex: ['loan.principal', 'loan.annualRatePct']). */
+  missingFields?:  string[]
+}
+
+// ─────────────────────────────────────────────────────────────────────
+//  Variantes "raw" pour entrées partielles (DB → simulation)
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Version "permissive" de LoanInput : tous les champs sont optionnels.
+ * Utilisé pour traduire un crédit DB potentiellement incomplet.
+ */
+export interface RawLoanInput {
+  principal?:        number
+  annualRatePct?:    number
+  durationYears?:    number
+  insuranceRatePct?: number
+  bankFees?:         number
+  guaranteeFees?:    number
+  startDate?:        Date
+  amortizationType?: 'constant' | 'linear' | 'in_fine'
+}
+
+/**
+ * Version "permissive" de SimulationInput : seul `loan` est relâché.
+ * `runSimulation` accepte cette forme et renvoie `incompleteData: true`
+ * quand des champs critiques manquent.
+ */
+export interface RawSimulationInput extends Omit<SimulationInput, 'loan'> {
+  loan?: RawLoanInput
 }
