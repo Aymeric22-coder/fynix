@@ -312,7 +312,28 @@ export default async function ImmobilierDetailPage({ params }: Props) {
 
       {/* ── Suivi réel vs Simulation (Phase 2) ─────────────────────────── */}
       <div className="border-t border-border pt-8">
-        <ActualVsSimulation comparison={comparison} propertyName={prop.asset?.name} />
+        <ActualVsSimulation
+          comparison={comparison}
+          propertyName={prop.asset?.name}
+          assetId={prop.asset_id}
+          debtId={debtRow?.id ?? null}
+          propertyId={prop.id}
+          monthlyRentSuggested={monthlyRents}
+          monthlyPaymentSuggested={simResult.kpis.monthlyPayment > 0 ? simResult.kpis.monthlyPayment : null}
+          existingCharges={(prop.charges ?? []).map((c: {
+            year: number; taxe_fonciere: number; insurance: number; accountant: number;
+            cfe: number; condo_fees: number; maintenance: number; other: number
+          }) => ({
+            year:          c.year,
+            taxe_fonciere: c.taxe_fonciere,
+            insurance:     c.insurance,
+            accountant:    c.accountant,
+            cfe:           c.cfe,
+            condo_fees:    c.condo_fees,
+            maintenance:   c.maintenance,
+            other:         c.other,
+          }))}
+        />
       </div>
     </div>
   )

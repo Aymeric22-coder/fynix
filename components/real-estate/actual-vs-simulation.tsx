@@ -2,11 +2,12 @@
 
 import { useState } from 'react'
 import {
-  TrendingUp, TrendingDown, Minus, ChevronDown, ChevronUp, Info,
+  TrendingUp, TrendingDown, Minus, ChevronDown, ChevronUp, Info, Plus,
 } from 'lucide-react'
 import type { ComparisonResult, YearComparison, VarianceMetric, VarianceMetricNullable } from '@/lib/real-estate/compare'
 import { classifyVariance } from '@/lib/real-estate/compare'
-import { formatCurrency, formatPercent } from '@/lib/utils/format'
+import { formatCurrency } from '@/lib/utils/format'
+import { QuickActualsEntry, type ExistingCharges } from './quick-actuals-entry'
 
 // ─── Sous-composant : cellule de variance ─────────────────────────────────
 
@@ -72,25 +73,67 @@ function CumulKpi({
 // ─── Composant principal ──────────────────────────────────────────────────
 
 interface Props {
-  comparison:    ComparisonResult
-  propertyName?: string
+  comparison:              ComparisonResult
+  propertyName?:           string
+  // Props pour le quick-entry modal
+  assetId:                 string
+  debtId:                  string | null
+  propertyId:              string
+  monthlyRentSuggested:    number
+  monthlyPaymentSuggested: number | null
+  existingCharges:         ExistingCharges[]
 }
 
-export function ActualVsSimulation({ comparison }: Props) {
+export function ActualVsSimulation({
+  comparison,
+  assetId, debtId, propertyId,
+  monthlyRentSuggested, monthlyPaymentSuggested, existingCharges,
+}: Props) {
   const [expanded, setExpanded] = useState(true)
+  const [entryOpen, setEntryOpen] = useState(false)
+
+  const quickEntryButton = (
+    <button
+      onClick={() => setEntryOpen(true)}
+      className="flex items-center gap-1.5 text-xs bg-accent text-white rounded-lg px-3 py-1.5 hover:bg-accent/90 transition-colors"
+    >
+      <Plus size={12} />
+      Saisir une donnée réelle
+    </button>
+  )
+
+  const modal = (
+    <QuickActualsEntry
+      open={entryOpen}
+      onClose={() => setEntryOpen(false)}
+      assetId={assetId}
+      debtId={debtId}
+      propertyId={propertyId}
+      monthlyRentSuggested={monthlyRentSuggested}
+      monthlyPaymentSuggested={monthlyPaymentSuggested}
+      existingCharges={existingCharges}
+    />
+  )
 
   // Cas 1 : aucune donnée réelle
   if (comparison.status === 'no_data') {
     return (
-      <div className="card p-8 text-center space-y-3">
-        <Info size={28} className="text-muted mx-auto" />
-        <p className="text-sm text-primary font-medium">Aucune donnée réelle enregistrée</p>
-        <p className="text-xs text-secondary max-w-md mx-auto">
-          Ajoutez des transactions de loyer (<span className="font-mono">rent_income</span>),
-          de remboursement (<span className="font-mono">loan_payment</span>) et des charges
-          annuelles pour comparer la performance réelle à votre simulation.
-        </p>
-      </div>
+      <>
+        <div className="card p-8 text-center space-y-4">
+          <Info size={28} className="text-muted mx-auto" />
+          <div className="space-y-1">
+            <p className="text-sm text-primary font-medium">Aucune donnée réelle enregistrée</p>
+            <p className="text-xs text-secondary max-w-md mx-auto">
+              Saisissez les loyers reçus, mensualités versées et charges payées pour comparer
+              la performance réelle à la simulation.
+            </p>
+          </div>
+          <div className="flex justify-center">
+            {quickEntryButton}
+          </div>
+        </div>
+        {modal}
+      </>
     )
   }
 
@@ -112,13 +155,16 @@ export function ActualVsSimulation({ comparison }: Props) {
             {comparison.trackedYears} année{comparison.trackedYears > 1 ? 's' : ''} sur {comparison.elapsedYears} écoulée{comparison.elapsedYears > 1 ? 's' : ''}
           </span>
         </div>
-        <button
-          onClick={() => setExpanded((v) => !v)}
-          className="flex items-center gap-1 text-xs text-secondary hover:text-primary transition-colors"
-        >
-          {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-          {expanded ? 'Réduire' : 'Détailler'}
-        </button>
+        <div className="flex items-center gap-2">
+          {quickEntryButton}
+          <button
+            onClick={() => setExpanded((v) => !v)}
+            className="flex items-center gap-1 text-xs text-secondary hover:text-primary transition-colors px-2 py-1.5"
+          >
+            {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            {expanded ? 'Réduire' : 'Détailler'}
+          </button>
+        </div>
       </div>
 
       {/* KPIs cumul */}
@@ -128,6 +174,8 @@ export function ActualVsSimulation({ comparison }: Props) {
         <CumulKpi label="Crédit"     value={-comparison.totals.loanVariance}    kind="income"  />
         <CumulKpi label="Cash-flow"  value={comparison.totals.cashFlowVariance} kind="income"  />
       </div>
+
+      {modal}
 
       {/* Tableau détaillé */}
       {expanded && (
