@@ -11,6 +11,8 @@ interface KPIs {
   cagr:              number | null
   confidence_score:  number
   assets_count?:     number
+  /** Label optionnel sous le cash-flow (ex: 'après impôts (simulation)') */
+  sim_cf_label?:     string
 }
 
 export function KpiGrid({ kpis }: { kpis: KPIs }) {
@@ -34,7 +36,7 @@ export function KpiGrid({ kpis }: { kpis: KPIs }) {
       <StatCard
         label="Cash-flow mensuel"
         value={formatCurrency(kpis.monthly_cash_flow, 'EUR')}
-        sub={cfPositive ? 'Positif' : 'Négatif'}
+        sub={kpis.sim_cf_label ?? (cfPositive ? 'Positif' : 'Négatif')}
         icon={ArrowUpDown}
         className={cfPositive ? 'border-accent/20' : 'border-danger/20'}
       />
