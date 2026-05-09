@@ -9,7 +9,12 @@
  */
 
 import { buildSimulationInputFromDb, runSimulation, computeRemainingCapitalAt } from '.'
+import { loadActualData } from './actual'
+import { compareActualToSimulation } from './compare'
+import { detectDriftAlerts } from './insights'
 import type { SimulationResult } from './types'
+import type { ComparisonResult } from './compare'
+import type { DriftAlert } from './insights'
 import type { DbProperty, DbAsset, DbLot, DbCharges, DbDebt, DbProfile } from './build-from-db'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
@@ -17,10 +22,15 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 export interface PropertySimResult {
   propertyId:       string
+  propertyName?:    string
   assetId:          string
   simulation:       SimulationResult
   /** Capital restant dû calculé analytiquement à aujourd'hui. */
   capitalRemaining: number
+  /** Comparaison réel vs simulation (Phase 2). null si non chargée. */
+  comparison?:      ComparisonResult
+  /** Alertes drift détectées. [] si pas de données réelles. */
+  driftAlerts?:     DriftAlert[]
 }
 
 export interface PortfolioResult {
@@ -31,12 +41,23 @@ export interface PortfolioResult {
   totalCapitalRemaining: number
 }
 
+/** Options pour `computeRealEstatePortfolio`. */
+export interface PortfolioOptions {
+  /**
+   * Si true, charge aussi les données réelles + comparaison + alertes
+   * pour chaque bien. Plus coûteux mais nécessaire pour le dashboard.
+   * Défaut : false (rétro-compatible avec la liste / snapshot simple).
+   */
+  withActuals?: boolean
+}
+
 // ─── Helper principal ───────────────────────────────────────────────────────
 
 export async function computeRealEstatePortfolio(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: SupabaseClient<any, any, any>,
   userId:   string,
+  opts:     PortfolioOptions = {},
 ): Promise<PortfolioResult> {
   const today      = new Date()
   const currentYear = today.getFullYear()
@@ -46,7 +67,7 @@ export async function computeRealEstatePortfolio(
     .from('real_estate_properties')
     .select(`
       *,
-      asset:assets!asset_id ( current_value ),
+      asset:assets!asset_id ( name, current_value ),
       lots:real_estate_lots ( rent_amount, status )
     `)
     .eq('user_id', userId)
@@ -79,13 +100,15 @@ export async function computeRealEstatePortfolio(
   const { data: allDebts } = await supabase
     .from('debts')
     .select(`
-      asset_id, initial_amount, interest_rate, insurance_rate,
+      id, asset_id, initial_amount, interest_rate, insurance_rate,
       duration_months, start_date, bank_fees, guarantee_fees, amortization_type
     `)
     .eq('user_id', userId)
     .eq('status', 'active')
 
-  const debtByAsset: Record<string, DbDebt> = {}
+  const debtByAsset:    Record<string, DbDebt>          = {}
+  const debtIdByAsset:  Record<string, string>          = {}
+  const debtStartByAsset: Record<string, string | null> = {}
   for (const d of allDebts ?? []) {
     if (d.asset_id) {
       debtByAsset[d.asset_id] = {
@@ -98,6 +121,8 @@ export async function computeRealEstatePortfolio(
         guarantee_fees:    d.guarantee_fees ?? 0,
         amortization_type: d.amortization_type ?? 'constant',
       }
+      debtIdByAsset[d.asset_id]    = d.id as string
+      debtStartByAsset[d.asset_id] = d.start_date as string | null
     }
   }
 
@@ -175,7 +200,23 @@ export async function computeRealEstatePortfolio(
       capitalRemaining = debt.initial_amount
     }
 
-    results.push({ propertyId: prop.id as string, assetId, simulation, capitalRemaining })
+    const propertyName = assetRaw?.name as string | undefined
+    const result: PropertySimResult = { propertyId: prop.id as string, propertyName, assetId, simulation, capitalRemaining }
+
+    // ── Phase 2 (optionnel) : charge le réel + comparaison + alertes ──
+    if (opts.withActuals) {
+      const debtId = debtIdByAsset[assetId] ?? null
+      const actualData = await loadActualData(supabase, userId, assetId, prop.id as string, debtId)
+      const startYearStr = debtStartByAsset[assetId]
+      const simStartYear = startYearStr
+        ? new Date(startYearStr).getUTCFullYear()
+        : (actualData.firstYear ?? today.getUTCFullYear())
+      const comparison = compareActualToSimulation(simulation, actualData, simStartYear)
+      result.comparison  = comparison
+      result.driftAlerts = detectDriftAlerts(comparison)
+    }
+
+    results.push(result)
   }
 
   const totalMonthlyCFYear1   = results.reduce((s, r) => s + (r.simulation.kpis.monthlyCashFlowYear1 ?? 0), 0)

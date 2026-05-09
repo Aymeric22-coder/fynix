@@ -6,6 +6,7 @@ import { TopAssetsList }         from '@/components/dashboard/top-assets-list'
 import { DonutChart }            from '@/components/charts/donut-chart'
 import { PatrimonyAreaChart }    from '@/components/charts/area-chart'
 import { computeRealEstatePortfolio } from '@/lib/real-estate/portfolio'
+import { RealEstateAlertsPanel } from '@/components/dashboard/real-estate-alerts-panel'
 import { ASSET_TYPE_LABELS, ASSET_TYPE_COLORS, formatCurrency } from '@/lib/utils/format'
 import { ConfidenceBadge }       from '@/components/shared/confidence-badge'
 
@@ -38,8 +39,8 @@ export default async function DashboardPage() {
   const debts     = debtsRes.data     ?? []
   const snapshots = snapshotsRes.data ?? []
 
-  // ── Simulation immobilière (CF après impôts + capital restant analytique) ─
-  const portfolio = await computeRealEstatePortfolio(supabase, user!.id)
+  // ── Simulation immobilière + suivi réel (CF / capital / alertes drift) ───
+  const portfolio = await computeRealEstatePortfolio(supabase, user!.id, { withActuals: true })
   const simAssetIds = new Set(portfolio.properties.map((p) => p.assetId))
 
   // ── Calculs patrimoine ────────────────────────────────────────────────────
@@ -129,6 +130,15 @@ export default async function DashboardPage() {
       severity: 'info',
     })
 
+  // Résumé des alertes drift par bien (pour le panel détaillé)
+  const driftSummaries = portfolio.properties
+    .filter((p) => (p.driftAlerts ?? []).length > 0)
+    .map((p) => ({
+      propertyId:   p.propertyId,
+      propertyName: p.propertyName,
+      alerts:       p.driftAlerts ?? [],
+    }))
+
   const kpis = {
     gross_value:        Math.round(grossValue * 100) / 100,
     net_value:          Math.round(netValue * 100) / 100,
@@ -145,6 +155,9 @@ export default async function DashboardPage() {
     <div className="space-y-8">
       {/* Alertes */}
       {alerts.length > 0 && <AlertsPanel alerts={alerts} />}
+
+      {/* Alertes drift immobilier (Phase 2) */}
+      {driftSummaries.length > 0 && <RealEstateAlertsPanel summaries={driftSummaries} />}
 
       {/* KPIs */}
       <KpiGrid kpis={kpis} />
