@@ -11,9 +11,11 @@ import { LotEditButton } from '@/components/pages/lot-edit-button'
 import { SimulationPanel } from '@/components/real-estate/simulation-panel'
 import { ActualVsSimulation } from '@/components/real-estate/actual-vs-simulation'
 import { DriftAlerts } from '@/components/real-estate/drift-alerts'
+import { RevisedForecastSection } from '@/components/real-estate/revised-forecast-section'
 import { loadActualData } from '@/lib/real-estate/actual'
 import { compareActualToSimulation } from '@/lib/real-estate/compare'
 import { detectDriftAlerts } from '@/lib/real-estate/insights'
+import { computeRevisedForecast } from '@/lib/real-estate/forecast'
 import { buildSimulationInputFromDb, runSimulation } from '@/lib/real-estate'
 import { formatCurrency, formatPercent, formatDate } from '@/lib/utils/format'
 import type { DbProperty, DbAsset, DbLot, DbCharges, DbDebt, DbProfile } from '@/lib/real-estate/build-from-db'
@@ -167,8 +169,9 @@ export default async function ImmobilierDetailPage({ params }: Props) {
     ? new Date(debtRow.start_date).getUTCFullYear()
     : (actualData.firstYear ?? new Date().getUTCFullYear())
 
-  const comparison  = compareActualToSimulation(simResult, actualData, simStartYear)
-  const driftAlerts = detectDriftAlerts(comparison)
+  const comparison      = compareActualToSimulation(simResult, actualData, simStartYear)
+  const driftAlerts     = detectDriftAlerts(comparison)
+  const revisedForecast = computeRevisedForecast(simResult, actualData, simStartYear)
 
   return (
     <div className="space-y-8">
@@ -339,6 +342,13 @@ export default async function ImmobilierDetailPage({ params }: Props) {
           }))}
         />
       </div>
+
+      {/* ── Forecast révisé (Sprint 5) ─────────────────────────────────── */}
+      {!revisedForecast.isEmpty && (
+        <div className="border-t border-border pt-8">
+          <RevisedForecastSection revised={revisedForecast} original={simResult.projection} />
+        </div>
+      )}
     </div>
   )
 }
