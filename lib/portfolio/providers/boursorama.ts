@@ -43,92 +43,93 @@ export class BoursoramaProvider implements PortfolioPriceProvider {
   }
 
   async fetchQuote(instrument: InstrumentLookup): Promise<PriceQuote | null> {
-    const symbol = await this.resolveSymbol(instrument)
-    if (!symbol) return null
+    // Stratégie : on lance directement /recherche/?query=<ISIN ou ticker>.
+    // Si Boursorama reconnaît l'identifiant, il redirige vers la fiche
+    // canonique (/bourse/trackers/cours/<symbol>/ ou /bourse/action/cours/...).
+    // On parse alors le HTML obtenu pour le prix.
+    const queries: string[] = []
+    if (instrument.providerId) queries.push(instrument.providerId)
+    if (instrument.isin && instrument.isin.length >= 10) queries.push(instrument.isin)
+    if (instrument.ticker)     queries.push(instrument.ticker)
 
-    return this.fetchQuoteBySymbol(symbol)
-  }
-
-  /**
-   * Trouve le symbole interne Boursorama (ex: "1rTNKE") à partir d'un
-   * provider_id déjà résolu, d'un ISIN, ou d'un ticker brut.
-   */
-  private async resolveSymbol(instrument: InstrumentLookup): Promise<string | null> {
-    if (instrument.providerId) return instrument.providerId
-
-    // Search par ISIN (le plus fiable pour les ETF européens)
-    if (instrument.isin && instrument.isin.length >= 10) {
-      const sym = await this.searchByQuery(instrument.isin)
-      if (sym) return sym
+    for (const q of queries) {
+      const result = await this.searchAndParse(q)
+      if (result) return result
     }
-
-    // Fallback ticker
-    if (instrument.ticker) {
-      const sym = await this.searchByQuery(instrument.ticker)
-      if (sym) return sym
-    }
-
     return null
   }
 
-  private async searchByQuery(query: string): Promise<string | null> {
+  private async searchAndParse(query: string): Promise<PriceQuote | null> {
     try {
-      const url = `${BASE}/recherche/_instrument/?query=${encodeURIComponent(query)}`
+      const url = `${BASE}/recherche/?query=${encodeURIComponent(query)}`
       const res = await fetch(url, {
         headers: { 'User-Agent': USER_AGENT, 'Accept': 'text/html' },
-        // Suit les redirections : pour un ISIN connu, Boursorama redirige
-        // directement vers /cours/<symbol>/
       })
-      if (!res.ok) return null
+      if (!res.ok) {
+        console.warn(`[boursorama] search ${query} HTTP ${res.status}`)
+        return null
+      }
 
-      // 1. Si Boursorama a redirigé vers /cours/<symbol>/, l'URL finale le contient
       const finalUrl = res.url
-      const directMatch = finalUrl.match(/\/cours\/([^/?#]+)\/?/)
-      if (directMatch && directMatch[1]) return directMatch[1]
+      const html     = await res.text()
 
-      // 2. Sinon, on parse la page de résultats HTML pour le premier lien /cours/
-      const html = await res.text()
-      const linkMatch = html.match(/href="\/cours\/([^/"?#]+)\/?"/)
-      if (linkMatch && linkMatch[1]) return linkMatch[1]
+      // L'URL finale doit contenir `/cours/` pour qu'on soit sur une fiche cotation
+      const symMatch = finalUrl.match(/\/cours\/([^/?#]+)\/?/)
+      if (!symMatch) {
+        // On est resté sur la page de résultats — pas de match exact
+        return null
+      }
+      const symbol = symMatch[1]!
 
-      return null
-    } catch (e) {
-      console.warn('[boursorama] searchByQuery failed:', e)
-      return null
-    }
-  }
-
-  private async fetchQuoteBySymbol(symbol: string): Promise<PriceQuote | null> {
-    try {
-      const res = await fetch(`${BASE}/cours/${encodeURIComponent(symbol)}/`, {
-        headers: { 'User-Agent': USER_AGENT, 'Accept': 'text/html' },
-      })
-      if (!res.ok) return null
-      const html = await res.text()
-
-      // Extraction du prix : Boursorama embarque le dernier cours dans
-      // `data-ist-last="21.36"` (élément c-instrument--last).
-      const priceMatch = html.match(/data-ist-last="([0-9.,]+)"/)
-      if (!priceMatch || !priceMatch[1]) return null
-
-      const price = parseFloat(priceMatch[1].replace(',', '.'))
-      if (!isFinite(price) || price <= 0) return null
-
-      // Devise : data-ist-currency="EUR"
-      const currencyMatch = html.match(/data-ist-currency="([A-Z]{3})"/)
-      const currency      = toCurrency(currencyMatch?.[1])
+      const parsed = this.parsePrice(html)
+      if (!parsed) {
+        console.warn(`[boursorama] price parse failed for ${query} (resolved=${symbol})`)
+        return null
+      }
 
       return {
         query:      symbol,
-        price,
-        currency,
+        price:      parsed.price,
+        currency:   parsed.currency,
         pricedAt:   new Date(),
         source:     'boursorama',
         confidence: 'high',
       }
     } catch (e) {
-      console.warn(`[boursorama] fetchQuoteBySymbol(${symbol}) failed:`, e)
+      console.warn(`[boursorama] searchAndParse(${query}) failed:`, e)
       return null
     }
+  }
+
+  /**
+   * Extrait le prix et la devise depuis le HTML d'une fiche cotation Boursorama.
+   *
+   * Boursorama 2024+ : le prix est dans <h1>99,0900 EUR</h1> sur la fiche
+   * principale. On accepte plusieurs formats au cas où la page change :
+   *   - `<h1>99,0900 EUR</h1>` (format actuel)
+   *   - `data-ist-last="..."` (ancien format, conservé en fallback)
+   */
+  private parsePrice(html: string): { price: number; currency: CurrencyCode } | null {
+    // Format 1 : <h1>99,0900 EUR</h1> (ETF, fonds, actions Boursorama 2024+)
+    const h1Match = html.match(/<h1[^>]*>\s*([0-9][0-9 ]*[.,][0-9]+)\s*([A-Z]{3})\s*<\/h1>/)
+    if (h1Match && h1Match[1] && h1Match[2]) {
+      const raw   = h1Match[1].replace(/\s/g, '').replace(',', '.')
+      const price = parseFloat(raw)
+      if (isFinite(price) && price > 0) {
+        return { price, currency: toCurrency(h1Match[2]) }
+      }
+    }
+
+    // Format 2 (legacy) : data-ist-last="21.36" data-ist-currency="EUR"
+    const lastMatch = html.match(/data-ist-last="([0-9.,]+)"/)
+    if (lastMatch && lastMatch[1]) {
+      const price = parseFloat(lastMatch[1].replace(',', '.'))
+      if (isFinite(price) && price > 0) {
+        const currMatch = html.match(/data-ist-currency="([A-Z]{3})"/)
+        return { price, currency: toCurrency(currMatch?.[1]) }
+      }
+    }
+
+    return null
   }
 }
