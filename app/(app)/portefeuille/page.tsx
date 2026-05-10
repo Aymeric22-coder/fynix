@@ -99,7 +99,7 @@ export default async function PortefeuillePage() {
           {summary.allocationByClass.length > 0 && (
             <div className="card p-5 mb-6">
               <p className="text-xs text-secondary uppercase tracking-widest flex items-center gap-1 mb-4">
-                <Layers size={11} /> Allocation par classe d'actif
+                <Layers size={11} /> Allocation par classe d&apos;actif
               </p>
               <div className="space-y-2">
                 {summary.allocationByClass.map((slice) => (

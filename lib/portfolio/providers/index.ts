@@ -9,7 +9,6 @@ import { CoinGeckoProvider } from './coingecko'
 import { YahooPortfolioProvider } from './yahoo'
 import { PriceOrchestrator, type ProviderConfig } from './orchestrator'
 import type { AssetClass } from '@/types/database.types'
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 export type { PriceQuote, InstrumentLookup, PortfolioPriceProvider } from './types'
