@@ -15,6 +15,9 @@ export type DebtStatus = 'active' | 'paid_off' | 'restructured'
 export type DeferralType = 'none' | 'partial' | 'total'
 export type AmortizationType = 'constant' | 'linear' | 'in_fine'
 export type AcquisitionFeesTreatment = 'expense_y1' | 'amortized'
+// ── Migration 006 ───────────────────────────────────────────────
+export type InsuranceBase = 'capital_initial' | 'capital_remaining'
+export type GuaranteeType = 'hypotheque' | 'caution' | 'ppd' | 'autre'
 export type EnvelopeType = 'pea' | 'cto' | 'assurance_vie' | 'per' | 'wallet_crypto' | 'other'
 export type HoldingMode = 'direct' | 'assurance_vie' | 'sci' | 'other'
 export type LotStatus = 'rented' | 'vacant' | 'owner_occupied' | 'works'
@@ -76,7 +79,11 @@ export interface Transaction {
 export interface Debt {
   id: string
   user_id: string
-  asset_id: string | null
+  /**
+   * Asset rattaché. NOT NULL depuis migration 006 (1 crédit max par asset,
+   * FK CASCADE — la suppression du bien supprime le crédit).
+   */
+  asset_id: string
   name: string
   debt_type: DebtType
   status: DebtStatus
@@ -92,13 +99,22 @@ export interface Debt {
   start_date: string | null
   deferral_type: DeferralType
   deferral_months: number
+  /** Cache mensualité (capital + intérêts hors assurance) — recalculé à chaque write. */
   monthly_payment: number | null
+  /** Cache CRD à date — recalculé à chaque write. */
   capital_remaining: number | null
   notes: string | null
-  // ── Ajoutés en migration 005 ──────────────────────────────────
+  // ── Migration 005 ─────────────────────────────────────────────
   bank_fees: number
   guarantee_fees: number
   amortization_type: AmortizationType
+  // ── Migration 006 ─────────────────────────────────────────────
+  /** Base de calcul mensuelle de l'assurance emprunteur. */
+  insurance_base: InsuranceBase
+  /** Quotité d'assurance en %. 100 par défaut. */
+  insurance_quotite: number
+  /** Type de garantie du prêt. */
+  guarantee_type: GuaranteeType
   created_at: string
   updated_at: string
 }
