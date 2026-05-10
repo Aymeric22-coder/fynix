@@ -1,11 +1,12 @@
 import { Metadata } from 'next'
 import { notFound }   from 'next/navigation'
-import { ArrowLeft, ArrowDownRight, ArrowUpRight } from 'lucide-react'
+import { ArrowLeft, ArrowDownRight, ArrowUpRight, Home, Banknote, Receipt, TrendingUp, FileSpreadsheet, Activity } from 'lucide-react'
 import Link from 'next/link'
 import { createServerClient } from '@/lib/supabase/server'
 import { PageHeader }     from '@/components/shared/page-header'
 import { Badge }          from '@/components/ui/badge'
 import { ConfidenceBadge } from '@/components/shared/confidence-badge'
+import { Tabs, type TabItem } from '@/components/ui/tabs'
 import { PropertyLotActions, PropertyValuationActions } from '@/components/pages/property-detail-actions'
 import { LotEditButton } from '@/components/pages/lot-edit-button'
 import { SimulationPanel } from '@/components/real-estate/simulation-panel'
@@ -13,13 +14,18 @@ import { ActualVsSimulation } from '@/components/real-estate/actual-vs-simulatio
 import { DriftAlerts } from '@/components/real-estate/drift-alerts'
 import { RevisedForecastSection } from '@/components/real-estate/revised-forecast-section'
 import { YearEndReportPanel } from '@/components/real-estate/year-end-report-panel'
+import { CreditTab } from '@/components/real-estate/credit-tab'
+import { AmortizationTable } from '@/components/real-estate/amortization-table'
+import type { ExistingCredit } from '@/components/real-estate/credit-form'
 import { loadActualData } from '@/lib/real-estate/actual'
 import { compareActualToSimulation } from '@/lib/real-estate/compare'
 import { detectDriftAlerts } from '@/lib/real-estate/insights'
 import { computeRevisedForecast } from '@/lib/real-estate/forecast'
 import { buildYearEndReport } from '@/lib/real-estate/year-end-report'
+import { buildAmortizationSchedule, computeRemainingCapitalAt } from '@/lib/real-estate/amortization'
 import { buildSimulationInputFromDb, runSimulation } from '@/lib/real-estate'
 import { formatCurrency, formatPercent, formatDate } from '@/lib/utils/format'
+import type { LoanInput } from '@/lib/real-estate/types'
 import type { DbProperty, DbAsset, DbLot, DbCharges, DbDebt, DbProfile } from '@/lib/real-estate/build-from-db'
 
 export const metadata: Metadata = { title: 'Détail bien' }
@@ -48,12 +54,14 @@ export default async function ImmobilierDetailPage({ params }: Props) {
 
   if (!prop) notFound()
 
-  // ── Crédit lié à cet asset (s'il existe) ────────────────────────────────
+  // ── Crédit lié à cet asset (s'il existe) — incluant champs migration 006
   const { data: debtRow } = await supabase
     .from('debts')
     .select(`
-      id, initial_amount, interest_rate, insurance_rate,
-      duration_months, start_date, bank_fees, guarantee_fees, amortization_type
+      id, name, lender, initial_amount, interest_rate, insurance_rate,
+      duration_months, start_date, deferral_type, deferral_months,
+      bank_fees, guarantee_fees, amortization_type,
+      insurance_base, insurance_quotite, guarantee_type, notes
     `)
     .eq('asset_id', prop.asset_id)
     .eq('user_id', user!.id)
@@ -73,7 +81,7 @@ export default async function ImmobilierDetailPage({ params }: Props) {
   const chargesAll  = prop.charges ?? []
   const charges     = chargesAll.find((c: { year: number }) => c.year === currentYear) ?? null
 
-  // ── Calculs affichage (section existante) ────────────────────────────────
+  // ── Calculs affichage ────────────────────────────────────────────────────
   const monthlyRents = lots
     .filter((l: { status: string }) => l.status === 'rented')
     .reduce((s: number, l: { rent_amount: number | null }) => s + (l.rent_amount ?? 0), 0)
@@ -83,12 +91,12 @@ export default async function ImmobilierDetailPage({ params }: Props) {
         .filter(([k]) => ['taxe_fonciere','insurance','accountant','cfe','condo_fees','maintenance','other'].includes(k))
         .reduce((s, [, v]) => s + (Number(v) ?? 0), 0)
     : 0
-  const acqCost    = (prop.purchase_price ?? 0) + (prop.purchase_fees ?? 0) + (prop.works_amount ?? 0)
-  const currentVal = prop.asset?.current_value ?? 0
-  const grossYield = acqCost > 0 ? (annualRents / acqCost) * 100 : 0
-  const netYield   = acqCost > 0 ? ((annualRents - annualCharges) / acqCost) * 100 : 0
-  const latentGain = currentVal - acqCost
-  const latentPct  = acqCost > 0 ? (latentGain / acqCost) * 100 : 0
+  const acqCost     = (prop.purchase_price ?? 0) + (prop.purchase_fees ?? 0) + (prop.works_amount ?? 0)
+  const currentVal  = prop.asset?.current_value ?? 0
+  const grossYield  = acqCost > 0 ? (annualRents / acqCost) * 100 : 0
+  const netYield    = acqCost > 0 ? ((annualRents - annualCharges) / acqCost) * 100 : 0
+  const latentGain  = currentVal - acqCost
+  const latentPct   = acqCost > 0 ? (latentGain / acqCost) * 100 : 0
 
   const LOT_STATUS: Record<string, { label: string; variant: 'success' | 'warning' | 'muted' | 'info' }> = {
     rented:         { label: 'Loué',    variant: 'success' },
@@ -146,14 +154,66 @@ export default async function ImmobilierDetailPage({ params }: Props) {
     bank_fees:         debtRow.bank_fees ?? 0,
     guarantee_fees:    debtRow.guarantee_fees ?? 0,
     amortization_type: debtRow.amortization_type ?? 'constant',
+    deferral_type:     debtRow.deferral_type     ?? 'none',
+    deferral_months:   debtRow.deferral_months   ?? 0,
+    insurance_base:    debtRow.insurance_base    ?? 'capital_initial',
+    insurance_quotite: debtRow.insurance_quotite ?? 100,
+    guarantee_type:    debtRow.guarantee_type    ?? 'caution',
   } : null
 
   const dbProfile: DbProfile | null = profileRow ? { tmi_rate: profileRow.tmi_rate } : null
 
+  // ── Crédit "shape ExistingCredit" pour CreditTab ────────────────────────
+  const creditForTab: ExistingCredit | null = debtRow ? {
+    id:                 debtRow.id,
+    name:               debtRow.name ?? 'Crédit',
+    lender:             debtRow.lender,
+    initial_amount:     debtRow.initial_amount,
+    interest_rate:      debtRow.interest_rate,
+    insurance_rate:     debtRow.insurance_rate ?? 0,
+    duration_months:    debtRow.duration_months,
+    start_date:         debtRow.start_date,
+    deferral_type:      (debtRow.deferral_type     ?? 'none') as 'none' | 'partial' | 'total',
+    deferral_months:    debtRow.deferral_months   ?? 0,
+    bank_fees:          debtRow.bank_fees         ?? 0,
+    guarantee_fees:     debtRow.guarantee_fees    ?? 0,
+    amortization_type:  (debtRow.amortization_type ?? 'constant') as 'constant' | 'linear' | 'in_fine',
+    insurance_base:     (debtRow.insurance_base    ?? 'capital_initial') as 'capital_initial' | 'capital_remaining',
+    insurance_quotite:  debtRow.insurance_quotite ?? 100,
+    guarantee_type:     (debtRow.guarantee_type    ?? 'caution') as 'hypotheque' | 'caution' | 'ppd' | 'autre',
+    notes:              debtRow.notes,
+  } : null
+
+  // ── Schedule & CRD à date (calculés côté serveur via lib pure) ──────────
+  const loanForCalc: LoanInput | null = (
+    creditForTab?.initial_amount != null &&
+    creditForTab?.interest_rate != null &&
+    creditForTab?.duration_months != null
+  ) ? {
+    principal:           creditForTab.initial_amount,
+    annualRatePct:       creditForTab.interest_rate,
+    durationYears:       creditForTab.duration_months / 12,
+    insuranceRatePct:    creditForTab.insurance_rate ?? 0,
+    bankFees:            creditForTab.bank_fees,
+    guaranteeFees:       creditForTab.guarantee_fees,
+    startDate:           creditForTab.start_date ? new Date(creditForTab.start_date) : undefined,
+    deferralType:        creditForTab.deferral_type,
+    deferralMonths:      creditForTab.deferral_months,
+    insuranceBase:       creditForTab.insurance_base,
+    insuranceQuotitePct: creditForTab.insurance_quotite,
+  } : null
+
+  const schedule = loanForCalc ? buildAmortizationSchedule(loanForCalc) : null
+  const crdNow   = loanForCalc ? computeRemainingCapitalAt(loanForCalc, new Date()) : 0
+
+  // ── Synthèse : KPIs financiers globaux ──────────────────────────────────
+  const monthlyLoanPayment = schedule?.totalMonthly ?? 0
+  const monthlyCharges     = annualCharges / 12
+  const monthlyCashFlow    = monthlyRents - monthlyCharges - monthlyLoanPayment
+  const annualCashFlow     = monthlyCashFlow * 12
+  const netPropertyValue   = currentVal - crdNow
+
   // ── Phase 2 : suivi réel vs simulation ──────────────────────────────────
-  // On lance une simulation snapshot (paramètres DB) pour comparer aux données réelles.
-  // Note : le SimulationPanel interactif peut diverger si l'utilisateur joue avec les inputs,
-  //        mais la comparaison se base sur l'état *enregistré* en DB (source de vérité).
   const downPayment = Math.max(0, acqCost - (dbDebt?.initial_amount ?? 0))
   const simInput    = buildSimulationInputFromDb(
     dbProperty, dbAsset, dbLots, dbCharges, dbDebt, dbProfile,
@@ -165,8 +225,6 @@ export default async function ImmobilierDetailPage({ params }: Props) {
     supabase, user!.id, prop.asset_id, prop.id, debtRow?.id ?? null,
   )
 
-  // Année de départ de la simulation : si on a un crédit avec start_date, on l'utilise,
-  // sinon on prend l'année de la première donnée réelle, sinon l'année courante.
   const simStartYear = debtRow?.start_date
     ? new Date(debtRow.start_date).getUTCFullYear()
     : (actualData.firstYear ?? new Date().getUTCFullYear())
@@ -175,11 +233,10 @@ export default async function ImmobilierDetailPage({ params }: Props) {
   const driftAlerts     = detectDriftAlerts(comparison)
   const revisedForecast = computeRevisedForecast(simResult, actualData, simStartYear)
 
-  // ── Year-end reports : une entrée par année écoulée et suivie ──
   const reportCutoffYear = new Date().getUTCFullYear()
   const yearEndReports = actualData.years
-    .filter((a) => a.year < reportCutoffYear)   // années closes uniquement
-    .sort((a, b) => b.year - a.year)        // plus récente d'abord
+    .filter((a) => a.year < reportCutoffYear)
+    .sort((a, b) => b.year - a.year)
     .map((a) => {
       const projForYear = simResult.projection.find((p) => p.year === a.year - simStartYear + 1) ?? null
       return buildYearEndReport(
@@ -194,8 +251,323 @@ export default async function ImmobilierDetailPage({ params }: Props) {
       )
     })
 
+  // ─── Onglets ──────────────────────────────────────────────────────────────
+
+  const tabs: TabItem[] = [
+    // ── 1. Synthèse ─────────────────────────────────────────────────────────
+    {
+      id:    'synthese',
+      label: 'Synthèse',
+      icon:  Home,
+      content: (
+        <div className="space-y-6">
+          {/* KPIs principaux : 6 cards */}
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="card p-5 border-accent/20">
+              <p className="text-xs text-secondary uppercase tracking-widest">Valeur estimée</p>
+              <p className="text-xl font-semibold financial-value text-primary mt-2">
+                {formatCurrency(currentVal, 'EUR', { compact: true })}
+              </p>
+              <p className="text-xs text-secondary mt-1">{formatDate(prop.asset?.last_valued_at, 'medium')}</p>
+            </div>
+            <div className="card p-5">
+              <p className="text-xs text-secondary uppercase tracking-widest">Capital restant dû</p>
+              <p className={`text-xl font-semibold financial-value mt-2 ${crdNow > 0 ? 'text-danger' : 'text-secondary'}`}>
+                {crdNow > 0 ? formatCurrency(crdNow, 'EUR', { compact: true }) : '—'}
+              </p>
+              <p className="text-xs text-secondary mt-1">à aujourd&apos;hui</p>
+            </div>
+            <div className="card p-5 border-accent/20">
+              <p className="text-xs text-secondary uppercase tracking-widest">Patrimoine net</p>
+              <p className="text-xl font-semibold financial-value text-accent mt-2">
+                {formatCurrency(netPropertyValue, 'EUR', { compact: true })}
+              </p>
+              <p className="text-xs text-secondary mt-1">valeur − CRD</p>
+            </div>
+            <div className="card p-5">
+              <p className="text-xs text-secondary uppercase tracking-widest">Cash-flow mensuel</p>
+              <p className={`text-xl font-semibold financial-value mt-2 ${monthlyCashFlow >= 0 ? 'text-accent' : 'text-danger'}`}>
+                {formatCurrency(monthlyCashFlow, 'EUR')}
+              </p>
+              <p className="text-xs text-secondary mt-1">loyers − charges − crédit</p>
+            </div>
+            <div className="card p-5">
+              <p className="text-xs text-secondary uppercase tracking-widest">Rendement brut</p>
+              <p className="text-xl font-semibold financial-value text-primary mt-2">
+                {grossYield > 0 ? formatPercent(grossYield) : '—'}
+              </p>
+              <p className="text-xs text-secondary mt-1">Net : {netYield > 0 ? formatPercent(netYield) : '—'}</p>
+            </div>
+            <div className="card p-5">
+              <p className="text-xs text-secondary uppercase tracking-widest">Plus-value latente</p>
+              <p className={`text-xl font-semibold financial-value mt-2 ${latentGain >= 0 ? 'text-accent' : 'text-danger'}`}>
+                {formatCurrency(latentGain, 'EUR', { compact: true, sign: true })}
+              </p>
+              <p className="text-xs text-secondary mt-1">{formatPercent(latentPct, { sign: true })}</p>
+            </div>
+          </div>
+
+          {/* Lots + Historique valorisations */}
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+            <div className="lg:col-span-3 card p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-sm font-medium text-primary">
+                  Lots locatifs {monthlyRents > 0 && <span className="text-accent ml-1">{formatCurrency(monthlyRents, 'EUR')} / mois</span>}
+                </h2>
+                <PropertyLotActions propertyId={prop.id} />
+              </div>
+              {!lots.length ? (
+                <p className="text-sm text-secondary">Aucun lot — ajoutez des unités locatives.</p>
+              ) : (
+                <div className="space-y-2">
+                  {lots.map((lot: {
+                    id: string; name: string; lot_type: string | null; surface_m2: number | null;
+                    status: string; rent_amount: number | null; charges_amount: number | null;
+                    tenant_name: string | null; lease_start_date: string | null; lease_end_date: string | null
+                  }) => {
+                    const statusInfo = LOT_STATUS[lot.status] ?? { label: lot.status, variant: 'muted' as const }
+                    return (
+                      <div key={lot.id} className="flex items-center gap-4 p-3 bg-surface-2 rounded-lg group">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-primary font-medium">{lot.name}</p>
+                          {lot.tenant_name && <p className="text-xs text-secondary">{lot.tenant_name}</p>}
+                        </div>
+                        {lot.surface_m2 && <p className="text-xs text-secondary">{lot.surface_m2} m²</p>}
+                        {lot.rent_amount && (
+                          <p className="text-sm financial-value text-accent">
+                            {formatCurrency(lot.rent_amount, 'EUR')}
+                          </p>
+                        )}
+                        <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
+                        <LotEditButton lot={lot} propertyId={prop.id} />
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="lg:col-span-2 card p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-sm font-medium text-primary">Historique des estimations</h2>
+                <PropertyValuationActions propertyId={prop.id} surfaceM2={prop.surface_m2} />
+              </div>
+              {!(prop.valuations ?? []).length ? (
+                <p className="text-sm text-secondary">Aucune estimation enregistrée.</p>
+              ) : (
+                <div className="space-y-3">
+                  {(prop.valuations ?? []).slice(0, 6).map((v: {
+                    id: string; valuation_date: string; value: number;
+                    price_per_m2: number | null; confidence: string
+                  }, i: number) => {
+                    const prev  = (prop.valuations ?? [])[i + 1]
+                    const delta = prev ? v.value - prev.value : null
+                    return (
+                      <div key={v.id} className="flex items-center justify-between gap-2">
+                        <div>
+                          <p className="text-sm financial-value text-primary">{formatCurrency(v.value, 'EUR', { compact: true })}</p>
+                          <p className="text-xs text-secondary">{formatDate(v.valuation_date, 'medium')}</p>
+                        </div>
+                        {delta !== null && (
+                          <p className={`text-xs flex items-center gap-0.5 ${delta >= 0 ? 'text-accent' : 'text-danger'}`}>
+                            {delta >= 0 ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
+                            {formatCurrency(Math.abs(delta), 'EUR', { compact: true })}
+                          </p>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ),
+    },
+
+    // ── 2. Crédit ──────────────────────────────────────────────────────────
+    {
+      id:    'credit',
+      label: 'Crédit',
+      icon:  Banknote,
+      content: (
+        <CreditTab
+          propertyId={prop.id}
+          propertyName={prop.asset?.name}
+          credit={creditForTab}
+        />
+      ),
+    },
+
+    // ── 3. Tableau d'amortissement ────────────────────────────────────────
+    {
+      id:    'amortissement',
+      label: 'Amortissement',
+      icon:  FileSpreadsheet,
+      content: schedule ? (
+        <AmortizationTable
+          schedule={schedule}
+          startDate={creditForTab?.start_date ? new Date(creditForTab.start_date) : null}
+          propertyName={prop.asset?.name}
+        />
+      ) : (
+        <div className="card p-8 text-center text-sm text-secondary">
+          Aucun crédit configuré — l&apos;onglet « Crédit » permet d&apos;en ajouter un.
+        </div>
+      ),
+    },
+
+    // ── 4. Rentabilité & Cash-flow ────────────────────────────────────────
+    {
+      id:    'rentabilite',
+      label: 'Rentabilité & Cash-flow',
+      icon:  TrendingUp,
+      content: (
+        <SimulationPanel
+          propertyId={prop.id}
+          property={dbProperty}
+          asset={dbAsset}
+          lots={dbLots}
+          charges={dbCharges}
+          debt={dbDebt}
+          profile={dbProfile}
+        />
+      ),
+    },
+
+    // ── 5. Charges ─────────────────────────────────────────────────────────
+    {
+      id:    'charges',
+      label: 'Charges',
+      icon:  Receipt,
+      content: (
+        <div className="space-y-4">
+          {!charges ? (
+            <div className="card p-8 text-center text-sm text-secondary">
+              Aucune charge enregistrée pour {currentYear}.
+            </div>
+          ) : (
+            <div className="card p-6">
+              <h2 className="text-sm font-medium text-primary mb-4">
+                Charges {currentYear} · {formatCurrency(annualCharges, 'EUR')} total · {formatCurrency(annualCharges / 12, 'EUR')} / mois
+              </h2>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                {[
+                  { label: 'Taxe foncière',     value: charges.taxe_fonciere },
+                  { label: 'Assurance PNO',     value: charges.insurance },
+                  { label: 'Expert-comptable',  value: charges.accountant },
+                  { label: 'CFE',               value: charges.cfe },
+                  { label: 'Copropriété',       value: charges.condo_fees },
+                  { label: 'Entretien',         value: charges.maintenance },
+                  { label: 'Autres',            value: charges.other },
+                ].filter((c) => c.value > 0).map((c) => (
+                  <div key={c.label} className="card p-3">
+                    <p className="text-xs text-secondary">{c.label}</p>
+                    <p className="text-sm financial-value text-primary mt-0.5">{formatCurrency(c.value, 'EUR')}</p>
+                    <p className="text-xs text-muted mt-0.5">{formatCurrency(c.value / 12, 'EUR')} / mois</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Historique multi-années */}
+          {chargesAll.length > 1 && (
+            <div className="card p-6">
+              <h2 className="text-sm font-medium text-primary mb-4">Historique des charges</h2>
+              <table className="w-full text-xs">
+                <thead className="bg-surface-2">
+                  <tr className="text-muted uppercase tracking-wider">
+                    <th className="px-3 py-2 text-left">Année</th>
+                    <th className="px-3 py-2 text-right">Taxe fonc.</th>
+                    <th className="px-3 py-2 text-right">Assurance</th>
+                    <th className="px-3 py-2 text-right">Copro</th>
+                    <th className="px-3 py-2 text-right">Autres</th>
+                    <th className="px-3 py-2 text-right">Total</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {[...chargesAll].sort((a, b) => b.year - a.year).map((c: {
+                    year: number; taxe_fonciere: number; insurance: number; accountant: number;
+                    cfe: number; condo_fees: number; maintenance: number; other: number
+                  }) => {
+                    const tot = c.taxe_fonciere + c.insurance + c.accountant + c.cfe + c.condo_fees + c.maintenance + c.other
+                    return (
+                      <tr key={c.year} className="hover:bg-surface-2/50">
+                        <td className="px-3 py-2 text-secondary font-medium">{c.year}</td>
+                        <td className="px-3 py-2 text-right financial-value text-secondary">{formatCurrency(c.taxe_fonciere, 'EUR')}</td>
+                        <td className="px-3 py-2 text-right financial-value text-secondary">{formatCurrency(c.insurance, 'EUR')}</td>
+                        <td className="px-3 py-2 text-right financial-value text-secondary">{formatCurrency(c.condo_fees, 'EUR')}</td>
+                        <td className="px-3 py-2 text-right financial-value text-secondary">{formatCurrency(c.accountant + c.cfe + c.maintenance + c.other, 'EUR')}</td>
+                        <td className="px-3 py-2 text-right financial-value text-primary font-medium">{formatCurrency(tot, 'EUR')}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      ),
+    },
+
+    // ── 6. Suivi réel (Phase 2) ───────────────────────────────────────────
+    {
+      id:    'suivi-reel',
+      label: 'Suivi réel',
+      icon:  Activity,
+      badge: driftAlerts.length > 0 ? (
+        <span className="ml-1.5 text-[10px] bg-warning/20 text-warning rounded-full px-1.5 py-0.5">
+          {driftAlerts.length}
+        </span>
+      ) : undefined,
+      content: (
+        <div className="space-y-6">
+          {driftAlerts.length > 0 && <DriftAlerts alerts={driftAlerts} />}
+          <ActualVsSimulation
+            comparison={comparison}
+            propertyName={prop.asset?.name}
+            assetId={prop.asset_id}
+            debtId={debtRow?.id ?? null}
+            propertyId={prop.id}
+            monthlyRentSuggested={monthlyRents}
+            monthlyPaymentSuggested={schedule?.totalMonthly ?? null}
+            existingCharges={(prop.charges ?? []).map((c: {
+              year: number; taxe_fonciere: number; insurance: number; accountant: number;
+              cfe: number; condo_fees: number; maintenance: number; other: number
+            }) => ({
+              year:          c.year,
+              taxe_fonciere: c.taxe_fonciere,
+              insurance:     c.insurance,
+              accountant:    c.accountant,
+              cfe:           c.cfe,
+              condo_fees:    c.condo_fees,
+              maintenance:   c.maintenance,
+              other:         c.other,
+            }))}
+          />
+          {!revisedForecast.isEmpty && (
+            <div className="border-t border-border pt-6">
+              <RevisedForecastSection revised={revisedForecast} original={simResult.projection} />
+            </div>
+          )}
+          {yearEndReports.length > 0 && (
+            <div className="border-t border-border pt-6">
+              <YearEndReportPanel reports={yearEndReports} />
+            </div>
+          )}
+        </div>
+      ),
+    },
+
+    // CF / annualCashFlow utilisé pour les calculs internes uniquement (visible dans Synthèse)
+  ]
+
+  // Petite garde TS : éviter l'erreur "annualCashFlow declared but unused" si on ne l'affiche pas
+  void annualCashFlow
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <Link href="/immobilier" className="flex items-center gap-2 text-sm text-secondary hover:text-primary transition-colors w-fit">
         <ArrowLeft size={14} />
         Retour à l&apos;immobilier
@@ -207,176 +579,7 @@ export default async function ImmobilierDetailPage({ params }: Props) {
         action={<ConfidenceBadge level={prop.asset?.confidence ?? 'medium'} />}
       />
 
-      {/* KPIs courants (données réelles, non simulées) */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {[
-          { label: 'Valeur estimée',    value: formatCurrency(currentVal, 'EUR', { compact: true }), sub: formatDate(prop.asset?.last_valued_at, 'medium'), accent: true },
-          { label: 'Prix de revient',   value: formatCurrency(acqCost, 'EUR', { compact: true }), sub: `Dont travaux : ${formatCurrency(prop.works_amount, 'EUR')}` },
-          { label: 'Rendement brut',    value: grossYield > 0 ? formatPercent(grossYield) : '—', sub: `Net : ${netYield > 0 ? formatPercent(netYield) : '—'}` },
-          { label: 'Plus-value latente',value: formatCurrency(latentGain, 'EUR', { compact: true, sign: true }), sub: formatPercent(latentPct, { sign: true }) },
-        ].map((kpi) => (
-          <div key={kpi.label} className={`card p-5 ${kpi.accent ? 'border-accent/20' : ''}`}>
-            <p className="text-xs text-secondary uppercase tracking-widest">{kpi.label}</p>
-            <p className="text-xl font-semibold financial-value text-primary mt-2">{kpi.value}</p>
-            {kpi.sub && <p className="text-xs text-secondary mt-1">{kpi.sub}</p>}
-          </div>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-        {/* Lots */}
-        <div className="lg:col-span-3 card p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-medium text-primary">
-              Lots locatifs {monthlyRents > 0 && <span className="text-accent ml-1">{formatCurrency(monthlyRents, 'EUR')} / mois</span>}
-            </h2>
-            <PropertyLotActions propertyId={prop.id} />
-          </div>
-          {!lots.length ? (
-            <p className="text-sm text-secondary">Aucun lot — ajoutez des unités locatives.</p>
-          ) : (
-            <div className="space-y-2">
-              {lots.map((lot: {
-                id: string; name: string; lot_type: string | null; surface_m2: number | null;
-                status: string; rent_amount: number | null; charges_amount: number | null;
-                tenant_name: string | null; lease_start_date: string | null; lease_end_date: string | null
-              }) => {
-                const statusInfo = LOT_STATUS[lot.status] ?? { label: lot.status, variant: 'muted' as const }
-                return (
-                  <div key={lot.id} className="flex items-center gap-4 p-3 bg-surface-2 rounded-lg group">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-primary font-medium">{lot.name}</p>
-                      {lot.tenant_name && <p className="text-xs text-secondary">{lot.tenant_name}</p>}
-                    </div>
-                    {lot.surface_m2 && <p className="text-xs text-secondary">{lot.surface_m2} m²</p>}
-                    {lot.rent_amount && (
-                      <p className="text-sm financial-value text-accent">
-                        {formatCurrency(lot.rent_amount, 'EUR')}
-                      </p>
-                    )}
-                    <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
-                    <LotEditButton lot={lot} propertyId={prop.id} />
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Historique valorisations */}
-        <div className="lg:col-span-2 card p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-medium text-primary">Historique des estimations</h2>
-            <PropertyValuationActions propertyId={prop.id} surfaceM2={prop.surface_m2} />
-          </div>
-          {!(prop.valuations ?? []).length ? (
-            <p className="text-sm text-secondary">Aucune estimation enregistrée.</p>
-          ) : (
-            <div className="space-y-3">
-              {(prop.valuations ?? []).slice(0, 6).map((v: {
-                id: string; valuation_date: string; value: number;
-                price_per_m2: number | null; confidence: string
-              }, i: number) => {
-                const prev  = (prop.valuations ?? [])[i + 1]
-                const delta = prev ? v.value - prev.value : null
-                return (
-                  <div key={v.id} className="flex items-center justify-between gap-2">
-                    <div>
-                      <p className="text-sm financial-value text-primary">{formatCurrency(v.value, 'EUR', { compact: true })}</p>
-                      <p className="text-xs text-secondary">{formatDate(v.valuation_date, 'medium')}</p>
-                    </div>
-                    {delta !== null && (
-                      <p className={`text-xs flex items-center gap-0.5 ${delta >= 0 ? 'text-accent' : 'text-danger'}`}>
-                        {delta >= 0 ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
-                        {formatCurrency(Math.abs(delta), 'EUR', { compact: true })}
-                      </p>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Charges annuelles */}
-      {charges && (
-        <div className="card p-6">
-          <h2 className="text-sm font-medium text-primary mb-4">
-            Charges {currentYear} · {formatCurrency(annualCharges, 'EUR')} total
-          </h2>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            {[
-              { label: 'Taxe foncière',     value: charges.taxe_fonciere },
-              { label: 'Assurance',         value: charges.insurance },
-              { label: 'Expert-comptable',  value: charges.accountant },
-              { label: 'CFE',               value: charges.cfe },
-              { label: 'Copropriété',       value: charges.condo_fees },
-              { label: 'Entretien',         value: charges.maintenance },
-              { label: 'Autres',            value: charges.other },
-            ].filter((c) => c.value > 0).map((c) => (
-              <div key={c.label}>
-                <p className="text-xs text-secondary">{c.label}</p>
-                <p className="text-sm financial-value text-primary mt-0.5">{formatCurrency(c.value, 'EUR')}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* ── Simulation & Projection ─────────────────────────────────────── */}
-      <div className="border-t border-border pt-8">
-        <SimulationPanel
-          propertyId={prop.id}
-          property={dbProperty}
-          asset={dbAsset}
-          lots={dbLots}
-          charges={dbCharges}
-          debt={dbDebt}
-          profile={dbProfile}
-        />
-      </div>
-
-      {/* ── Suivi réel vs Simulation (Phase 2) ─────────────────────────── */}
-      <div className="border-t border-border pt-8 space-y-6">
-        {driftAlerts.length > 0 && <DriftAlerts alerts={driftAlerts} />}
-        <ActualVsSimulation
-          comparison={comparison}
-          propertyName={prop.asset?.name}
-          assetId={prop.asset_id}
-          debtId={debtRow?.id ?? null}
-          propertyId={prop.id}
-          monthlyRentSuggested={monthlyRents}
-          monthlyPaymentSuggested={simResult.kpis.monthlyPayment > 0 ? simResult.kpis.monthlyPayment : null}
-          existingCharges={(prop.charges ?? []).map((c: {
-            year: number; taxe_fonciere: number; insurance: number; accountant: number;
-            cfe: number; condo_fees: number; maintenance: number; other: number
-          }) => ({
-            year:          c.year,
-            taxe_fonciere: c.taxe_fonciere,
-            insurance:     c.insurance,
-            accountant:    c.accountant,
-            cfe:           c.cfe,
-            condo_fees:    c.condo_fees,
-            maintenance:   c.maintenance,
-            other:         c.other,
-          }))}
-        />
-      </div>
-
-      {/* ── Forecast révisé (Sprint 5) ─────────────────────────────────── */}
-      {!revisedForecast.isEmpty && (
-        <div className="border-t border-border pt-8">
-          <RevisedForecastSection revised={revisedForecast} original={simResult.projection} />
-        </div>
-      )}
-
-      {/* ── Rapport annuel (Sprint 7) ──────────────────────────────────── */}
-      {yearEndReports.length > 0 && (
-        <div className="border-t border-border pt-8">
-          <YearEndReportPanel reports={yearEndReports} />
-        </div>
-      )}
+      <Tabs tabs={tabs} urlParam="tab" />
     </div>
   )
 }
