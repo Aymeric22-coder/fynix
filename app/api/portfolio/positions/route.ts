@@ -51,6 +51,8 @@ interface CreateBody {
   broker?:           string
   acquisition_date?: string
   notes?:            string
+  /** Prix manuel optionnel : si fourni, ajoute une ligne dans instrument_prices. */
+  manual_price?:     number
 }
 
 export const GET = withAuth(async (_req: Request, user: User) => {
@@ -142,5 +144,25 @@ export const POST = withAuth(async (req: Request, user: User) => {
     .single()
 
   if (error) return err(error.message, 500)
+
+  // 3. Si un prix manuel est fourni, on l'insère dans instrument_prices
+  // (append-only, le plus récent l'emporte côté valorisation)
+  if (body.manual_price !== undefined && body.manual_price > 0) {
+    await supabase
+      .from('instrument_prices')
+      .insert({
+        instrument_id: instrumentId!,
+        price:         body.manual_price,
+        currency:      body.currency ?? 'EUR',
+        priced_at:     new Date().toISOString(),
+        source:        'manual',
+        confidence:    'medium',
+      })
+      // Erreur RLS / contrainte → on ne fait pas planter la création de position
+      .then(({ error: priceErr }) => {
+        if (priceErr) console.warn('[positions] manual_price insert failed:', priceErr.message)
+      })
+  }
+
   return ok(data, 201)
 })

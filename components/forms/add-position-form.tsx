@@ -41,6 +41,7 @@ const INITIAL = {
   envelope_id:      '',
   quantity:         undefined as number | undefined,
   average_price:    undefined as number | undefined,
+  manual_price:     undefined as number | undefined,
   currency:         'EUR' as const,
   broker:           '',
   acquisition_date: '',
@@ -75,6 +76,7 @@ export function AddPositionForm({ open, onClose, envelopes, initialData }: Props
           envelope_id:      initialData.envelope_id,
           quantity:         initialData.quantity as number | undefined,
           average_price:    initialData.average_price as number | undefined,
+          manual_price:     undefined as number | undefined,
           currency:         initialData.currency,
           broker:           initialData.broker,
           acquisition_date: initialData.acquisition_date,
@@ -101,6 +103,7 @@ export function AddPositionForm({ open, onClose, envelopes, initialData }: Props
             broker:           v.broker || null,
             acquisition_date: v.acquisition_date || null,
             notes:            v.notes || null,
+            manual_price:     v.manual_price,  // si fourni, ajoute un nouveau prix manuel
           }
         : {
             instrument: {
@@ -117,6 +120,7 @@ export function AddPositionForm({ open, onClose, envelopes, initialData }: Props
             broker:           v.broker || undefined,
             acquisition_date: v.acquisition_date || undefined,
             notes:            v.notes || undefined,
+            manual_price:     v.manual_price,
           }
 
       const res = await fetch(url, {
@@ -306,6 +310,18 @@ export function AddPositionForm({ open, onClose, envelopes, initialData }: Props
               type="date"
               value={values.acquisition_date}
               onChange={(e) => set('acquisition_date', e.target.value)}
+            />
+          </Field>
+
+          <Field
+            label="Prix actuel (manuel)"
+            hint="Optionnel — saisis ici le prix unitaire si Yahoo ne le trouve pas (ETF Amundi PEA, SCPI, etc.)"
+          >
+            <Input
+              type="number" step="any" min={0}
+              value={values.manual_price ?? ''}
+              onChange={(e) => setNumber('manual_price', e.target.value)}
+              placeholder={livePrice ? `Yahoo: ${livePrice.price}` : 'ex: 21,15'}
             />
           </Field>
 

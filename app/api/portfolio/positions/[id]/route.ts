@@ -19,6 +19,8 @@ interface UpdateBody {
   acquisition_date?: string | null
   status?:           PositionStatus
   notes?:            string | null
+  /** Prix manuel à ajouter à instrument_prices (n'écrase pas le PUT classique). */
+  manual_price?:     number
 }
 
 export const PUT = withAuth(async (req: Request, user: User, ctx: RouteContext) => {
@@ -48,6 +50,24 @@ export const PUT = withAuth(async (req: Request, user: User, ctx: RouteContext) 
     .single()
 
   if (error) return err(error.message, 500)
+
+  // Prix manuel optionnel : ajoute une ligne dans instrument_prices
+  if (body.manual_price !== undefined && body.manual_price > 0 && data?.instrument_id) {
+    await supabase
+      .from('instrument_prices')
+      .insert({
+        instrument_id: data.instrument_id as string,
+        price:         body.manual_price,
+        currency:      (body.currency ?? data.currency ?? 'EUR') as string,
+        priced_at:     new Date().toISOString(),
+        source:        'manual',
+        confidence:    'medium',
+      })
+      .then(({ error: priceErr }) => {
+        if (priceErr) console.warn('[positions PUT] manual_price insert failed:', priceErr.message)
+      })
+  }
+
   return ok(data)
 })
 
