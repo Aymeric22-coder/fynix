@@ -4,14 +4,17 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
   LayoutDashboard, Building2, FileText, TrendingUp, PiggyBank,
-  ArrowLeftRight, RefreshCw, Settings, LogOut, ChevronRight,
+  ArrowLeftRight, RefreshCw, Briefcase, Settings, LogOut, ChevronRight,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
 // Migration 006 : la section "Dettes" a ete supprimee. Les credits immobiliers
 // sont desormais geres directement depuis chaque bien (onglet Credit).
+// Migration 007 : nouvelle section "Portefeuille" (universel actions/ETF/crypto/SCPI…).
+// Les anciennes pages /financier et /scpi restent disponibles pendant la transition.
 const NAV = [
   { href: '/dashboard',    label: 'Dashboard',     icon: LayoutDashboard },
+  { href: '/portefeuille', label: 'Portefeuille',  icon: Briefcase },
   { href: '/immobilier',   label: 'Immobilier',    icon: Building2 },
   { href: '/scpi',         label: 'SCPI',          icon: FileText },
   { href: '/financier',    label: 'Financier',     icon: TrendingUp },

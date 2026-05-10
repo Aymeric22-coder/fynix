@@ -91,3 +91,44 @@ export const ASSET_TYPE_COLORS: Record<string, string> = {
   cash:        '#8b5cf6',
   other:       '#6b7280',
 }
+
+// Migration 007 — labels pour la nouvelle classification asset_class
+export const ASSET_CLASS_LABELS: Record<string, string> = {
+  equity:         'Action',
+  etf:            'ETF',
+  fund:           'Fonds',
+  crypto:         'Crypto',
+  scpi:           'SCPI',
+  reit:           'REIT',
+  bond:           'Obligation',
+  metal:          'Métal',
+  private_equity: 'Private Equity',
+  crowdfunding:   'Crowdfunding',
+  private_debt:   'Dette privée',
+  structured:     'Produit structuré',
+  opci:           'OPCI',
+  siic:           'SIIC',
+  derivative:     'Dérivé',
+  defi:           'DeFi',
+  other:          'Autre',
+}
+
+export const ASSET_CLASS_COLORS: Record<string, string> = {
+  equity:         '#3b82f6',
+  etf:            '#60a5fa',
+  fund:           '#818cf8',
+  crypto:         '#f59e0b',
+  scpi:           '#10b981',
+  reit:           '#14b8a6',
+  bond:           '#6366f1',
+  metal:          '#fbbf24',
+  private_equity: '#a855f7',
+  crowdfunding:   '#ec4899',
+  private_debt:   '#8b5cf6',
+  structured:     '#06b6d4',
+  opci:           '#22d3ee',
+  siic:           '#34d399',
+  derivative:     '#f97316',
+  defi:           '#eab308',
+  other:          '#6b7280',
+}
