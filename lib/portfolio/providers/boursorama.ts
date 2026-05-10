@@ -101,34 +101,59 @@ export class BoursoramaProvider implements PortfolioPriceProvider {
     }
   }
 
-  /**
-   * Extrait le prix et la devise depuis le HTML d'une fiche cotation Boursorama.
-   *
-   * Format 2024 (verifie en prod) :
-   *   <span class="c-instrument c-instrument--last" data-ist-last>99,09</span>
-   *   <span class="c-instrument c-instrument--currency">EUR</span>
-   *
-   * Note : data-ist-last est present sans valeur (attribut vide), le contenu
-   * du span lui-meme porte le prix. La virgule francaise est convertie en
-   * point pour parseFloat.
-   */
   private parsePrice(html: string): { price: number; currency: CurrencyCode } | null {
-    // Prix : span class="c-instrument c-instrument--last">PRIX</span>
-    const priceMatch = html.match(
-      /class="[^"]*c-instrument--last[^"]*"[^>]*>\s*([0-9][0-9 ]*[.,][0-9]+)/,
-    )
-    if (!priceMatch || !priceMatch[1]) return null
-
-    const raw   = priceMatch[1].replace(/\s/g, '').replace(',', '.')
-    const price = parseFloat(raw)
-    if (!isFinite(price) || price <= 0) return null
-
-    // Devise : essaie plusieurs sélecteurs, défaut EUR (place française)
-    const currMatch =
-      html.match(/class="[^"]*c-instrument--currency[^"]*"[^>]*>\s*([A-Z]{3})/) ||
-      html.match(/[0-9][0-9 ]*[.,][0-9]+\s*<\/?\w*[^>]*>\s*([A-Z]{3})/)
-    const currency = toCurrency(currMatch?.[1])
-
-    return { price, currency }
+    return parseBoursoramaHtml(html)
   }
+}
+
+/**
+ * Extrait le prix et la devise depuis le HTML d'une fiche cotation Boursorama.
+ * Exposé en top-level pour pouvoir être unit-testé.
+ *
+ * Format Boursorama 2024 (vérifié en prod) :
+ *   <span class="c-instrument c-instrument--last" data-ist-last>99,09</span>
+ *   <span class="c-instrument c-instrument--currency">EUR</span>
+ *
+ * Note : `data-ist-last` est présent SANS valeur (attribut vide), le contenu
+ * du span lui-même porte le prix. La virgule française est convertie en
+ * point pour parseFloat. Espaces (séparateurs de milliers) supprimés.
+ */
+export function parseBoursoramaHtml(html: string): { price: number; currency: CurrencyCode } | null {
+  // Plusieurs patterns testés dans l'ordre, premier match gagne :
+
+  // 1. Pattern principal : class contenant c-instrument--last
+  let priceMatch = html.match(
+    /class="[^"]*c-instrument--last[^"]*"[^>]*>\s*([0-9][0-9   ]*[.,][0-9]+)/,
+  )
+
+  // 2. Fallback : ordre des classes inversé (Boursorama varie parfois)
+  if (!priceMatch) {
+    priceMatch = html.match(
+      /class="c-instrument--last[^"]*"[^>]*>\s*([0-9][0-9   ]*[.,][0-9]+)/,
+    )
+  }
+
+  // 3. Fallback : data-ist-last avec valeur (ancien format)
+  if (!priceMatch) {
+    priceMatch = html.match(/data-ist-last="([0-9][0-9.,   ]*)"/)
+  }
+
+  // 4. Fallback ultime : regex avec PRIX suivi de "EUR" (peut faire un faux positif sur graphes)
+  if (!priceMatch) {
+    priceMatch = html.match(/>\s*([0-9][0-9   ]*[.,][0-9]{2,4})\s*<\/?\w*[^>]*>\s*EUR/)
+  }
+
+  if (!priceMatch || !priceMatch[1]) return null
+
+  const raw   = priceMatch[1].replace(/[\s  ]/g, '').replace(',', '.')
+  const price = parseFloat(raw)
+  if (!isFinite(price) || price <= 0) return null
+
+  // Devise : c-instrument--currency, fallback EUR (page française par défaut)
+  const currMatch =
+    html.match(/class="[^"]*c-instrument--currency[^"]*"[^>]*>\s*([A-Z]{3})/) ||
+    html.match(/class="c-instrument--currency[^"]*"[^>]*>\s*([A-Z]{3})/)
+  const currency = toCurrency(currMatch?.[1])
+
+  return { price, currency }
 }
