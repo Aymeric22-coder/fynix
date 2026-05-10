@@ -7,6 +7,7 @@
 
 import { CoinGeckoProvider } from './coingecko'
 import { YahooPortfolioProvider } from './yahoo'
+import { BoursoramaProvider } from './boursorama'
 import { PriceOrchestrator, type ProviderConfig } from './orchestrator'
 import type { AssetClass } from '@/types/database.types'
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -15,6 +16,7 @@ export type { PriceQuote, InstrumentLookup, PortfolioPriceProvider } from './typ
 export { PriceOrchestrator, type ProviderConfig } from './orchestrator'
 export { YahooPortfolioProvider } from './yahoo'
 export { CoinGeckoProvider } from './coingecko'
+export { BoursoramaProvider } from './boursorama'
 
 /**
  * Charge la config DB et instancie l'orchestrateur prêt à l'emploi.
@@ -55,6 +57,8 @@ function instantiate(
   switch (cfg.code) {
     case 'yahoo':
       return new YahooPortfolioProvider()
+    case 'boursorama':
+      return new BoursoramaProvider()
     case 'coingecko': {
       const key = raw.api_key_env ? process.env[raw.api_key_env] : undefined
       return new CoinGeckoProvider(key)
