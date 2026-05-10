@@ -33,7 +33,7 @@ function makeActual(p: Partial<ActualYearData> = {}): ActualYearData {
 
 const SCHEDULE_2024: AmortizationSchedule = {
   monthlyPayment: 600, monthlyInsurance: 17, totalMonthly: 617,
-  totalInterest: 0, totalCost: 0,
+  totalInterest: 0, totalInsurance: 0, totalFees: 0, totalCost: 0, aprPct: 0,
   months: [],
   years: [
     { year: 1, interest: 4_000, principal: 3_000, insurance: 200, totalPayment: 7_000, remainingCapital: 127_000 },

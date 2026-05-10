@@ -59,6 +59,13 @@ export interface DbDebt {
   bank_fees:         number | null
   guarantee_fees:    number | null
   amortization_type: string | null
+  // ── Migration 005 (déjà présent en table) ──
+  deferral_type?:    string | null
+  deferral_months?:  number | null
+  // ── Migration 006 ──
+  insurance_base?:   string | null
+  insurance_quotite?: number | null
+  guarantee_type?:   string | null
 }
 
 /** Sous-ensemble de `real_estate_lots` Row */
@@ -148,6 +155,18 @@ export function buildSimulationInputFromDb(
       ...(debt.guarantee_fees != null ? { guaranteeFees: debt.guarantee_fees } : {}),
       ...(debt.amortization_type
         ? { amortizationType: debt.amortization_type as 'constant' | 'linear' | 'in_fine' }
+        : {}),
+      // ── Migration 005 : différé ──
+      ...(debt.deferral_type
+        ? { deferralType: debt.deferral_type as 'none' | 'partial' | 'total' }
+        : {}),
+      ...(debt.deferral_months != null ? { deferralMonths: debt.deferral_months } : {}),
+      // ── Migration 006 : assurance enrichie ──
+      ...(debt.insurance_base
+        ? { insuranceBase: debt.insurance_base as 'capital_initial' | 'capital_remaining' }
+        : {}),
+      ...(debt.insurance_quotite != null
+        ? { insuranceQuotitePct: debt.insurance_quotite }
         : {}),
     }
   }
