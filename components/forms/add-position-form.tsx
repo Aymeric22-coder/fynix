@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Search } from 'lucide-react'
+import { Search, Plus } from 'lucide-react'
 import { Modal }  from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
 import { Field, Input, Select, Textarea, FormGrid, FormSection } from '@/components/ui/field'
+import { AddEnvelopeForm } from '@/components/forms/add-envelope-form'
 import { useForm } from '@/hooks/use-form'
 import { formatCurrency, ASSET_CLASS_LABELS } from '@/lib/utils/format'
 import type { AssetClass, FinancialEnvelope } from '@/types/database.types'
@@ -58,6 +59,11 @@ export function AddPositionForm({ open, onClose, envelopes, initialData }: Props
 
   const [livePrice, setLivePrice]     = useState<{ price: number; currency: string } | null>(null)
   const [priceLoading, setPriceLoading] = useState(false)
+  const [envelopeModal, setEnvelopeModal] = useState(false)
+  // Liste locale d'envelopes : on ajoute la nouvelle créée à la volée
+  const [localEnvelopes, setLocalEnvelopes] = useState(envelopes)
+  // Sync si la prop change (router.refresh côté parent)
+  useEffect(() => { setLocalEnvelopes(envelopes) }, [envelopes])
 
   const { values, set, setNumber, loading, error, handleSubmit, reset } = useForm({
     initialValues: initialData
@@ -261,12 +267,21 @@ export function AddPositionForm({ open, onClose, envelopes, initialData }: Props
           </FormGrid>
           <FormGrid>
             <Field label="Enveloppe">
-              <Select value={values.envelope_id} onChange={(e) => set('envelope_id', e.target.value)}>
-                <option value="">— Détention directe —</option>
-                {envelopes.map((env) => (
-                  <option key={env.id} value={env.id}>{env.name}</option>
-                ))}
-              </Select>
+              <div className="space-y-1.5">
+                <Select value={values.envelope_id} onChange={(e) => set('envelope_id', e.target.value)}>
+                  <option value="">— Détention directe —</option>
+                  {localEnvelopes.map((env) => (
+                    <option key={env.id} value={env.id}>{env.name}</option>
+                  ))}
+                </Select>
+                <button
+                  type="button"
+                  onClick={() => setEnvelopeModal(true)}
+                  className="flex items-center gap-1 text-xs text-accent hover:text-accent/80 transition-colors"
+                >
+                  <Plus size={11} /> Nouvelle enveloppe (PEA, AV, CTO…)
+                </button>
+              </div>
             </Field>
             <Field label="Courtier">
               <Input
@@ -309,6 +324,21 @@ export function AddPositionForm({ open, onClose, envelopes, initialData }: Props
           <Button type="submit" loading={loading}>{isEdit ? 'Enregistrer' : 'Ajouter la position'}</Button>
         </div>
       </form>
+
+      <AddEnvelopeForm
+        open={envelopeModal}
+        onClose={() => setEnvelopeModal(false)}
+        onCreated={(env) => {
+          // Ajoute localement et auto-sélectionne la nouvelle enveloppe
+          setLocalEnvelopes((prev) => [...prev, {
+            id:            env.id,
+            name:          env.name,
+            envelope_type: env.envelope_type,
+            broker:        env.broker,
+          } as Pick<FinancialEnvelope, 'id' | 'name' | 'envelope_type' | 'broker'>])
+          set('envelope_id', env.id)
+        }}
+      />
     </Modal>
   )
 }
