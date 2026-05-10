@@ -23,7 +23,8 @@ export class YahooPortfolioProvider implements PortfolioPriceProvider {
     const ticker = instrument.providerId ?? instrument.ticker
     if (!ticker) return null
 
-    const q = await this.inner.getQuote(ticker)
+    // L'ISIN sert de fallback si le ticker brut n'est pas trouvé chez Yahoo
+    const q = await this.inner.getQuote(ticker, instrument.isin ?? undefined)
     if (!q) return null
 
     return {

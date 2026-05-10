@@ -57,7 +57,7 @@ export function AddPositionForm({ open, onClose, envelopes, initialData }: Props
   const router = useRouter()
   const isEdit = !!initialData
 
-  const [livePrice, setLivePrice]     = useState<{ price: number; currency: string } | null>(null)
+  const [livePrice, setLivePrice]     = useState<{ price: number; currency: string; resolvedTicker: string } | null>(null)
   const [priceLoading, setPriceLoading] = useState(false)
   const [envelopeModal, setEnvelopeModal] = useState(false)
   // Liste locale d'envelopes : on ajoute la nouvelle créée à la volée
@@ -131,10 +131,12 @@ export function AddPositionForm({ open, onClose, envelopes, initialData }: Props
     onSuccess() { reset(); setLivePrice(null); onClose(); router.refresh() },
   })
 
-  // Lookup live du prix via Yahoo Finance quand le ticker change
+  // Lookup live du prix via Yahoo Finance quand le ticker ou l'ISIN change.
+  // L'ISIN est utilisé en fallback si le ticker brut n'est pas trouvé (ex: NKT4 → NKT4.PA).
   useEffect(() => {
     if (isEdit) return  // pas de lookup en mode édition (ticker non modifiable)
     const ticker = values.ticker.trim().toUpperCase()
+    const isin   = values.isin.trim().toUpperCase()
     if (!ticker || ticker.length < 2) {
       setLivePrice(null)
       return
@@ -142,10 +144,15 @@ export function AddPositionForm({ open, onClose, envelopes, initialData }: Props
     const handle = setTimeout(async () => {
       setPriceLoading(true)
       try {
-        const res  = await fetch(`/api/prices/${encodeURIComponent(ticker)}`)
+        const url = `/api/prices/${encodeURIComponent(ticker)}${isin ? `?isin=${encodeURIComponent(isin)}` : ''}`
+        const res  = await fetch(url)
         const json = await res.json()
         if (json.data?.price) {
-          setLivePrice({ price: json.data.price, currency: json.data.currency ?? 'USD' })
+          setLivePrice({
+            price:          json.data.price,
+            currency:       json.data.currency ?? 'USD',
+            resolvedTicker: json.data.ticker ?? ticker,
+          })
         } else {
           setLivePrice(null)
         }
@@ -156,7 +163,7 @@ export function AddPositionForm({ open, onClose, envelopes, initialData }: Props
       }
     }, 700)
     return () => clearTimeout(handle)
-  }, [values.ticker, isEdit])
+  }, [values.ticker, values.isin, isEdit])
 
   const investedTotal = values.quantity && values.average_price
     ? values.quantity * values.average_price
@@ -217,7 +224,7 @@ export function AddPositionForm({ open, onClose, envelopes, initialData }: Props
             </FormGrid>
 
             {values.ticker && (
-              <div className="bg-surface-2 rounded-lg px-4 py-3 text-sm flex items-center gap-2">
+              <div className="bg-surface-2 rounded-lg px-4 py-3 text-sm flex items-center gap-2 flex-wrap">
                 {priceLoading
                   ? <>
                       <span className="w-3 h-3 border-2 border-accent border-t-transparent rounded-full animate-spin" />
@@ -227,8 +234,11 @@ export function AddPositionForm({ open, onClose, envelopes, initialData }: Props
                     ? <>
                         <span className="text-secondary">Prix actuel ({livePrice.currency}) :</span>
                         <span className="text-accent font-medium financial-value">{formatCurrency(livePrice.price, livePrice.currency)}</span>
+                        {livePrice.resolvedTicker !== values.ticker.trim().toUpperCase() && (
+                          <span className="text-xs text-muted">via {livePrice.resolvedTicker}</span>
+                        )}
                       </>
-                    : <span className="text-muted">Prix non trouvé — vérifie le ticker</span>
+                    : <span className="text-muted">Prix non trouvé {values.isin ? '(même avec ISIN)' : '— ajoute l\'ISIN pour aider la recherche'}</span>
                 }
               </div>
             )}

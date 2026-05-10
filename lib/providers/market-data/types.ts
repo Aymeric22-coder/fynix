@@ -23,6 +23,7 @@ export interface OHLCV {
 export interface MarketProvider {
   getName(): string
   isAvailable(): Promise<boolean>
-  getQuote(ticker: string): Promise<Quote | null>
+  /** Le `isin` est un fallback de résolution quand le ticker ne suffit pas. */
+  getQuote(ticker: string, isin?: string): Promise<Quote | null>
   getHistory(ticker: string, from: Date, to: Date): Promise<OHLCV[]>
 }

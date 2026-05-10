@@ -8,13 +8,13 @@ import type { Quote, OHLCV, MarketProvider } from './types'
 // Providers actifs — ajouter Alpha Vantage, Polygon ici en Phase 2
 const PRIMARY: MarketProvider = new YahooFinanceProvider()
 
-export async function getQuote(ticker: string): Promise<Quote | null> {
+export async function getQuote(ticker: string, isin?: string): Promise<Quote | null> {
   // 1. Cache (mémoire + DB)
   const cached = await getCachedQuote(ticker)
   if (cached) return cached
 
-  // 2. Provider primaire
-  const quote = await PRIMARY.getQuote(ticker)
+  // 2. Provider primaire (avec fallback ISIN si fourni)
+  const quote = await PRIMARY.getQuote(ticker, isin)
   if (quote) {
     await setCachedQuote(quote)
     return quote

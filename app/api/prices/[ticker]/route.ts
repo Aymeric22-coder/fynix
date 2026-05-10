@@ -29,7 +29,9 @@ export const GET = withAuth(async (req: Request, _user: User, ctx: Ctx) => {
   }
 
   // Mode quote (défaut)
-  const quote = await getQuote(ticker.toUpperCase())
+  // Le `isin` optionnel permet de résoudre un ticker ambigu (ex: NKT4 → NKT4.PA)
+  const isin = searchParams.get('isin')?.trim().toUpperCase()
+  const quote = await getQuote(ticker.toUpperCase(), isin || undefined)
 
   if (!quote) {
     return err(`No price available for ${ticker}`, 404)
