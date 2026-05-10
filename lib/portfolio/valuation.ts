@@ -104,6 +104,7 @@ function valueSinglePosition(
   let priceFresh = false
   let confidence: ConfidenceLevel = 'low'
   let priceFreshAt: string | null = null
+  let priceSource:  string | null = null
 
   if (price && price.price > 0) {
     const factor = fx(price.currency, pos.currency)
@@ -111,6 +112,7 @@ function valueSinglePosition(
       currentPriceLocal = price.price * factor
     }
     priceFreshAt = price.pricedAt
+    priceSource  = price.source
     confidence   = price.confidence
     const ageMs  = nowMs - new Date(price.pricedAt).getTime()
     priceFresh   = ageMs >= 0 && ageMs <= FRESH_THRESHOLD_MS
@@ -141,6 +143,7 @@ function valueSinglePosition(
     marketValue,
     unrealizedPnL,
     unrealizedPnLPct,
+    priceSource,
     status:           pos.status,
   }
 }

@@ -72,6 +72,8 @@ export interface PositionValuation {
   unrealizedPnL:     number | null
   /** Plus / moins-value latente en %. */
   unrealizedPnLPct:  number | null
+  /** Source du prix actuel : 'boursorama' | 'yahoo' | 'manual' | … null si pas de prix. */
+  priceSource:       string | null
   /** Statut de la position. */
   status:            PositionStatus
 }

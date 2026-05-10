@@ -3,12 +3,16 @@
 export function formatCurrency(
   value: number | null | undefined,
   currency = 'EUR',
-  options?: { compact?: boolean; sign?: boolean },
+  options?: { compact?: boolean; sign?: boolean; decimals?: number },
 ): string {
   if (value === null || value === undefined) return '—'
 
   const abs = Math.abs(value)
   let formatted: string
+
+  // Précision par défaut : 0 si compact (M/k), 2 sinon
+  const defaultDecimals = options?.compact ? undefined : 2
+  const decimals        = options?.decimals ?? defaultDecimals ?? 0
 
   if (options?.compact && abs >= 1_000_000) {
     formatted = (value / 1_000_000).toLocaleString('fr-FR', {
@@ -22,8 +26,8 @@ export function formatCurrency(
     }) + ' k'
   } else {
     formatted = value.toLocaleString('fr-FR', {
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
     })
   }
 

@@ -212,10 +212,12 @@ export default async function PortefeuillePage() {
                         {formatQuantity(p.quantity, 8)}
                       </td>
                       <td className="px-4 py-3 text-right financial-value text-secondary">
-                        {formatCurrency(p.averagePrice, p.currency)}
+                        {formatCurrency(p.averagePrice, p.currency, { decimals: 2 })}
                       </td>
                       <td className="px-4 py-3 text-right financial-value">
-                        {p.currentPrice !== null ? formatCurrency(p.currentPrice, p.currency) : <span className="text-muted">—</span>}
+                        {p.currentPrice !== null
+                          ? formatCurrency(p.currentPrice, p.currency, { decimals: 2 })
+                          : <span className="text-muted">—</span>}
                       </td>
                       <td className="px-4 py-3 text-right financial-value font-medium text-primary">
                         {p.marketValue !== null ? formatCurrency(p.marketValue, p.currency, { compact: true }) : <span className="text-muted">—</span>}
@@ -236,8 +238,18 @@ export default async function PortefeuillePage() {
                       </td>
                       <td className="px-4 py-3 text-right">
                         {p.priceFreshAt ? (
-                          <div className={`text-xs ${p.priceStale ? 'text-warning' : 'text-secondary'}`}>
-                            {formatDate(p.priceFreshAt, 'short')}
+                          <div title={p.priceSource ? `Source : ${p.priceSource}` : undefined}>
+                            <div className={`text-xs ${p.priceStale ? 'text-warning' : 'text-secondary'}`}>
+                              {new Date(p.priceFreshAt).toLocaleString('fr-FR', {
+                                day: '2-digit', month: '2-digit',
+                                hour: '2-digit', minute: '2-digit',
+                              })}
+                            </div>
+                            {p.priceSource && (
+                              <div className="text-[10px] text-muted leading-none mt-0.5">
+                                {p.priceSource}
+                              </div>
+                            )}
                           </div>
                         ) : <span className="text-muted text-xs">jamais</span>}
                       </td>
