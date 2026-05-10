@@ -37,19 +37,36 @@ export const GET = withAuth(async (req: Request, _user: User) => {
     const symMatch    = finalUrl.match(/\/cours\/([^/?#]+)\/?/)
     const symbol      = symMatch?.[1] ?? null
 
-    const h1Match     = html.match(/<h1[^>]*>\s*([0-9][0-9 ]*[.,][0-9]+)\s*([A-Z]{3})\s*<\/h1>/)
-    const h1Price     = h1Match?.[1] ?? null
-    const h1Currency  = h1Match?.[2] ?? null
-
-    const dataIstLast = html.match(/data-ist-last="([0-9.,]+)"/)?.[1] ?? null
-
     const linkMatch   = html.match(/href="([^"]*\/cours\/[^/"?#]+\/?)"/)?.[1] ?? null
+
+    // Tentatives multiples de pattern pour le prix
+    const patterns: Record<string, string | null> = {
+      data_ist_last:        html.match(/data-ist-last="([0-9.,]+)"/)?.[1] ?? null,
+      c_instrument_last:    html.match(/class="[^"]*c-instrument--last[^"]*"[^>]*>\s*([0-9][0-9 ]*[.,][0-9]+)/)?.[1] ?? null,
+      c_faceplate_price:    html.match(/class="[^"]*c-faceplate__price[^"]*"[^>]*>\s*([0-9][0-9 ]*[.,][0-9]+)/)?.[1] ?? null,
+      json_ld_price:        html.match(/"price"\s*:\s*"?([0-9.]+)"?/)?.[1] ?? null,
+      og_price_amount:      html.match(/<meta[^>]*property="og:price:amount"[^>]*content="([0-9.]+)"/)?.[1] ?? null,
+      itemprop_price:       html.match(/itemprop="price"[^>]*content="([0-9.]+)"/)?.[1] ?? null,
+      data_price:           html.match(/data-price="([0-9.,]+)"/)?.[1] ?? null,
+      // Cherche un nombre format prix juste après une mention "EUR" ou avant
+      eur_followed:         html.match(/([0-9][0-9 ]{0,3}[.,][0-9]{2,4})\s*<\/?\w*[^>]*>\s*EUR/)?.[1] ?? null,
+    }
 
     // Détection blocage anti-bot fréquent
     const looksBlocked = html.includes('Cloudflare') ||
                          html.includes('captcha') ||
                          html.includes('Access denied') ||
                          status === 403
+
+    // Trouve toutes les occurrences "c-instrument" pour voir la structure
+    const cInstrumentSnippets: string[] = []
+    let searchIdx = 0
+    while (cInstrumentSnippets.length < 3) {
+      const idx = html.indexOf('c-instrument', searchIdx)
+      if (idx === -1) break
+      cInstrumentSnippets.push(html.slice(Math.max(0, idx - 50), idx + 250))
+      searchIdx = idx + 12
+    }
 
     return ok({
       query,
@@ -62,14 +79,11 @@ export const GET = withAuth(async (req: Request, _user: User) => {
       },
       extraction: {
         symbol,
-        h1Price,
-        h1Currency,
-        dataIstLast,
         firstCoursLink: linkMatch,
         looksBlocked,
+        patterns,
       },
-      htmlPreview: html.slice(0, 500),
-      htmlAroundH1: html.includes('<h1') ? html.slice(Math.max(0, html.indexOf('<h1') - 100), html.indexOf('<h1') + 400) : null,
+      cInstrumentSnippets,
     })
   } catch (e) {
     return err(`Fetch failed: ${e instanceof Error ? e.message : String(e)}`, 500)
