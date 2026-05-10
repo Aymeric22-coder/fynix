@@ -54,15 +54,14 @@ export default async function ImmobilierDetailPage({ params }: Props) {
 
   if (!prop) notFound()
 
-  // ── Crédit lié à cet asset (s'il existe) — incluant champs migration 006
+  // ── Crédit lié à cet asset (s'il existe) ───────────────────────────────
+  // Note : on utilise select('*') plutôt que de lister les colonnes
+  // explicitement, pour tolérer un environnement où la migration 006
+  // n'est pas encore appliquée (insurance_base / quotite / guarantee_type
+  // seront undefined dans la row, gérés par les ?? defaults plus bas).
   const { data: debtRow } = await supabase
     .from('debts')
-    .select(`
-      id, name, lender, initial_amount, interest_rate, insurance_rate,
-      duration_months, start_date, deferral_type, deferral_months,
-      bank_fees, guarantee_fees, amortization_type,
-      insurance_base, insurance_quotite, guarantee_type, notes
-    `)
+    .select('*')
     .eq('asset_id', prop.asset_id)
     .eq('user_id', user!.id)
     .eq('status', 'active')
