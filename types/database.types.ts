@@ -28,6 +28,14 @@ export type CurrencyCode = 'EUR' | 'USD' | 'GBP' | 'CHF' | 'JPY' | 'BTC' | 'ETH'
 export type DcaStatus = 'pending' | 'validated' | 'skipped' | 'cancelled'
 export type AuditAction = 'INSERT' | 'UPDATE' | 'DELETE'
 
+// ── Migration 007 — Portefeuille universel ─────────────────────
+export type AssetClass =
+  | 'equity' | 'etf' | 'fund' | 'crypto' | 'scpi' | 'reit' | 'bond' | 'metal'
+  | 'private_equity' | 'crowdfunding' | 'private_debt' | 'structured'
+  | 'opci' | 'siic' | 'derivative' | 'defi' | 'other'
+
+export type PositionStatus = 'active' | 'closed' | 'pending'
+
 // ─── Row types ────────────────────────────────────────────────────────────────
 
 export interface Profile {
@@ -74,6 +82,12 @@ export interface Transaction {
   data_source: DataSource
   external_ref: string | null
   created_at: string
+  // ── Migration 007 — Portefeuille universel ──
+  position_id: string | null
+  instrument_id: string | null
+  quantity: number | null
+  unit_price: number | null
+  fees: number
 }
 
 export interface Debt {
@@ -438,3 +452,75 @@ export type DcaPlanInsert = Omit<DcaPlan, 'id' | 'created_at' | 'updated_at'>
 export type DcaPlanUpdate = Partial<Omit<DcaPlanInsert, 'user_id'>>
 
 export type DcaOccurrenceInsert = Omit<DcaOccurrence, 'id' | 'created_at' | 'updated_at'>
+
+// ─── Migration 007 — Portefeuille universel ──────────────────────────────────
+
+export interface Instrument {
+  id: string
+  name: string
+  ticker: string | null
+  isin: string | null
+  asset_class: AssetClass
+  asset_subclass: string | null
+  currency: CurrencyCode
+  sector: string | null
+  geography: string | null
+  provider_id: string | null
+  data_source: DataSource
+  metadata: Json
+  created_at: string
+  updated_at: string
+}
+
+export interface Position {
+  id: string
+  user_id: string
+  instrument_id: string
+  envelope_id: string | null
+  quantity: number
+  average_price: number
+  currency: CurrencyCode
+  broker: string | null
+  acquisition_date: string | null
+  status: PositionStatus
+  notes: string | null
+  metadata: Json
+  created_at: string
+  updated_at: string
+}
+
+export interface InstrumentPrice {
+  id: string
+  instrument_id: string
+  price: number
+  currency: CurrencyCode
+  priced_at: string
+  source: string
+  confidence: ConfidenceLevel
+  metadata: Json
+  created_at: string
+}
+
+export interface PriceProvider {
+  id: string
+  code: string
+  display_name: string
+  api_key_env: string | null
+  is_active: boolean
+  priority: number
+  supported_classes: AssetClass[]
+  rate_limit_per_minute: number | null
+  base_url: string | null
+  notes: string | null
+  metadata: Json
+  created_at: string
+  updated_at: string
+}
+
+export type InstrumentInsert = Omit<Instrument, 'id' | 'created_at' | 'updated_at'>
+export type InstrumentUpdate = Partial<InstrumentInsert>
+
+export type PositionInsert = Omit<Position, 'id' | 'created_at' | 'updated_at'>
+export type PositionUpdate = Partial<Omit<PositionInsert, 'user_id' | 'instrument_id'>>
+
+export type InstrumentPriceInsert = Omit<InstrumentPrice, 'id' | 'created_at'>
