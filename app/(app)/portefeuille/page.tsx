@@ -116,12 +116,26 @@ export default async function PortefeuillePage() {
               <p className="text-xs text-secondary uppercase tracking-widest flex items-center gap-1">
                 <TrendingUp size={11} /> Plus-value latente
               </p>
-              <p className={`text-xl font-semibold financial-value mt-2 ${summary.totalUnrealizedPnL >= 0 ? 'text-accent' : 'text-danger'}`}>
-                {formatCurrency(summary.totalUnrealizedPnL, summary.referenceCurrency, { compact: true, sign: true })}
-              </p>
-              <p className={`text-xs mt-1 ${summary.totalUnrealizedPnL >= 0 ? 'text-accent' : 'text-danger'}`}>
-                {formatPercent(summary.totalUnrealizedPnLPct, { sign: true })}
-              </p>
+              {summary.totalUnrealizedPnL === null ? (
+                <>
+                  <p className="text-xl font-semibold financial-value text-muted mt-2">—</p>
+                  <p className="text-xs text-secondary mt-1">en attente de prix</p>
+                </>
+              ) : (
+                <>
+                  <p className={`text-xl font-semibold financial-value mt-2 ${summary.totalUnrealizedPnL >= 0 ? 'text-accent' : 'text-danger'}`}>
+                    {formatCurrency(summary.totalUnrealizedPnL, summary.referenceCurrency, { compact: true, sign: true })}
+                  </p>
+                  <p className={`text-xs mt-1 ${summary.totalUnrealizedPnL >= 0 ? 'text-accent' : 'text-danger'}`}>
+                    {formatPercent(summary.totalUnrealizedPnLPct, { sign: true })}
+                    {summary.valuedPositionsCount < summary.positionsCount && (
+                      <span className="text-muted ml-1.5">
+                        · sur {summary.valuedPositionsCount}/{summary.positionsCount} valorisée{summary.valuedPositionsCount > 1 ? 's' : ''}
+                      </span>
+                    )}
+                  </p>
+                </>
+              )}
             </div>
 
             <div className="card p-5">

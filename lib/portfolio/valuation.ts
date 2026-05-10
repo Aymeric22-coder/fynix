@@ -157,12 +157,12 @@ function aggregate(
   // On filtre sur les positions actives pour les agrégats financiers.
   const actives = valuations.filter((v) => v.status === 'active')
 
-  let totalCostBasisRef   = 0
-  let totalMarketValueRef = 0
-  let freshCount          = 0
-  let valuedCount         = 0
+  let totalCostBasisRef       = 0  // toutes positions actives (capital investi)
+  let totalCostBasisValuedRef = 0  // positions avec un prix (base pour +/-)
+  let totalMarketValueRef     = 0
+  let freshCount              = 0
+  let valuedCount             = 0
 
-  // Agrégats par dimension (en devise de référence)
   const byClass    = new Map<AssetClass, number>()
   const byEnvelope = new Map<string | null, number>()
 
@@ -170,11 +170,13 @@ function aggregate(
     const factor = fx(v.currency, ref)
     if (factor === null) continue  // impossible de convertir → on saute
 
-    totalCostBasisRef += v.costBasis * factor
+    const costRef = v.costBasis * factor
+    totalCostBasisRef += costRef
 
     if (v.marketValue !== null) {
       const mv = v.marketValue * factor
-      totalMarketValueRef += mv
+      totalMarketValueRef     += mv
+      totalCostBasisValuedRef += costRef
       valuedCount++
       if (!v.priceStale) freshCount++
       byClass.set(v.assetClass, (byClass.get(v.assetClass) ?? 0) + mv)
@@ -182,9 +184,14 @@ function aggregate(
     }
   }
 
-  const totalUnrealizedPnL = totalMarketValueRef - totalCostBasisRef
+  // +/- latente : SEULEMENT sur les positions valorisées, sinon null
+  // (on ne peut pas inventer une perte sur un titre dont on ignore le prix)
+  const totalUnrealizedPnL =
+    valuedCount > 0 ? totalMarketValueRef - totalCostBasisValuedRef : null
   const totalUnrealizedPnLPct =
-    totalCostBasisRef > 0 ? (totalUnrealizedPnL / totalCostBasisRef) * 100 : 0
+    valuedCount > 0 && totalCostBasisValuedRef > 0
+      ? ((totalMarketValueRef - totalCostBasisValuedRef) / totalCostBasisValuedRef) * 100
+      : null
 
   const allocationByClass = Array.from(byClass.entries())
     .map(([assetClass, value]) => ({
@@ -204,7 +211,9 @@ function aggregate(
 
   return {
     positionsCount:        actives.length,
+    valuedPositionsCount:  valuedCount,
     totalCostBasis:        totalCostBasisRef,
+    totalCostBasisValued:  totalCostBasisValuedRef,
     totalMarketValue:      totalMarketValueRef,
     totalUnrealizedPnL,
     totalUnrealizedPnLPct,

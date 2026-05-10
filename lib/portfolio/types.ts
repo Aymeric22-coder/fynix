@@ -80,14 +80,23 @@ export interface PositionValuation {
 export interface PortfolioSummary {
   /** Nombre de positions actives. */
   positionsCount:        number
-  /** Cost basis total (toutes positions actives, devise référence). */
+  /** Nombre de positions actives qui ont un prix de marché. */
+  valuedPositionsCount:  number
+  /** Cost basis total (TOUTES positions actives — capital réellement investi). */
   totalCostBasis:        number
-  /** Market value total (toutes positions actives valorisées, devise ref). */
+  /** Cost basis des positions valorisées uniquement (utilisé pour la +/-). */
+  totalCostBasisValued:  number
+  /** Market value total (positions valorisées seulement). */
   totalMarketValue:      number
-  /** Plus / moins-value latente cumulée (devise ref). */
-  totalUnrealizedPnL:    number
-  /** Plus / moins-value latente cumulée en %. */
-  totalUnrealizedPnLPct: number
+  /**
+   * Plus / moins-value latente cumulée (devise ref).
+   * Calculée UNIQUEMENT sur les positions valorisées : on ne peut pas
+   * inventer une perte sur une position dont on ne connaît pas le prix.
+   * null si aucune position n'a de prix.
+   */
+  totalUnrealizedPnL:    number | null
+  /** Plus / moins-value latente cumulée en %. null si aucune position valorisée. */
+  totalUnrealizedPnLPct: number | null
   /** Pourcentage du portefeuille avec un prix frais (< 24 h). */
   freshnessRatio:        number
   /** Allocation par classe d'actif (poids %, sur market value). */

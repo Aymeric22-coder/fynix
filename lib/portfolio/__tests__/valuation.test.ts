@@ -64,6 +64,31 @@ describe('valuePortfolio — base cases', () => {
     expect(r.positions[0]!.unrealizedPnL).toBeNull()
     expect(r.positions[0]!.unrealizedPnLPct).toBeNull()
     expect(r.summary.totalMarketValue).toBe(0)
+    // BUG FIX : pas de prix → pas de fausse perte. PnL = null, pas -100%.
+    expect(r.summary.totalUnrealizedPnL).toBeNull()
+    expect(r.summary.totalUnrealizedPnLPct).toBeNull()
+    expect(r.summary.totalCostBasis).toBe(1000)         // capital investi reel
+    expect(r.summary.totalCostBasisValued).toBe(0)      // rien de valorise
+    expect(r.summary.valuedPositionsCount).toBe(0)
+  })
+
+  it('PnL agregé ne compte que les positions valorisées (mix prix / pas-prix)', () => {
+    const r = valuePortfolio(
+      [
+        P('p1', 'i1', { quantity: 10, averagePrice: 100 }),  // valorisée +10%
+        P('p2', 'i2', { quantity: 10, averagePrice: 50 }),   // pas de prix
+      ],
+      [I('i1'), I('i2')],
+      [PR('i1', { price: 110 })],  // seul i1 a un prix
+    )
+    expect(r.summary.positionsCount).toBe(2)
+    expect(r.summary.valuedPositionsCount).toBe(1)
+    expect(r.summary.totalCostBasis).toBe(1500)         // 1000 + 500
+    expect(r.summary.totalCostBasisValued).toBe(1000)   // p1 only
+    expect(r.summary.totalMarketValue).toBe(1100)
+    // PnL = 1100 - 1000 = +100 → +10%, PAS calculé sur 1500
+    expect(r.summary.totalUnrealizedPnL).toBeCloseTo(100, 6)
+    expect(r.summary.totalUnrealizedPnLPct).toBeCloseTo(10, 6)
   })
 })
 
