@@ -16,8 +16,8 @@ interface InitialData {
   rent_amount:    number | null
   charges_amount: number | null
   tenant_name:    string | null
-  lease_start:    string | null
-  lease_end:      string | null
+  lease_start_date:    string | null
+  lease_end_date:      string | null
 }
 
 interface Props {
@@ -35,8 +35,8 @@ const INITIAL = {
   rent_amount:     undefined as number | undefined,
   charges_amount:  0         as number,
   tenant_name:     '',
-  lease_start:     '',
-  lease_end:       '',
+  lease_start_date:     '',
+  lease_end_date:       '',
 }
 
 export function AddLotForm({ open, onClose, propertyId, initialData }: Props) {
@@ -54,8 +54,8 @@ export function AddLotForm({ open, onClose, propertyId, initialData }: Props) {
           rent_amount:    initialData.rent_amount     ?? undefined as number | undefined,
           charges_amount: initialData.charges_amount  ?? 0,
           tenant_name:    initialData.tenant_name     ?? '',
-          lease_start:    initialData.lease_start     ?? '',
-          lease_end:      initialData.lease_end       ?? '',
+          lease_start_date:    initialData.lease_start_date     ?? '',
+          lease_end_date:      initialData.lease_end_date       ?? '',
         }
       : INITIAL,
     async onSubmit(v) {
@@ -77,8 +77,8 @@ export function AddLotForm({ open, onClose, propertyId, initialData }: Props) {
           rent_amount:    v.rent_amount    ?? null,
           charges_amount: v.charges_amount ?? 0,
           tenant_name:    v.tenant_name    || null,
-          lease_start:    v.lease_start    || null,
-          lease_end:      v.lease_end      || null,
+          lease_start_date:    v.lease_start_date    || null,
+          lease_end_date:      v.lease_end_date      || null,
         }),
       })
       const json = await res.json()
@@ -174,10 +174,10 @@ export function AddLotForm({ open, onClose, propertyId, initialData }: Props) {
             </Field>
             <FormGrid>
               <Field label="Début du bail">
-                <Input type="date" value={values.lease_start} onChange={(e) => set('lease_start', e.target.value)} />
+                <Input type="date" value={values.lease_start_date} onChange={(e) => set('lease_start_date', e.target.value)} />
               </Field>
               <Field label="Fin du bail">
-                <Input type="date" value={values.lease_end} onChange={(e) => set('lease_end', e.target.value)} />
+                <Input type="date" value={values.lease_end_date} onChange={(e) => set('lease_end_date', e.target.value)} />
               </Field>
             </FormGrid>
           </>

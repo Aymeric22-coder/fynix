@@ -13,8 +13,8 @@ interface LotData {
   rent_amount:    number | null
   charges_amount: number | null
   tenant_name:    string | null
-  lease_start:    string | null
-  lease_end:      string | null
+  lease_start_date:    string | null
+  lease_end_date:      string | null
 }
 
 interface Props {

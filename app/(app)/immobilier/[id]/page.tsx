@@ -239,7 +239,7 @@ export default async function ImmobilierDetailPage({ params }: Props) {
               {lots.map((lot: {
                 id: string; name: string; lot_type: string | null; surface_m2: number | null;
                 status: string; rent_amount: number | null; charges_amount: number | null;
-                tenant_name: string | null; lease_start: string | null; lease_end: string | null
+                tenant_name: string | null; lease_start_date: string | null; lease_end_date: string | null
               }) => {
                 const statusInfo = LOT_STATUS[lot.status] ?? { label: lot.status, variant: 'muted' as const }
                 return (
