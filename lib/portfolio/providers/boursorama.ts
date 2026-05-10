@@ -104,32 +104,31 @@ export class BoursoramaProvider implements PortfolioPriceProvider {
   /**
    * Extrait le prix et la devise depuis le HTML d'une fiche cotation Boursorama.
    *
-   * Boursorama 2024+ : le prix est dans <h1>99,0900 EUR</h1> sur la fiche
-   * principale. On accepte plusieurs formats au cas où la page change :
-   *   - `<h1>99,0900 EUR</h1>` (format actuel)
-   *   - `data-ist-last="..."` (ancien format, conservé en fallback)
+   * Format 2024 (verifie en prod) :
+   *   <span class="c-instrument c-instrument--last" data-ist-last>99,09</span>
+   *   <span class="c-instrument c-instrument--currency">EUR</span>
+   *
+   * Note : data-ist-last est present sans valeur (attribut vide), le contenu
+   * du span lui-meme porte le prix. La virgule francaise est convertie en
+   * point pour parseFloat.
    */
   private parsePrice(html: string): { price: number; currency: CurrencyCode } | null {
-    // Format 1 : <h1>99,0900 EUR</h1> (ETF, fonds, actions Boursorama 2024+)
-    const h1Match = html.match(/<h1[^>]*>\s*([0-9][0-9 ]*[.,][0-9]+)\s*([A-Z]{3})\s*<\/h1>/)
-    if (h1Match && h1Match[1] && h1Match[2]) {
-      const raw   = h1Match[1].replace(/\s/g, '').replace(',', '.')
-      const price = parseFloat(raw)
-      if (isFinite(price) && price > 0) {
-        return { price, currency: toCurrency(h1Match[2]) }
-      }
-    }
+    // Prix : span class="c-instrument c-instrument--last">PRIX</span>
+    const priceMatch = html.match(
+      /class="[^"]*c-instrument--last[^"]*"[^>]*>\s*([0-9][0-9 ]*[.,][0-9]+)/,
+    )
+    if (!priceMatch || !priceMatch[1]) return null
 
-    // Format 2 (legacy) : data-ist-last="21.36" data-ist-currency="EUR"
-    const lastMatch = html.match(/data-ist-last="([0-9.,]+)"/)
-    if (lastMatch && lastMatch[1]) {
-      const price = parseFloat(lastMatch[1].replace(',', '.'))
-      if (isFinite(price) && price > 0) {
-        const currMatch = html.match(/data-ist-currency="([A-Z]{3})"/)
-        return { price, currency: toCurrency(currMatch?.[1]) }
-      }
-    }
+    const raw   = priceMatch[1].replace(/\s/g, '').replace(',', '.')
+    const price = parseFloat(raw)
+    if (!isFinite(price) || price <= 0) return null
 
-    return null
+    // Devise : essaie plusieurs sélecteurs, défaut EUR (place française)
+    const currMatch =
+      html.match(/class="[^"]*c-instrument--currency[^"]*"[^>]*>\s*([A-Z]{3})/) ||
+      html.match(/[0-9][0-9 ]*[.,][0-9]+\s*<\/?\w*[^>]*>\s*([A-Z]{3})/)
+    const currency = toCurrency(currMatch?.[1])
+
+    return { price, currency }
   }
 }
