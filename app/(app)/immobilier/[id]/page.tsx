@@ -257,7 +257,7 @@ export default async function ImmobilierDetailPage({ params }: Props) {
     {
       id:    'synthese',
       label: 'Synthèse',
-      icon:  Home,
+      icon:  <Home size={14} />,
       content: (
         <div className="space-y-6">
           {/* KPIs principaux : 6 cards */}
@@ -388,7 +388,7 @@ export default async function ImmobilierDetailPage({ params }: Props) {
     {
       id:    'credit',
       label: 'Crédit',
-      icon:  Banknote,
+      icon:  <Banknote size={14} />,
       content: (
         <CreditTab
           propertyId={prop.id}
@@ -402,7 +402,7 @@ export default async function ImmobilierDetailPage({ params }: Props) {
     {
       id:    'amortissement',
       label: 'Amortissement',
-      icon:  FileSpreadsheet,
+      icon:  <FileSpreadsheet size={14} />,
       content: schedule ? (
         <AmortizationTable
           schedule={schedule}
@@ -420,7 +420,7 @@ export default async function ImmobilierDetailPage({ params }: Props) {
     {
       id:    'rentabilite',
       label: 'Rentabilité & Cash-flow',
-      icon:  TrendingUp,
+      icon:  <TrendingUp size={14} />,
       content: (
         <SimulationPanel
           propertyId={prop.id}
@@ -438,7 +438,7 @@ export default async function ImmobilierDetailPage({ params }: Props) {
     {
       id:    'charges',
       label: 'Charges',
-      icon:  Receipt,
+      icon:  <Receipt size={14} />,
       content: (
         <div className="space-y-4">
           {!charges ? (
@@ -514,7 +514,7 @@ export default async function ImmobilierDetailPage({ params }: Props) {
     {
       id:    'suivi-reel',
       label: 'Suivi réel',
-      icon:  Activity,
+      icon:  <Activity size={14} />,
       badge: driftAlerts.length > 0 ? (
         <span className="ml-1.5 text-[10px] bg-warning/20 text-warning rounded-full px-1.5 py-0.5">
           {driftAlerts.length}

@@ -6,8 +6,13 @@ import { useRouter, useSearchParams } from 'next/navigation'
 export interface TabItem {
   id:       string
   label:    string
-  /** Optionnel : icône Lucide affichée à gauche du label */
-  icon?:    React.ComponentType<{ size?: number; className?: string }>
+  /**
+   * Optionnel : icône à afficher à gauche du label. DOIT être un ReactNode
+   * pré-rendu (ex: `<Home size={14} />`) et non un composant — sinon
+   * Next.js 15 rejette le passage d'un Server Component vers ce client
+   * component avec "Functions cannot be passed directly to Client Components".
+   */
+  icon?:    ReactNode
   /** Optionnel : badge à droite (compteur, alerte) */
   badge?:   ReactNode
   content:  ReactNode
@@ -66,7 +71,7 @@ export function Tabs({ tabs, defaultTab, urlParam }: Props) {
                     : 'border-transparent text-secondary hover:text-primary hover:border-border'
                 }`}
               >
-                {tab.icon && <tab.icon size={14} />}
+                {tab.icon}
                 {tab.label}
                 {tab.badge}
               </button>
