@@ -12,10 +12,12 @@ import { SimulationPanel } from '@/components/real-estate/simulation-panel'
 import { ActualVsSimulation } from '@/components/real-estate/actual-vs-simulation'
 import { DriftAlerts } from '@/components/real-estate/drift-alerts'
 import { RevisedForecastSection } from '@/components/real-estate/revised-forecast-section'
+import { YearEndReportPanel } from '@/components/real-estate/year-end-report-panel'
 import { loadActualData } from '@/lib/real-estate/actual'
 import { compareActualToSimulation } from '@/lib/real-estate/compare'
 import { detectDriftAlerts } from '@/lib/real-estate/insights'
 import { computeRevisedForecast } from '@/lib/real-estate/forecast'
+import { buildYearEndReport } from '@/lib/real-estate/year-end-report'
 import { buildSimulationInputFromDb, runSimulation } from '@/lib/real-estate'
 import { formatCurrency, formatPercent, formatDate } from '@/lib/utils/format'
 import type { DbProperty, DbAsset, DbLot, DbCharges, DbDebt, DbProfile } from '@/lib/real-estate/build-from-db'
@@ -172,6 +174,25 @@ export default async function ImmobilierDetailPage({ params }: Props) {
   const comparison      = compareActualToSimulation(simResult, actualData, simStartYear)
   const driftAlerts     = detectDriftAlerts(comparison)
   const revisedForecast = computeRevisedForecast(simResult, actualData, simStartYear)
+
+  // ── Year-end reports : une entrée par année écoulée et suivie ──
+  const reportCutoffYear = new Date().getUTCFullYear()
+  const yearEndReports = actualData.years
+    .filter((a) => a.year < reportCutoffYear)   // années closes uniquement
+    .sort((a, b) => b.year - a.year)        // plus récente d'abord
+    .map((a) => {
+      const projForYear = simResult.projection.find((p) => p.year === a.year - simStartYear + 1) ?? null
+      return buildYearEndReport(
+        a.year,
+        prop.id,
+        prop.asset?.name,
+        (dbProperty.fiscal_regime ?? 'foncier_nu') as Parameters<typeof buildYearEndReport>[3],
+        projForYear,
+        a,
+        simResult.amortization,
+        simStartYear,
+      )
+    })
 
   return (
     <div className="space-y-8">
@@ -347,6 +368,13 @@ export default async function ImmobilierDetailPage({ params }: Props) {
       {!revisedForecast.isEmpty && (
         <div className="border-t border-border pt-8">
           <RevisedForecastSection revised={revisedForecast} original={simResult.projection} />
+        </div>
+      )}
+
+      {/* ── Rapport annuel (Sprint 7) ──────────────────────────────────── */}
+      {yearEndReports.length > 0 && (
+        <div className="border-t border-border pt-8">
+          <YearEndReportPanel reports={yearEndReports} />
         </div>
       )}
     </div>
