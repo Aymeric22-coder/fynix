@@ -148,7 +148,11 @@ export function AddPositionForm({ open, onClose, envelopes, initialData }: Props
     const handle = setTimeout(async () => {
       setPriceLoading(true)
       try {
-        const url = `/api/prices/${encodeURIComponent(ticker)}${isin ? `?isin=${encodeURIComponent(isin)}` : ''}`
+        const params = new URLSearchParams()
+        if (isin)              params.set('isin',  isin)
+        if (values.asset_class) params.set('class', values.asset_class)
+        const qs   = params.toString()
+        const url  = `/api/prices/${encodeURIComponent(ticker)}${qs ? `?${qs}` : ''}`
         const res  = await fetch(url)
         const json = await res.json()
         if (json.data?.price) {
@@ -167,7 +171,7 @@ export function AddPositionForm({ open, onClose, envelopes, initialData }: Props
       }
     }, 700)
     return () => clearTimeout(handle)
-  }, [values.ticker, values.isin, isEdit])
+  }, [values.ticker, values.isin, values.asset_class, isEdit])
 
   const investedTotal = values.quantity && values.average_price
     ? values.quantity * values.average_price

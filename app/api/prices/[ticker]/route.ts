@@ -1,12 +1,18 @@
 import { ok, err, withAuth } from '@/lib/utils/api'
 import type { User } from '@supabase/supabase-js'
 import { getQuote, getHistory } from '@/lib/providers/market-data'
+import { buildOrchestrator } from '@/lib/portfolio/providers'
+import { createServerClient } from '@/lib/supabase/server'
+import type { AssetClass } from '@/types/database.types'
 
 type Ctx = { params: Promise<{ ticker: string }> }
 
 // GET /api/prices/[ticker]
-// ?mode=quote  → prix actuel (défaut)
-// ?mode=history&from=2024-01-01&to=2024-12-31 → historique OHLCV
+// ?mode=quote                → prix actuel (défaut)
+// ?isin=...                  → fallback de résolution si le ticker ne suffit pas
+// ?class=equity|etf|...      → asset_class pour aiguiller vers le bon provider
+//                               (Boursorama pour ETF français, Yahoo pour US, etc.)
+// ?mode=history&from&to      → historique OHLCV (Yahoo only pour l'instant)
 export const GET = withAuth(async (req: Request, _user: User, ctx: Ctx) => {
   const { ticker } = await ctx!.params
   const { searchParams } = new URL(req.url)
@@ -28,14 +34,42 @@ export const GET = withAuth(async (req: Request, _user: User, ctx: Ctx) => {
     return ok(history)
   }
 
-  // Mode quote (défaut)
-  // Le `isin` optionnel permet de résoudre un ticker ambigu (ex: NKT4 → NKT4.PA)
-  const isin = searchParams.get('isin')?.trim().toUpperCase()
-  const quote = await getQuote(ticker.toUpperCase(), isin || undefined)
+  // Mode quote
+  const isin       = searchParams.get('isin')?.trim().toUpperCase() || undefined
+  const assetClass = (searchParams.get('class') as AssetClass | null) ?? 'etf'
 
+  // 1. Tente la chaîne complète de providers (Boursorama → Yahoo → CoinGecko…)
+  //    via l'orchestrateur configuré en DB. Couvre les ETF français que
+  //    Yahoo ignore (Amundi PEA, Lyxor, etc.).
+  try {
+    const supabase     = await createServerClient()
+    const orchestrator = await buildOrchestrator(supabase)
+    const quote        = await orchestrator.getQuote({
+      ticker:     ticker.toUpperCase(),
+      isin:       isin ?? null,
+      providerId: null,
+      assetClass,
+    })
+    if (quote) {
+      return ok({
+        ticker:     quote.query,
+        price:      quote.price,
+        currency:   quote.currency,
+        change24h:  null,
+        marketCap:  null,
+        source:     quote.source,
+        fetchedAt:  quote.pricedAt,
+        confidence: quote.confidence,
+      })
+    }
+  } catch (e) {
+    console.warn('[prices] orchestrator failed, falling back to legacy:', e)
+  }
+
+  // 2. Fallback : ancien chemin Yahoo direct (avec cache mémoire/DB)
+  const quote = await getQuote(ticker.toUpperCase(), isin)
   if (!quote) {
     return err(`No price available for ${ticker}`, 404)
   }
-
   return ok(quote)
 })
