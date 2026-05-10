@@ -4,17 +4,18 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
   LayoutDashboard, Building2, FileText, TrendingUp, PiggyBank,
-  CreditCard, ArrowLeftRight, RefreshCw, Settings, LogOut, ChevronRight,
+  ArrowLeftRight, RefreshCw, Settings, LogOut, ChevronRight,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
+// Migration 006 : la section "Dettes" a ete supprimee. Les credits immobiliers
+// sont desormais geres directement depuis chaque bien (onglet Credit).
 const NAV = [
   { href: '/dashboard',    label: 'Dashboard',     icon: LayoutDashboard },
   { href: '/immobilier',   label: 'Immobilier',    icon: Building2 },
   { href: '/scpi',         label: 'SCPI',          icon: FileText },
   { href: '/financier',    label: 'Financier',     icon: TrendingUp },
   { href: '/cash',         label: 'Cash',          icon: PiggyBank },
-  { href: '/dettes',       label: 'Dettes',        icon: CreditCard },
   { href: '/transactions', label: 'Transactions',  icon: ArrowLeftRight },
   { href: '/dca',          label: 'DCA',           icon: RefreshCw },
 ]

@@ -119,19 +119,9 @@ export interface Debt {
   updated_at: string
 }
 
-export interface DebtAmortization {
-  id: string
-  debt_id: string
-  user_id: string
-  period_number: number
-  payment_date: string
-  payment_total: number
-  payment_capital: number
-  payment_interest: number
-  payment_insurance: number
-  capital_remaining: number
-  is_deferred: boolean
-}
+// Migration 006 : la table debt_amortization a ete supprimee. Les rows ne
+// sont plus persistees, le tableau d'amortissement est calcule a la volee
+// via lib/real-estate/amortization.ts (buildAmortizationSchedule).
 
 export interface RealEstateProperty {
   id: string
