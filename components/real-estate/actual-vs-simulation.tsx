@@ -2,12 +2,13 @@
 
 import { useState } from 'react'
 import {
-  TrendingUp, TrendingDown, Minus, ChevronDown, ChevronUp, Info, Plus,
+  TrendingUp, TrendingDown, Minus, ChevronDown, ChevronUp, Info, Plus, FileUp,
 } from 'lucide-react'
 import type { ComparisonResult, YearComparison, VarianceMetric, VarianceMetricNullable } from '@/lib/real-estate/compare'
 import { classifyVariance } from '@/lib/real-estate/compare'
 import { formatCurrency } from '@/lib/utils/format'
 import { QuickActualsEntry, type ExistingCharges } from './quick-actuals-entry'
+import { ImportCsvModal } from './import-csv-modal'
 
 // ─── Sous-composant : cellule de variance ─────────────────────────────────
 
@@ -91,28 +92,46 @@ export function ActualVsSimulation({
 }: Props) {
   const [expanded, setExpanded] = useState(true)
   const [entryOpen, setEntryOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
 
-  const quickEntryButton = (
-    <button
-      onClick={() => setEntryOpen(true)}
-      className="flex items-center gap-1.5 text-xs bg-accent text-white rounded-lg px-3 py-1.5 hover:bg-accent/90 transition-colors"
-    >
-      <Plus size={12} />
-      Saisir une donnée réelle
-    </button>
+  const actionButtons = (
+    <div className="flex items-center gap-2">
+      <button
+        onClick={() => setImportOpen(true)}
+        className="flex items-center gap-1.5 text-xs bg-surface-2 text-primary border border-border rounded-lg px-3 py-1.5 hover:bg-surface-2/70 transition-colors"
+      >
+        <FileUp size={12} />
+        Importer CSV
+      </button>
+      <button
+        onClick={() => setEntryOpen(true)}
+        className="flex items-center gap-1.5 text-xs bg-accent text-white rounded-lg px-3 py-1.5 hover:bg-accent/90 transition-colors"
+      >
+        <Plus size={12} />
+        Saisir une donnée réelle
+      </button>
+    </div>
   )
 
-  const modal = (
-    <QuickActualsEntry
-      open={entryOpen}
-      onClose={() => setEntryOpen(false)}
-      assetId={assetId}
-      debtId={debtId}
-      propertyId={propertyId}
-      monthlyRentSuggested={monthlyRentSuggested}
-      monthlyPaymentSuggested={monthlyPaymentSuggested}
-      existingCharges={existingCharges}
-    />
+  const modals = (
+    <>
+      <QuickActualsEntry
+        open={entryOpen}
+        onClose={() => setEntryOpen(false)}
+        assetId={assetId}
+        debtId={debtId}
+        propertyId={propertyId}
+        monthlyRentSuggested={monthlyRentSuggested}
+        monthlyPaymentSuggested={monthlyPaymentSuggested}
+        existingCharges={existingCharges}
+      />
+      <ImportCsvModal
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        assetId={assetId}
+        debtId={debtId}
+      />
+    </>
   )
 
   // Cas 1 : aucune donnée réelle
@@ -129,10 +148,10 @@ export function ActualVsSimulation({
             </p>
           </div>
           <div className="flex justify-center">
-            {quickEntryButton}
+            {actionButtons}
           </div>
         </div>
-        {modal}
+        {modals}
       </>
     )
   }
@@ -156,7 +175,7 @@ export function ActualVsSimulation({
           </span>
         </div>
         <div className="flex items-center gap-2">
-          {quickEntryButton}
+          {actionButtons}
           <button
             onClick={() => setExpanded((v) => !v)}
             className="flex items-center gap-1 text-xs text-secondary hover:text-primary transition-colors px-2 py-1.5"
@@ -175,7 +194,7 @@ export function ActualVsSimulation({
         <CumulKpi label="Cash-flow"  value={comparison.totals.cashFlowVariance} kind="income"  />
       </div>
 
-      {modal}
+      {modals}
 
       {/* Tableau détaillé */}
       {expanded && (
