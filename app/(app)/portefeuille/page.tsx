@@ -10,6 +10,10 @@ import {
   ASSET_CLASS_LABELS,
 } from '@/lib/utils/format'
 import { PortefeuilleActions }    from '@/components/pages/portefeuille-actions'
+import { PositionRowActions }     from '@/components/pages/position-row-actions'
+import { RefreshPricesButton }    from '@/components/pages/refresh-prices-button'
+import type { PositionInitialData } from '@/components/forms/add-position-form'
+import type { AssetClass, CurrencyCode } from '@/types/database.types'
 
 export const metadata: Metadata = { title: 'Portefeuille' }
 
@@ -29,6 +33,37 @@ export default async function PortefeuillePage() {
   const result = await buildPortfolioFromDb(supabase, user!.id)
   const { positions, summary } = result
 
+  // Charge les positions brutes + ISIN pour le formulaire d'édition
+  const { data: rawPositions } = await supabase
+    .from('positions')
+    .select(`
+      id, instrument_id, envelope_id, quantity, average_price, currency,
+      broker, acquisition_date, notes,
+      instrument:instruments!instrument_id ( name, ticker, isin, asset_class )
+    `)
+    .eq('user_id', user!.id)
+
+  type RawInstr = { name: string; ticker: string | null; isin: string | null; asset_class: AssetClass }
+  const editDataById = new Map<string, PositionInitialData>()
+  for (const r of (rawPositions ?? [])) {
+    const inst = (Array.isArray(r.instrument) ? r.instrument[0] : r.instrument) as RawInstr | null
+    if (!inst) continue
+    editDataById.set(r.id as string, {
+      id:               r.id as string,
+      name:             inst.name,
+      asset_class:      inst.asset_class,
+      ticker:           inst.ticker ?? '',
+      isin:             inst.isin   ?? '',
+      envelope_id:      (r.envelope_id as string | null) ?? '',
+      quantity:         Number(r.quantity),
+      average_price:    Number(r.average_price),
+      currency:         r.currency as CurrencyCode as PositionInitialData['currency'],
+      broker:           (r.broker as string | null) ?? '',
+      acquisition_date: (r.acquisition_date as string | null) ?? '',
+      notes:            (r.notes as string | null) ?? '',
+    })
+  }
+
   return (
     <div>
       <PageHeader
@@ -38,7 +73,12 @@ export default async function PortefeuillePage() {
             ? `${summary.positionsCount} position${summary.positionsCount > 1 ? 's' : ''} active${summary.positionsCount > 1 ? 's' : ''}`
             : 'Suivi unifié actions, ETF, crypto, SCPI'
         }
-        action={<PortefeuilleActions envelopes={envelopes ?? []} />}
+        action={
+          <div className="flex items-center gap-3">
+            {summary.positionsCount > 0 && <RefreshPricesButton />}
+            <PortefeuilleActions envelopes={envelopes ?? []} />
+          </div>
+        }
       />
 
       {summary.positionsCount === 0 ? (
@@ -139,6 +179,7 @@ export default async function PortefeuillePage() {
                     <th className="text-right px-4 py-3 font-medium">Valeur</th>
                     <th className="text-right px-4 py-3 font-medium">+/− latente</th>
                     <th className="text-right px-4 py-3 font-medium">Fraîcheur</th>
+                    <th className="text-right px-4 py-3 font-medium w-24">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -185,6 +226,14 @@ export default async function PortefeuillePage() {
                             {formatDate(p.priceFreshAt, 'short')}
                           </div>
                         ) : <span className="text-muted text-xs">jamais</span>}
+                      </td>
+                      <td className="px-4 py-3">
+                        {editDataById.has(p.positionId) && (
+                          <PositionRowActions
+                            data={editDataById.get(p.positionId)!}
+                            envelopes={envelopes ?? []}
+                          />
+                        )}
                       </td>
                     </tr>
                   ))}
