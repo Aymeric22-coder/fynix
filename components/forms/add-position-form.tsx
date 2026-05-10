@@ -135,31 +135,37 @@ export function AddPositionForm({ open, onClose, envelopes, initialData }: Props
     onSuccess() { reset(); setLivePrice(null); onClose(); router.refresh() },
   })
 
-  // Lookup live du prix via Yahoo Finance quand le ticker ou l'ISIN change.
-  // L'ISIN est utilisé en fallback si le ticker brut n'est pas trouvé (ex: NKT4 → NKT4.PA).
+  // Lookup live du prix via la chaîne de providers.
+  // Se déclenche dès que ticker OU ISIN est rempli. L'ISIN est suffisant pour
+  // Boursorama (recherche directe) et Yahoo (via yf.search).
   useEffect(() => {
-    if (isEdit) return  // pas de lookup en mode édition (ticker non modifiable)
+    if (isEdit) return  // pas de lookup en mode édition (instrument non modifiable)
     const ticker = values.ticker.trim().toUpperCase()
     const isin   = values.isin.trim().toUpperCase()
-    if (!ticker || ticker.length < 2) {
+    const tickerOk = ticker.length >= 2
+    const isinOk   = isin.length >= 10  // ISIN = 12 chars, tolérance 10+
+    if (!tickerOk && !isinOk) {
       setLivePrice(null)
       return
     }
     const handle = setTimeout(async () => {
       setPriceLoading(true)
       try {
+        // Le segment [ticker] de l'URL est obligatoire : on utilise le ticker
+        // si fourni, sinon l'ISIN (l'orchestrateur lit aussi ?isin= explicite).
+        const pathSegment = tickerOk ? ticker : isin
         const params = new URLSearchParams()
-        if (isin)              params.set('isin',  isin)
+        if (isinOk)             params.set('isin',  isin)
         if (values.asset_class) params.set('class', values.asset_class)
-        const qs   = params.toString()
-        const url  = `/api/prices/${encodeURIComponent(ticker)}${qs ? `?${qs}` : ''}`
+        const qs  = params.toString()
+        const url = `/api/prices/${encodeURIComponent(pathSegment)}${qs ? `?${qs}` : ''}`
         const res  = await fetch(url)
         const json = await res.json()
         if (json.data?.price) {
           setLivePrice({
             price:          json.data.price,
             currency:       json.data.currency ?? 'USD',
-            resolvedTicker: json.data.ticker ?? ticker,
+            resolvedTicker: json.data.ticker ?? pathSegment,
           })
         } else {
           setLivePrice(null)
@@ -231,7 +237,7 @@ export function AddPositionForm({ open, onClose, envelopes, initialData }: Props
               </Field>
             </FormGrid>
 
-            {values.ticker && (
+            {(values.ticker.trim().length >= 2 || values.isin.trim().length >= 10) && (
               <div className="bg-surface-2 rounded-lg px-4 py-3 text-sm flex items-center gap-2 flex-wrap">
                 {priceLoading
                   ? <>
