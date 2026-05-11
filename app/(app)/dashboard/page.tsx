@@ -22,11 +22,16 @@ export default async function DashboardPage() {
   const { data: { user } } = await supabase.auth.getUser()
 
   const [assetsRes, debtsRes, snapshotsRes] = await Promise.all([
+    // Depuis migration 012 : les actifs financiers (stocks, ETF, crypto, gold)
+    // ne sont plus dans `assets` mais dans `positions` + `instruments`. La table
+    // `assets` ne doit plus contenir que immobilier, cash et autre. On filtre
+    // explicitement pour ignorer d'eventuels reliquats legacy.
     supabase
       .from('assets')
       .select('id,name,asset_type,current_value,acquisition_price,confidence,last_valued_at')
       .eq('user_id', user!.id)
-      .eq('status', 'active'),
+      .eq('status', 'active')
+      .in('asset_type', ['real_estate', 'cash', 'other']),
     supabase
       .from('debts')
       .select('asset_id,capital_remaining,monthly_payment')
