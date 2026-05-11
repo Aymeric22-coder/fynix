@@ -226,35 +226,8 @@ export interface PropertyCharges {
   updated_at: string
 }
 
-export interface ScpiAsset {
-  id: string
-  asset_id: string
-  user_id: string
-  scpi_name: string
-  scpi_code: string | null
-  holding_mode: HoldingMode
-  envelope_name: string | null
-  nb_shares: number
-  subscription_price: number | null
-  current_share_price: number | null
-  withdrawal_price: number | null
-  distribution_rate: number | null
-  created_at: string
-  updated_at: string
-}
-
-export interface ScpiDividend {
-  id: string
-  scpi_asset_id: string
-  user_id: string
-  payment_date: string
-  amount: number
-  per_share: number | null
-  nb_shares_at_date: number | null
-  fiscal_year: number | null
-  notes: string | null
-  created_at: string
-}
+// Migration 012 : ScpiAsset, ScpiDividend, FinancialAsset interfaces supprimees
+// (tables droppees, remplacees par positions + instruments).
 
 export interface FinancialEnvelope {
   id: string
@@ -266,25 +239,6 @@ export interface FinancialEnvelope {
   opening_date: string | null
   is_active: boolean
   notes: string | null
-  created_at: string
-  updated_at: string
-}
-
-export interface FinancialAsset {
-  id: string
-  asset_id: string
-  user_id: string
-  envelope_id: string | null
-  ticker: string | null
-  isin: string | null
-  name: string
-  quantity: number
-  average_price: number
-  current_price: number | null
-  current_price_at: string | null
-  currency: CurrencyCode
-  data_source: DataSource
-  confidence: ConfidenceLevel
   created_at: string
   updated_at: string
 }
@@ -434,16 +388,11 @@ export type PropertyValuationInsert = Omit<PropertyValuation, 'id' | 'created_at
 export type PropertyChargesInsert = Omit<PropertyCharges, 'id' | 'created_at' | 'updated_at'>
 export type PropertyChargesUpdate = Partial<Omit<PropertyChargesInsert, 'user_id' | 'property_id' | 'year'>>
 
-export type ScpiAssetInsert = Omit<ScpiAsset, 'id' | 'created_at' | 'updated_at'>
-export type ScpiAssetUpdate = Partial<Omit<ScpiAssetInsert, 'user_id' | 'asset_id'>>
-
-export type ScpiDividendInsert = Omit<ScpiDividend, 'id' | 'created_at'>
+// Migration 012 : ScpiAssetInsert/Update, ScpiDividendInsert,
+// FinancialAssetInsert/Update supprimés (tables droppées).
 
 export type FinancialEnvelopeInsert = Omit<FinancialEnvelope, 'id' | 'created_at' | 'updated_at'>
 export type FinancialEnvelopeUpdate = Partial<Omit<FinancialEnvelopeInsert, 'user_id'>>
-
-export type FinancialAssetInsert = Omit<FinancialAsset, 'id' | 'created_at' | 'updated_at'>
-export type FinancialAssetUpdate = Partial<Omit<FinancialAssetInsert, 'user_id' | 'asset_id'>>
 
 export type CashAccountInsert = Omit<CashAccount, 'id' | 'created_at' | 'updated_at'>
 export type CashAccountUpdate = Partial<Omit<CashAccountInsert, 'user_id' | 'asset_id'>>

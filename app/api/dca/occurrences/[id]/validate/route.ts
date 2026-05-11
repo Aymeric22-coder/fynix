@@ -19,10 +19,16 @@ interface ValidateBody {
 /**
  * POST /api/dca/occurrences/[id]/validate
  *
- * Validation manuelle d'une occurrence DCA (CRITIQUE).
+ * Validation manuelle d'une occurrence DCA.
  * - Crée une transaction d'achat dans le journal
- * - Met à jour le financial_asset (quantité + PRU recalculé)
  * - Marque l'occurrence comme validated
+ *
+ * Note migration 012 : la mise à jour de la position (quantité + PRU)
+ * n'est plus automatique depuis la suppression de `financial_assets`.
+ * Le DCA reste fonctionnel pour enregistrer la transaction, mais la
+ * position correspondante dans /portefeuille doit être ajustée
+ * manuellement (édition de la quantité et du PRU pondéré) tant que
+ * la jointure DCA <-> portfolio.positions n'est pas refaite.
  */
 export const POST = withAuth(async (req: Request, user: User, ctx: Ctx) => {
   const { id: occurrenceId } = await ctx!.params
@@ -85,33 +91,11 @@ export const POST = withAuth(async (req: Request, user: User, ctx: Ctx) => {
 
   if (txErr) return err(txErr.message, 500)
 
-  // 2. Mettre à jour le financial_asset si lié (quantité + PRU pondéré)
-  if (plan.asset_id && actualQuantity && actualPrice) {
-    const { data: fa } = await supabase
-      .from('financial_assets')
-      .select('quantity, average_price')
-      .eq('asset_id', plan.asset_id)
-      .single()
-
-    if (fa) {
-      const newQuantity = round2(fa.quantity + actualQuantity)
-      // PRU pondéré = (ancienne quantité × ancien PRU + nouvelle quantité × nouveau prix) / total
-      const newAvgPrice = round2(
-        (fa.quantity * fa.average_price + actualQuantity * actualPrice) / newQuantity,
-      )
-
-      await supabase
-        .from('financial_assets')
-        .update({ quantity: newQuantity, average_price: newAvgPrice })
-        .eq('asset_id', plan.asset_id)
-
-      // Mettre à jour acquisition_price dans assets
-      await supabase
-        .from('assets')
-        .update({ acquisition_price: round2(newQuantity * newAvgPrice) })
-        .eq('id', plan.asset_id)
-    }
-  }
+  // 2. Migration 012 : la mise à jour automatique de la position est désactivée
+  //    car financial_assets a été supprimée. Le DCA enregistre la transaction
+  //    et marque l'occurrence comme validée. L'utilisateur ajuste la position
+  //    dans /portefeuille manuellement (édit quantité + PRU pondéré).
+  void actualQuantity; void actualPrice  // suppress unused warnings
 
   // 3. Marquer l'occurrence comme validée
   const { data: updated, error: updErr } = await supabase
