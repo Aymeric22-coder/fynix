@@ -23,6 +23,7 @@ export const runtime = 'nodejs'
 
 interface InstrumentRow {
   id:          string
+  name:        string
   ticker:      string | null
   isin:        string | null
   provider_id: string | null
@@ -58,7 +59,7 @@ export const POST = withAuth(async (_req: Request, user: User) => {
 
   const { data: instruments, error: instErr } = await admin
     .from('instruments')
-    .select('id, ticker, isin, provider_id, asset_class')
+    .select('id, name, ticker, isin, provider_id, asset_class')
     .in('id', ids)
 
   if (instErr) return err(instErr.message, 500)
@@ -78,6 +79,7 @@ export const POST = withAuth(async (_req: Request, user: User) => {
       isin:       inst.isin,
       providerId: inst.provider_id,
       assetClass: inst.asset_class,
+      name:       inst.name,
     }
     try {
       const quote = await orchestrator.getQuote(lookup)

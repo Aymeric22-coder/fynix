@@ -32,6 +32,7 @@ const CRON_SECRET = process.env.CRON_SECRET
 
 interface InstrumentRow {
   id:          string
+  name:        string
   ticker:      string | null
   isin:        string | null
   provider_id: string | null
@@ -84,7 +85,7 @@ export async function GET(req: Request) {
 
   const { data: instruments, error: e2 } = await supabase
     .from('instruments')
-    .select('id, ticker, isin, provider_id, asset_class')
+    .select('id, name, ticker, isin, provider_id, asset_class')
     .in('id', ids)
 
   if (e2) {
@@ -106,6 +107,7 @@ export async function GET(req: Request) {
       isin:       inst.isin,
       providerId: inst.provider_id,
       assetClass: inst.asset_class,
+      name:       inst.name,
     }
 
     try {

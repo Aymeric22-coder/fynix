@@ -37,10 +37,12 @@ export const GET = withAuth(async (req: Request, _user: User, ctx: Ctx) => {
   // Mode quote
   const isin       = searchParams.get('isin')?.trim().toUpperCase() || undefined
   const assetClass = (searchParams.get('class') as AssetClass | null) ?? 'etf'
+  const name       = searchParams.get('name')?.trim() || undefined
 
   // 1. Tente la chaîne complète de providers (Boursorama → Yahoo → CoinGecko…)
-  //    via l'orchestrateur configuré en DB. Couvre les ETF français que
-  //    Yahoo ignore (Amundi PEA, Lyxor, etc.).
+  //    via l'orchestrateur configuré en DB. Couvre les ETF français, SCPI,
+  //    crypto, etc. Le `name` est utilisé en fallback de recherche textuelle
+  //    par Boursorama (indispensable pour les SCPI sans ISIN ISO).
   try {
     const supabase     = await createServerClient()
     const orchestrator = await buildOrchestrator(supabase)
@@ -49,6 +51,7 @@ export const GET = withAuth(async (req: Request, _user: User, ctx: Ctx) => {
       isin:       isin ?? null,
       providerId: null,
       assetClass,
+      name:       name ?? null,
     })
     if (quote) {
       return ok({

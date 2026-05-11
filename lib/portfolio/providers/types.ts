@@ -23,6 +23,12 @@ export interface InstrumentLookup {
   isin:       string | null
   providerId: string | null
   assetClass: AssetClass
+  /**
+   * Nom de l'instrument, utilisé comme fallback de recherche textuelle
+   * quand ticker/ISIN ne sont pas reconnus par le provider. Indispensable
+   * pour les SCPI dont les codes AMF ne sont pas des ISIN ISO 6166.
+   */
+  name?:      string | null
 }
 
 export interface PortfolioPriceProvider {

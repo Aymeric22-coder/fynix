@@ -51,4 +51,25 @@ describe('parseBoursoramaHtml — extraction prix Boursorama', () => {
     const result = parseBoursoramaHtml(html)
     expect(result?.price).toBeCloseTo(42.10, 2)
   })
+
+  it('parse une fiche SCPI ("Prix de souscription YYYY XXX EUR")', () => {
+    // Format observé sur /immobilier/scpi/cours/SCPI88960069800019/ pour Iroko Zen
+    const html = `
+      <div class="c-faceplate__about">
+        <div class="c-faceplate__subscription">Prix de souscription 2025
+          <span>204 EUR</span>
+        </div>
+      </div>
+    `
+    const result = parseBoursoramaHtml(html)
+    expect(result).not.toBeNull()
+    expect(result!.price).toBe(204)
+    expect(result!.currency).toBe('EUR')
+  })
+
+  it('SCPI : ignore "Prix de souscription" tout seul (sans nombre EUR à coté)', () => {
+    const html = `<p>Prix de souscription</p><p>Autre info</p>`
+    const result = parseBoursoramaHtml(html)
+    expect(result).toBeNull()
+  })
 })

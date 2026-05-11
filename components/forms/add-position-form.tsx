@@ -155,9 +155,11 @@ export function AddPositionForm({ open, onClose, envelopes, initialData }: Props
     if (isEdit) return  // pas de lookup en mode édition (instrument non modifiable)
     const ticker = values.ticker.trim().toUpperCase()
     const isin   = values.isin.trim().toUpperCase()
+    const name   = values.name.trim()
     const tickerOk = ticker.length >= 2
     const isinOk   = isin.length >= 10  // ISIN = 12 chars, tolérance 10+
-    if (!tickerOk && !isinOk) {
+    const nameOk   = name.length >= 3
+    if (!tickerOk && !isinOk && !nameOk) {
       setLivePrice(null)
       return
     }
@@ -165,10 +167,12 @@ export function AddPositionForm({ open, onClose, envelopes, initialData }: Props
       setPriceLoading(true)
       try {
         // Le segment [ticker] de l'URL est obligatoire : on utilise le ticker
-        // si fourni, sinon l'ISIN (l'orchestrateur lit aussi ?isin= explicite).
-        const pathSegment = tickerOk ? ticker : isin
+        // si fourni, sinon l'ISIN, sinon le nom (l'orchestrateur lit aussi
+        // les query params explicites).
+        const pathSegment = tickerOk ? ticker : (isinOk ? isin : name)
         const params = new URLSearchParams()
         if (isinOk)             params.set('isin',  isin)
+        if (nameOk)             params.set('name',  name)
         if (values.asset_class) params.set('class', values.asset_class)
         const qs  = params.toString()
         const url = `/api/prices/${encodeURIComponent(pathSegment)}${qs ? `?${qs}` : ''}`
@@ -190,7 +194,7 @@ export function AddPositionForm({ open, onClose, envelopes, initialData }: Props
       }
     }, 700)
     return () => clearTimeout(handle)
-  }, [values.ticker, values.isin, values.asset_class, isEdit])
+  }, [values.ticker, values.isin, values.name, values.asset_class, isEdit])
 
   const investedTotal = values.quantity && values.average_price
     ? values.quantity * values.average_price
