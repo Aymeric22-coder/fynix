@@ -164,5 +164,35 @@ export const POST = withAuth(async (req: Request, user: User) => {
       })
   }
 
+  // 4. Transaction d'achat implicite (pour TWR/MWR historiques) :
+  //    enregistre l'apport de capital lié à la création de cette position.
+  //    Si acquisition_date n'est pas fournie, on utilise "aujourd'hui".
+  const acqDate = body.acquisition_date
+    ? new Date(body.acquisition_date + 'T00:00:00Z')
+    : new Date()
+  const cost = body.quantity * body.average_price
+  if (cost > 0) {
+    await supabase
+      .from('transactions')
+      .insert({
+        user_id:          user.id,
+        position_id:      data.id,
+        instrument_id:    instrumentId!,
+        transaction_type: 'purchase',
+        amount:           -cost,   // sortie de cash compte utilisateur
+        currency:         body.currency ?? 'EUR',
+        fx_rate_to_ref:   1,
+        executed_at:      acqDate.toISOString(),
+        quantity:         body.quantity,
+        unit_price:       body.average_price,
+        fees:             0,
+        label:            `Achat ${body.quantity} × ${body.instrument?.name ?? ''}`.trim(),
+        data_source:      'manual',
+      })
+      .then(({ error: txErr }) => {
+        if (txErr) console.warn('[positions] purchase tx insert failed:', txErr.message)
+      })
+  }
+
   return ok(data, 201)
 })

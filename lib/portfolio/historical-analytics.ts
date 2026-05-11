@@ -11,10 +11,10 @@
  */
 
 import {
-  computeTWR, annualizeReturn, computeDrawdown,
+  computeTWR, computeMWR, annualizeReturn, computeDrawdown,
   computeVolatility, computeSharpe,
 } from './analytics'
-import type { ValuePoint } from './analytics'
+import type { CashFlow, ValuePoint } from './analytics'
 
 export interface SnapshotRow {
   snapshot_date:      string
@@ -22,10 +22,12 @@ export interface SnapshotRow {
 }
 
 export interface HistoricalAnalytics {
-  /** Rendement total sur la période (décimal, ex 0.10 = +10%). */
+  /** Rendement total time-weighted sur la période (TWR, décimal). */
   totalReturn:        number | null
-  /** Rendement annualisé. */
+  /** Rendement annualisé (TWR). */
   annualizedReturn:   number | null
+  /** Rendement money-weighted (MWR/IRR, annualisé). null si pas de cash flows. */
+  moneyWeightedReturn: number | null
   /** Drawdown courant (négatif ou 0). */
   currentDrawdown:    number | null
   /** Drawdown maximum atteint (négatif ou 0). */
@@ -38,25 +40,34 @@ export interface HistoricalAnalytics {
   pointsCount:        number
   /** Durée couverte en jours. */
   daysCovered:        number
+  /** Nombre de cash flows pris en compte. */
+  cashFlowsCount:     number
 }
 
 const EMPTY: HistoricalAnalytics = {
-  totalReturn:      null,
-  annualizedReturn: null,
-  currentDrawdown:  null,
-  maxDrawdown:      null,
-  volatility:       null,
-  sharpe:           null,
-  pointsCount:      0,
-  daysCovered:      0,
+  totalReturn:         null,
+  annualizedReturn:    null,
+  moneyWeightedReturn: null,
+  currentDrawdown:     null,
+  maxDrawdown:         null,
+  volatility:          null,
+  sharpe:              null,
+  pointsCount:         0,
+  daysCovered:         0,
+  cashFlowsCount:      0,
 }
 
 /**
  * Calcule les indicateurs historiques à partir des snapshots du portefeuille.
+ * Si des cash flows (apports/retraits) sont fournis, TWR et MWR sont calculés
+ * avec en plus la précision sur les contributions de capital.
  * Robuste : si pas assez de données, renvoie un résultat partiellement null.
  */
-export function computeHistoricalAnalytics(rows: SnapshotRow[]): HistoricalAnalytics {
-  if (rows.length < 2) return { ...EMPTY, pointsCount: rows.length }
+export function computeHistoricalAnalytics(
+  rows:       SnapshotRow[],
+  cashFlows:  CashFlow[] = [],
+): HistoricalAnalytics {
+  if (rows.length < 2) return { ...EMPTY, pointsCount: rows.length, cashFlowsCount: cashFlows.length }
 
   const sorted: ValuePoint[] = [...rows]
     .map((r) => ({ date: r.snapshot_date, value: r.total_market_value }))
@@ -66,22 +77,34 @@ export function computeHistoricalAnalytics(rows: SnapshotRow[]): HistoricalAnaly
   const endMs   = new Date(sorted[sorted.length - 1]!.date + 'T00:00:00Z').getTime()
   const days    = Math.max(1, Math.round((endMs - startMs) / 86400000))
 
-  const totalReturn      = computeTWR(sorted, [])
-  const annualizedReturn = totalReturn !== null && days > 0
+  // Filtre les cash flows dans la fenêtre de snapshots (inclusif)
+  const startDate = sorted[0]!.date
+  const endDate   = sorted[sorted.length - 1]!.date
+  const flowsInRange = cashFlows.filter(
+    (f) => f.date >= startDate && f.date <= endDate,
+  )
+
+  const totalReturn         = computeTWR(sorted, flowsInRange)
+  const annualizedReturn    = totalReturn !== null && days > 0
     ? annualizeReturn(totalReturn, days)
     : null
-  const dd = computeDrawdown(sorted)
-  const volatility       = computeVolatility(sorted, [])
-  const sharpe           = computeSharpe(sorted, [], 0)
+  const moneyWeightedReturn = flowsInRange.length > 0
+    ? computeMWR(sorted, flowsInRange)
+    : null  // pas de MWR pertinent sans cash flow
+  const dd                  = computeDrawdown(sorted)
+  const volatility          = computeVolatility(sorted, flowsInRange)
+  const sharpe              = computeSharpe(sorted, flowsInRange, 0)
 
   return {
     totalReturn,
     annualizedReturn,
+    moneyWeightedReturn,
     currentDrawdown:  dd.current,
     maxDrawdown:      dd.max,
     volatility,
     sharpe,
     pointsCount:      sorted.length,
     daysCovered:      days,
+    cashFlowsCount:   flowsInRange.length,
   }
 }

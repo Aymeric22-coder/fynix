@@ -10,6 +10,7 @@ import { EmptyState }             from '@/components/ui/empty-state'
 import { Badge }                  from '@/components/ui/badge'
 import { buildPortfolioFromDb }   from '@/lib/portfolio/build-from-db'
 import { computeHistoricalAnalytics } from '@/lib/portfolio/historical-analytics'
+import { transactionsToCashFlows }    from '@/lib/portfolio/cash-flows'
 import {
   formatCurrency, formatPercent, formatQuantity,
   ASSET_CLASS_LABELS,
@@ -53,8 +54,18 @@ export default async function PortefeuillePage() {
     total_pnl:          Number(r.total_pnl),
   }))
 
-  // Analytics historiques (TWR, drawdown, vol, sharpe) sur la timeline
-  const historicalAnalytics = computeHistoricalAnalytics(snapshots)
+  // Cash flows depuis les transactions liées au portefeuille (achats/ventes)
+  const { data: txRows } = await supabase
+    .from('transactions')
+    .select('transaction_type, amount, executed_at, position_id, instrument_id')
+    .eq('user_id', user!.id)
+    .in('transaction_type', ['purchase', 'sale'])
+    .or('position_id.not.is.null,instrument_id.not.is.null')
+
+  const cashFlows = transactionsToCashFlows(txRows ?? [])
+
+  // Analytics historiques (TWR, MWR, drawdown, vol, sharpe) sur la timeline
+  const historicalAnalytics = computeHistoricalAnalytics(snapshots, cashFlows)
 
   // Charge les positions brutes + ISIN pour le formulaire d'édition
   const { data: rawPositions } = await supabase
@@ -180,20 +191,23 @@ export default async function PortefeuillePage() {
             <PortfolioEvolutionChart data={snapshots} />
           </div>
 
-          {/* ── Analytics historiques (TWR / drawdown / volatilité / sharpe) ── */}
+          {/* ── Analytics historiques (TWR / MWR / drawdown / volatilité / sharpe) ── */}
           {historicalAnalytics.pointsCount >= 2 && (
             <div className="card p-5 mb-6">
               <p className="text-xs text-secondary uppercase tracking-widest flex items-center gap-1 mb-4">
                 <History size={11} /> Performance historique
                 <span className="text-muted normal-case font-normal ml-2">
                   · {historicalAnalytics.pointsCount} snapshot{historicalAnalytics.pointsCount > 1 ? 's' : ''} sur {historicalAnalytics.daysCovered} jour{historicalAnalytics.daysCovered > 1 ? 's' : ''}
+                  {historicalAnalytics.cashFlowsCount > 0 && (
+                    <> · {historicalAnalytics.cashFlowsCount} flux pris en compte</>
+                  )}
                 </span>
               </p>
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
                 {/* TWR annualisé */}
                 <div>
                   <p className="text-xs text-secondary flex items-center gap-1">
-                    <TrendingUp size={10} /> Rendement annualisé
+                    <TrendingUp size={10} /> TWR annualisé
                   </p>
                   {historicalAnalytics.annualizedReturn === null ? (
                     <p className="text-base font-semibold financial-value text-muted mt-1">—</p>
@@ -207,6 +221,21 @@ export default async function PortefeuillePage() {
                       ? <>total {formatPercent(historicalAnalytics.totalReturn * 100, { sign: true })}</>
                       : ''}
                   </p>
+                </div>
+
+                {/* MWR / IRR */}
+                <div>
+                  <p className="text-xs text-secondary flex items-center gap-1">
+                    <TrendingUp size={10} /> MWR (IRR)
+                  </p>
+                  {historicalAnalytics.moneyWeightedReturn === null ? (
+                    <p className="text-base font-semibold financial-value text-muted mt-1">—</p>
+                  ) : (
+                    <p className={`text-base font-semibold financial-value mt-1 ${historicalAnalytics.moneyWeightedReturn >= 0 ? 'text-accent' : 'text-danger'}`}>
+                      {formatPercent(historicalAnalytics.moneyWeightedReturn * 100, { sign: true })}
+                    </p>
+                  )}
+                  <p className="text-[10px] text-muted mt-0.5">pondéré flux</p>
                 </div>
 
                 {/* Drawdown max */}
