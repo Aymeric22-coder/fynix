@@ -6,8 +6,13 @@ import { TopAssetsList }         from '@/components/dashboard/top-assets-list'
 import { DonutChart }            from '@/components/charts/donut-chart'
 import { PatrimonyAreaChart }    from '@/components/charts/area-chart'
 import { computeRealEstatePortfolio } from '@/lib/real-estate/portfolio'
+import { buildPortfolioFromDb }  from '@/lib/portfolio/build-from-db'
 import { RealEstateAlertsPanel } from '@/components/dashboard/real-estate-alerts-panel'
-import { ASSET_TYPE_LABELS, ASSET_TYPE_COLORS, formatCurrency } from '@/lib/utils/format'
+import {
+  ASSET_TYPE_LABELS, ASSET_TYPE_COLORS,
+  ASSET_CLASS_LABELS, ASSET_CLASS_COLORS,
+  formatCurrency,
+} from '@/lib/utils/format'
 import { ConfidenceBadge }       from '@/components/shared/confidence-badge'
 
 export const metadata: Metadata = { title: 'Dashboard' }
@@ -43,8 +48,18 @@ export default async function DashboardPage() {
   const portfolio = await computeRealEstatePortfolio(supabase, user!.id, { withActuals: true })
   const simAssetIds = new Set(portfolio.properties.map((p) => p.assetId))
 
+  // ── Portefeuille financier (positions + instruments + prix) ──────────────
+  const portfolioResult = await buildPortfolioFromDb(supabase, user!.id)
+
   // ── Calculs patrimoine ────────────────────────────────────────────────────
-  const grossValue = assets.reduce((s, a) => s + (a.current_value ?? 0), 0)
+  // Brut = actifs "table assets" (immo, cash, autre) + valeur de marché du portefeuille.
+  // Note : portfolioResult.summary.totalMarketValue ne couvre QUE les positions valorisees
+  // (avec prix). Pour les positions sans prix, on ajoute leur cost basis comme proxy
+  // (valeur investie) pour ne pas sous-estimer le brut.
+  const assetsValue   = assets.reduce((s, a) => s + (a.current_value ?? 0), 0)
+  const portfolioBrut = portfolioResult.summary.totalMarketValue
+                      + (portfolioResult.summary.totalCostBasis - portfolioResult.summary.totalCostBasisValued)
+  const grossValue    = assetsValue + portfolioBrut
 
   // Capital restant : analytique pour l'immo, stocké pour les autres
   const reCapital    = portfolio.totalCapitalRemaining
@@ -75,21 +90,50 @@ export default async function DashboardPage() {
       cagrValue = (Math.pow(latest.total_net_value / oldest.total_net_value, 1 / years) - 1) * 100
   }
 
-  const highConf  = assets.filter(a => a.confidence === 'high').reduce((s, a) => s + (a.current_value ?? 0), 0)
+  // Confidence : actifs avec confidence='high' + positions portefeuille avec prix frais (< 24 h)
+  const highConfAssets = assets.filter(a => a.confidence === 'high')
+                               .reduce((s, a) => s + (a.current_value ?? 0), 0)
+  const freshPortfolio = portfolioResult.positions
+                          .filter((p) => p.status === 'active' && !p.priceStale && p.marketValue !== null)
+                          .reduce((s, p) => s + (p.marketValue ?? 0), 0)
+  const highConf  = highConfAssets + freshPortfolio
   const confScore = grossValue > 0 ? (highConf / grossValue) * 100 : 0
 
-  // Allocation donut
-  const byType: Record<string, number> = {}
-  for (const a of assets) byType[a.asset_type] = (byType[a.asset_type] ?? 0) + (a.current_value ?? 0)
+  // Allocation donut : combine assets (immo/cash/autre) + portfolio (classes financières)
+  // Labels et couleurs : ASSET_TYPE_LABELS pour les assets historiques, ASSET_CLASS_LABELS
+  // pour les classes du module Portefeuille (etf, crypto, scpi…).
+  const byKey: Record<string, { label: string; value: number; color: string }> = {}
 
-  const donutData = Object.entries(byType)
-    .filter(([, v]) => v > 0)
-    .sort(([, a], [, b]) => b - a)
-    .map(([type, value]) => ({
-      type, value,
-      label:   ASSET_TYPE_LABELS[type] ?? type,
-      percent: grossValue > 0 ? (value / grossValue) * 100 : 0,
-      color:   ASSET_TYPE_COLORS[type] ?? '#6b7280',
+  for (const a of assets) {
+    if (!a.current_value || a.current_value <= 0) continue
+    const key = `asset:${a.asset_type}`
+    const prev = byKey[key]?.value ?? 0
+    byKey[key] = {
+      label: ASSET_TYPE_LABELS[a.asset_type] ?? a.asset_type,
+      value: prev + a.current_value,
+      color: ASSET_TYPE_COLORS[a.asset_type] ?? '#6b7280',
+    }
+  }
+  for (const slice of portfolioResult.summary.allocationByClass) {
+    if (slice.value <= 0) continue
+    const key = `class:${slice.assetClass}`
+    const prev = byKey[key]?.value ?? 0
+    byKey[key] = {
+      label: ASSET_CLASS_LABELS[slice.assetClass] ?? slice.assetClass,
+      value: prev + slice.value,
+      color: ASSET_CLASS_COLORS[slice.assetClass] ?? '#6b7280',
+    }
+  }
+
+  const donutData = Object.entries(byKey)
+    .filter(([, v]) => v.value > 0)
+    .sort(([, a], [, b]) => b.value - a.value)
+    .map(([type, v]) => ({
+      type,
+      value:   v.value,
+      label:   v.label,
+      percent: grossValue > 0 ? (v.value / grossValue) * 100 : 0,
+      color:   v.color,
     }))
 
   // Timeline
@@ -100,14 +144,32 @@ export default async function DashboardPage() {
     total_debt:  s.total_debt,
   }))
 
-  // Top actifs
-  const topAssets = [...assets]
-    .sort((a, b) => (b.current_value ?? 0) - (a.current_value ?? 0))
-    .slice(0, 5)
-    .map(a => ({
+  // Top actifs : combine assets historiques (immo/cash/autre) + positions portefeuille
+  type TopAsset = { id: string; name: string; type: string; value: number; percent: number }
+  const assetsForTop: TopAsset[] = assets
+    .filter((a) => (a.current_value ?? 0) > 0)
+    .map((a) => ({
       id: a.id, name: a.name, type: a.asset_type,
-      value:   a.current_value ?? 0,
-      percent: grossValue > 0 ? ((a.current_value ?? 0) / grossValue) * 100 : 0,
+      value:   a.current_value!,
+      percent: 0,  // calculé ensuite
+    }))
+  const positionsForTop: TopAsset[] = portfolioResult.positions
+    .filter((p) => p.status === 'active')
+    .map((p) => ({
+      id:    p.positionId,
+      name:  p.name,
+      type:  p.assetClass,
+      // Pour les positions sans prix, on retombe sur le cost basis (capital investi)
+      value: p.marketValue ?? p.costBasis,
+      percent: 0,
+    }))
+  const topAssets = [...assetsForTop, ...positionsForTop]
+    .filter((a) => a.value > 0)
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 5)
+    .map((a) => ({
+      ...a,
+      percent: grossValue > 0 ? (a.value / grossValue) * 100 : 0,
     }))
 
   // Alertes
@@ -188,6 +250,51 @@ export default async function DashboardPage() {
                 ? `${Math.round((portfolio.totalCapitalRemaining / grossValue) * 100)} %`
                 : '—',
               sub: 'Capital restant / actifs bruts',
+            },
+          ].map((k) => (
+            <div key={k.label} className={`card p-4 ${k.accent ? 'border-accent/20' : ''}`}>
+              <p className="text-xs text-secondary uppercase tracking-wider mb-2">{k.label}</p>
+              <p className={`text-lg font-semibold financial-value ${k.accent ? 'text-accent' : 'text-primary'}`}>
+                {k.value}
+              </p>
+              <p className="text-xs text-muted mt-1">{k.sub}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Récap Portefeuille (si au moins une position) */}
+      {portfolioResult.summary.positionsCount > 0 && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {[
+            {
+              label: 'Valeur portefeuille',
+              value: formatCurrency(portfolioResult.summary.totalMarketValue, 'EUR', { compact: true }),
+              sub:   `${portfolioResult.summary.positionsCount} position(s) · ${portfolioResult.summary.valuedPositionsCount} valorisée(s)`,
+              accent: false,
+            },
+            {
+              label: 'Capital investi',
+              value: formatCurrency(portfolioResult.summary.totalCostBasis, 'EUR', { compact: true }),
+              sub:   'cost basis cumulé',
+              accent: false,
+            },
+            {
+              label: 'Plus-value latente',
+              value: portfolioResult.summary.totalUnrealizedPnL !== null
+                ? formatCurrency(portfolioResult.summary.totalUnrealizedPnL, 'EUR', { compact: true, sign: true })
+                : '—',
+              sub: portfolioResult.summary.totalUnrealizedPnLPct !== null
+                ? `${portfolioResult.summary.totalUnrealizedPnLPct >= 0 ? '+' : ''}${portfolioResult.summary.totalUnrealizedPnLPct.toFixed(2)} %`
+                : 'en attente de prix',
+              accent: (portfolioResult.summary.totalUnrealizedPnL ?? 0) >= 0
+                      && portfolioResult.summary.totalUnrealizedPnL !== null,
+            },
+            {
+              label: 'Fraîcheur prix',
+              value: `${Math.round(portfolioResult.summary.freshnessRatio * 100)} %`,
+              sub:   '< 24 h',
+              accent: portfolioResult.summary.freshnessRatio >= 0.8,
             },
           ].map((k) => (
             <div key={k.label} className={`card p-4 ${k.accent ? 'border-accent/20' : ''}`}>
