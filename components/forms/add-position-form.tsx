@@ -34,18 +34,21 @@ interface Props {
 }
 
 const INITIAL = {
-  name:             '',
-  asset_class:      'equity' as AssetClass,
-  ticker:           '',
-  isin:             '',
-  envelope_id:      '',
-  quantity:         undefined as number | undefined,
-  average_price:    undefined as number | undefined,
-  manual_price:     undefined as number | undefined,
-  currency:         'EUR' as const,
-  broker:           '',
-  acquisition_date: '',
-  notes:            '',
+  name:               '',
+  asset_class:        'equity' as AssetClass,
+  ticker:             '',
+  isin:               '',
+  envelope_id:        '',
+  quantity:           undefined as number | undefined,
+  average_price:      undefined as number | undefined,
+  manual_price:       undefined as number | undefined,
+  // Alternative au prix unitaire : valeur totale actuelle (typique AV).
+  // Si renseigné, le backend déduit le prix = total / quantité.
+  manual_total_value: undefined as number | undefined,
+  currency:           'EUR' as const,
+  broker:             '',
+  acquisition_date:   '',
+  notes:              '',
 }
 
 const ASSET_CLASSES: AssetClass[] = [
@@ -69,18 +72,19 @@ export function AddPositionForm({ open, onClose, envelopes, initialData }: Props
   const { values, set, setNumber, loading, error, handleSubmit, reset } = useForm({
     initialValues: initialData
       ? {
-          name:             initialData.name,
-          asset_class:      initialData.asset_class,
-          ticker:           initialData.ticker,
-          isin:             initialData.isin,
-          envelope_id:      initialData.envelope_id,
-          quantity:         initialData.quantity as number | undefined,
-          average_price:    initialData.average_price as number | undefined,
-          manual_price:     undefined as number | undefined,
-          currency:         initialData.currency,
-          broker:           initialData.broker,
-          acquisition_date: initialData.acquisition_date,
-          notes:            initialData.notes,
+          name:               initialData.name,
+          asset_class:        initialData.asset_class,
+          ticker:             initialData.ticker,
+          isin:               initialData.isin,
+          envelope_id:        initialData.envelope_id,
+          quantity:           initialData.quantity as number | undefined,
+          average_price:      initialData.average_price as number | undefined,
+          manual_price:       undefined as number | undefined,
+          manual_total_value: undefined as number | undefined,
+          currency:           initialData.currency,
+          broker:             initialData.broker,
+          acquisition_date:   initialData.acquisition_date,
+          notes:              initialData.notes,
         }
       : INITIAL,
     async onSubmit(v) {
@@ -88,6 +92,15 @@ export function AddPositionForm({ open, onClose, envelopes, initialData }: Props
       if (!v.quantity || v.quantity <= 0) return { error: 'Quantité invalide' }
       if (v.average_price === undefined || v.average_price < 0)
         return { error: 'PRU invalide' }
+
+      // Résolution du prix manuel : priorité au prix unitaire si saisi,
+      // sinon dérive depuis la valeur totale (typique AV : la valeur affichée
+      // sur le contrat est NETTE de frais, donc le prix unitaire deduit est
+      // automatiquement net de frais aussi).
+      let manualPrice = v.manual_price
+      if (manualPrice === undefined && v.manual_total_value !== undefined && v.quantity > 0) {
+        manualPrice = v.manual_total_value / v.quantity
+      }
 
       const url    = isEdit ? `/api/portfolio/positions/${initialData!.id}` : '/api/portfolio/positions'
       const method = isEdit ? 'PUT' : 'POST'
@@ -103,7 +116,7 @@ export function AddPositionForm({ open, onClose, envelopes, initialData }: Props
             broker:           v.broker || null,
             acquisition_date: v.acquisition_date || null,
             notes:            v.notes || null,
-            manual_price:     v.manual_price,  // si fourni, ajoute un nouveau prix manuel
+            manual_price:     manualPrice,  // si fourni, ajoute un nouveau prix manuel
           }
         : {
             instrument: {
@@ -120,7 +133,7 @@ export function AddPositionForm({ open, onClose, envelopes, initialData }: Props
             broker:           v.broker || undefined,
             acquisition_date: v.acquisition_date || undefined,
             notes:            v.notes || undefined,
-            manual_price:     v.manual_price,
+            manual_price:     manualPrice,
           }
 
       const res = await fetch(url, {
@@ -323,17 +336,45 @@ export function AddPositionForm({ open, onClose, envelopes, initialData }: Props
             />
           </Field>
 
-          <Field
-            label="Prix actuel (manuel)"
-            hint="Optionnel — saisis ici le prix unitaire si Yahoo ne le trouve pas (ETF Amundi PEA, SCPI, etc.)"
-          >
-            <Input
-              type="number" step="any" min={0}
-              value={values.manual_price ?? ''}
-              onChange={(e) => setNumber('manual_price', e.target.value)}
-              placeholder={livePrice ? `Yahoo: ${livePrice.price}` : 'ex: 21,15'}
-            />
-          </Field>
+          <FormGrid>
+            <Field
+              label="Prix unitaire actuel (manuel)"
+              hint="Si Boursorama/Yahoo ne le trouve pas, ou pour aligner avec la valeur de ton AV"
+            >
+              <Input
+                type="number" step="any" min={0}
+                value={values.manual_price ?? ''}
+                onChange={(e) => {
+                  setNumber('manual_price', e.target.value)
+                  // Saisie manuelle du prix → on annule la valeur totale si elle est saisie
+                  if (e.target.value) set('manual_total_value', undefined)
+                }}
+                placeholder={livePrice ? `Marché: ${livePrice.price}` : 'ex: 21,15'}
+              />
+            </Field>
+            <Field
+              label="OU valeur totale (sur AV / PEA)"
+              hint="Pratique pour AV : tu saisis la valeur affichée sur ton contrat, on déduit le prix net de frais"
+            >
+              <Input
+                type="number" step="any" min={0}
+                value={values.manual_total_value ?? ''}
+                onChange={(e) => {
+                  setNumber('manual_total_value', e.target.value)
+                  // Saisie valeur totale → on annule le prix unitaire
+                  if (e.target.value) set('manual_price', undefined)
+                }}
+                placeholder="ex: 2876,90"
+              />
+            </Field>
+          </FormGrid>
+          {values.manual_total_value && values.quantity && values.quantity > 0 && (
+            <p className="text-xs text-secondary -mt-3">
+              → prix unitaire déduit : <span className="text-primary financial-value">
+                {formatCurrency(values.manual_total_value / values.quantity, values.currency, { decimals: 4 })}
+              </span>
+            </p>
+          )}
 
           {investedTotal !== null && (
             <div className="bg-surface-2 rounded-lg px-4 py-3 text-sm">
