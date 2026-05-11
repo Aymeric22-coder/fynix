@@ -1,4 +1,5 @@
 import { Metadata } from 'next'
+import Link from 'next/link'
 import { Briefcase, Wallet, TrendingUp, Activity, Layers, LineChart } from 'lucide-react'
 import { createServerClient }     from '@/lib/supabase/server'
 import { PageHeader }             from '@/components/shared/page-header'
@@ -223,7 +224,12 @@ export default async function PortefeuillePage() {
                   {positions.map((p) => (
                     <tr key={p.positionId} className="border-b border-border last:border-0 hover:bg-surface-2/50 transition-colors">
                       <td className="px-4 py-3">
-                        <div className="font-medium text-primary">{p.name}</div>
+                        <Link
+                          href={`/portefeuille/${p.positionId}`}
+                          className="font-medium text-primary hover:text-accent transition-colors"
+                        >
+                          {p.name}
+                        </Link>
                         {p.ticker && (
                           <div className="text-xs text-muted">{p.ticker}</div>
                         )}
