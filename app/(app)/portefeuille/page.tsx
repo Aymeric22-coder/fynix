@@ -1,11 +1,15 @@
 import { Metadata } from 'next'
 import Link from 'next/link'
-import { Briefcase, Wallet, TrendingUp, Activity, Layers, LineChart } from 'lucide-react'
+import {
+  Briefcase, Wallet, TrendingUp, Activity, Layers, LineChart,
+  ArrowDownRight, BarChart3, History,
+} from 'lucide-react'
 import { createServerClient }     from '@/lib/supabase/server'
 import { PageHeader }             from '@/components/shared/page-header'
 import { EmptyState }             from '@/components/ui/empty-state'
 import { Badge }                  from '@/components/ui/badge'
 import { buildPortfolioFromDb }   from '@/lib/portfolio/build-from-db'
+import { computeHistoricalAnalytics } from '@/lib/portfolio/historical-analytics'
 import {
   formatCurrency, formatPercent, formatQuantity,
   ASSET_CLASS_LABELS,
@@ -48,6 +52,9 @@ export default async function PortefeuillePage() {
     total_cost_basis:   Number(r.total_cost_basis),
     total_pnl:          Number(r.total_pnl),
   }))
+
+  // Analytics historiques (TWR, drawdown, vol, sharpe) sur la timeline
+  const historicalAnalytics = computeHistoricalAnalytics(snapshots)
 
   // Charge les positions brutes + ISIN pour le formulaire d'édition
   const { data: rawPositions } = await supabase
@@ -172,6 +179,87 @@ export default async function PortefeuillePage() {
             </p>
             <PortfolioEvolutionChart data={snapshots} />
           </div>
+
+          {/* ── Analytics historiques (TWR / drawdown / volatilité / sharpe) ── */}
+          {historicalAnalytics.pointsCount >= 2 && (
+            <div className="card p-5 mb-6">
+              <p className="text-xs text-secondary uppercase tracking-widest flex items-center gap-1 mb-4">
+                <History size={11} /> Performance historique
+                <span className="text-muted normal-case font-normal ml-2">
+                  · {historicalAnalytics.pointsCount} snapshot{historicalAnalytics.pointsCount > 1 ? 's' : ''} sur {historicalAnalytics.daysCovered} jour{historicalAnalytics.daysCovered > 1 ? 's' : ''}
+                </span>
+              </p>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                {/* TWR annualisé */}
+                <div>
+                  <p className="text-xs text-secondary flex items-center gap-1">
+                    <TrendingUp size={10} /> Rendement annualisé
+                  </p>
+                  {historicalAnalytics.annualizedReturn === null ? (
+                    <p className="text-base font-semibold financial-value text-muted mt-1">—</p>
+                  ) : (
+                    <p className={`text-base font-semibold financial-value mt-1 ${historicalAnalytics.annualizedReturn >= 0 ? 'text-accent' : 'text-danger'}`}>
+                      {formatPercent(historicalAnalytics.annualizedReturn * 100, { sign: true })}
+                    </p>
+                  )}
+                  <p className="text-[10px] text-muted mt-0.5">
+                    {historicalAnalytics.totalReturn !== null
+                      ? <>total {formatPercent(historicalAnalytics.totalReturn * 100, { sign: true })}</>
+                      : ''}
+                  </p>
+                </div>
+
+                {/* Drawdown max */}
+                <div>
+                  <p className="text-xs text-secondary flex items-center gap-1">
+                    <ArrowDownRight size={10} /> Drawdown max
+                  </p>
+                  {historicalAnalytics.maxDrawdown === null ? (
+                    <p className="text-base font-semibold financial-value text-muted mt-1">—</p>
+                  ) : (
+                    <p className={`text-base font-semibold financial-value mt-1 ${historicalAnalytics.maxDrawdown < -0.05 ? 'text-danger' : 'text-secondary'}`}>
+                      {formatPercent(historicalAnalytics.maxDrawdown * 100)}
+                    </p>
+                  )}
+                  <p className="text-[10px] text-muted mt-0.5">
+                    courant {historicalAnalytics.currentDrawdown !== null
+                      ? formatPercent(historicalAnalytics.currentDrawdown * 100)
+                      : '—'}
+                  </p>
+                </div>
+
+                {/* Volatilité annualisée */}
+                <div>
+                  <p className="text-xs text-secondary flex items-center gap-1">
+                    <BarChart3 size={10} /> Volatilité
+                  </p>
+                  {historicalAnalytics.volatility === null ? (
+                    <p className="text-base font-semibold financial-value text-muted mt-1">—</p>
+                  ) : (
+                    <p className="text-base font-semibold financial-value text-primary mt-1">
+                      {formatPercent(historicalAnalytics.volatility * 100)}
+                    </p>
+                  )}
+                  <p className="text-[10px] text-muted mt-0.5">annualisée</p>
+                </div>
+
+                {/* Sharpe */}
+                <div>
+                  <p className="text-xs text-secondary flex items-center gap-1">
+                    <Activity size={10} /> Sharpe ratio
+                  </p>
+                  {historicalAnalytics.sharpe === null ? (
+                    <p className="text-base font-semibold financial-value text-muted mt-1">—</p>
+                  ) : (
+                    <p className={`text-base font-semibold financial-value mt-1 ${historicalAnalytics.sharpe >= 1 ? 'text-accent' : historicalAnalytics.sharpe >= 0 ? 'text-secondary' : 'text-danger'}`}>
+                      {historicalAnalytics.sharpe.toFixed(2)}
+                    </p>
+                  )}
+                  <p className="text-[10px] text-muted mt-0.5">rf = 0 %</p>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* ── Allocations ──────────────────────────────────────────────── */}
           {summary.allocationByClass.length > 0 && (
