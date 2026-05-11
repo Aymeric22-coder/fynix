@@ -3,21 +3,21 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
-  LayoutDashboard, Building2, FileText, TrendingUp, PiggyBank,
+  LayoutDashboard, Building2, PiggyBank,
   ArrowLeftRight, RefreshCw, Briefcase, Settings, LogOut, ChevronRight,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
-// Migration 006 : la section "Dettes" a ete supprimee. Les credits immobiliers
-// sont desormais geres directement depuis chaque bien (onglet Credit).
-// Migration 007 : nouvelle section "Portefeuille" (universel actions/ETF/crypto/SCPI…).
-// Les anciennes pages /financier et /scpi restent disponibles pendant la transition.
+// Migration 006 : la section "Dettes" a été supprimée (crédits immobiliers
+// gérés directement depuis chaque bien — onglet Crédit).
+// Migration 007 + Phase 8 : la section "Portefeuille" unifie actions, ETF,
+// crypto, SCPI, fonds, REIT, etc. Les anciennes pages /financier et /scpi
+// restent accessibles par URL directe pour rétro-compatibilité, mais
+// disparaissent de la navigation principale au profit de /portefeuille.
 const NAV = [
   { href: '/dashboard',    label: 'Dashboard',     icon: LayoutDashboard },
   { href: '/portefeuille', label: 'Portefeuille',  icon: Briefcase },
   { href: '/immobilier',   label: 'Immobilier',    icon: Building2 },
-  { href: '/scpi',         label: 'SCPI',          icon: FileText },
-  { href: '/financier',    label: 'Financier',     icon: TrendingUp },
   { href: '/cash',         label: 'Cash',          icon: PiggyBank },
   { href: '/transactions', label: 'Transactions',  icon: ArrowLeftRight },
   { href: '/dca',          label: 'DCA',           icon: RefreshCw },
