@@ -13,6 +13,7 @@ import { createClient } from '@supabase/supabase-js'
 import { ok, err, withAuth } from '@/lib/utils/api'
 import { createServerClient } from '@/lib/supabase/server'
 import { buildOrchestrator } from '@/lib/portfolio/providers'
+import { persistPortfolioSnapshot } from '@/lib/portfolio/persist-snapshot'
 import type { User } from '@supabase/supabase-js'
 import type { AssetClass } from '@/types/database.types'
 import type { InstrumentLookup } from '@/lib/portfolio/providers'
@@ -108,10 +109,22 @@ export const POST = withAuth(async (_req: Request, user: User) => {
     if (insErr) return err(insErr.message, 500)
   }
 
+  // Auto-snapshot apres refresh : on photographie le portefeuille avec
+  // les nouveaux prix. Permet de construire la timeline progressivement
+  // au gre des refresh utilisateur (et du cron quotidien).
+  let snapshotPersisted = false
+  try {
+    const snap = await persistPortfolioSnapshot(userClient, user.id, 'refresh')
+    snapshotPersisted = snap !== null
+  } catch (e) {
+    console.warn('[user-refresh] snapshot failed:', e)
+  }
+
   return ok({
     refreshed,
     skipped,
     errors,
     instrumentsScanned: instruments?.length ?? 0,
+    snapshotPersisted,
   })
 })

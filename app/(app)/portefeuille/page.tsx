@@ -1,17 +1,18 @@
 import { Metadata } from 'next'
-import { Briefcase, Wallet, TrendingUp, Activity, Layers } from 'lucide-react'
+import { Briefcase, Wallet, TrendingUp, Activity, Layers, LineChart } from 'lucide-react'
 import { createServerClient }     from '@/lib/supabase/server'
 import { PageHeader }             from '@/components/shared/page-header'
 import { EmptyState }             from '@/components/ui/empty-state'
 import { Badge }                  from '@/components/ui/badge'
 import { buildPortfolioFromDb }   from '@/lib/portfolio/build-from-db'
 import {
-  formatCurrency, formatPercent, formatQuantity, formatDate,
+  formatCurrency, formatPercent, formatQuantity,
   ASSET_CLASS_LABELS,
 } from '@/lib/utils/format'
 import { PortefeuilleActions }    from '@/components/pages/portefeuille-actions'
 import { PositionRowActions }     from '@/components/pages/position-row-actions'
 import { RefreshPricesButton }    from '@/components/pages/refresh-prices-button'
+import { PortfolioEvolutionChart, type SnapshotPoint } from '@/components/portfolio/evolution-chart'
 import type { PositionInitialData } from '@/components/forms/add-position-form'
 import type { AssetClass, CurrencyCode } from '@/types/database.types'
 
@@ -32,6 +33,20 @@ export default async function PortefeuillePage() {
   // Compute portfolio
   const result = await buildPortfolioFromDb(supabase, user!.id)
   const { positions, summary } = result
+
+  // Charge les 90 derniers snapshots pour la courbe d'evolution
+  const { data: snapshotRows } = await supabase
+    .from('portfolio_snapshots')
+    .select('snapshot_date, total_market_value, total_cost_basis, total_pnl')
+    .eq('user_id', user!.id)
+    .order('snapshot_date', { ascending: false })
+    .limit(90)
+  const snapshots: SnapshotPoint[] = (snapshotRows ?? []).slice().reverse().map((r) => ({
+    snapshot_date:      r.snapshot_date as string,
+    total_market_value: Number(r.total_market_value),
+    total_cost_basis:   Number(r.total_cost_basis),
+    total_pnl:          Number(r.total_pnl),
+  }))
 
   // Charge les positions brutes + ISIN pour le formulaire d'édition
   const { data: rawPositions } = await supabase
@@ -147,6 +162,14 @@ export default async function PortefeuillePage() {
               </p>
               <p className="text-xs text-secondary mt-1">{`< 24 h`}</p>
             </div>
+          </div>
+
+          {/* ── Courbe d'évolution ──────────────────────────────────────── */}
+          <div className="card p-5 mb-6">
+            <p className="text-xs text-secondary uppercase tracking-widest flex items-center gap-1 mb-4">
+              <LineChart size={11} /> Évolution de la valeur de marché
+            </p>
+            <PortfolioEvolutionChart data={snapshots} />
           </div>
 
           {/* ── Allocations ──────────────────────────────────────────────── */}

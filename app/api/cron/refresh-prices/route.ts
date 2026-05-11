@@ -19,6 +19,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { buildOrchestrator } from '@/lib/portfolio/providers'
+import { persistPortfolioSnapshot } from '@/lib/portfolio/persist-snapshot'
 import type { AssetClass } from '@/types/database.types'
 import type { InstrumentLookup } from '@/lib/portfolio/providers'
 
@@ -141,10 +142,28 @@ export async function GET(req: Request) {
     }
   }
 
+  // ── 4. Snapshot quotidien pour chaque utilisateur qui detient des positions ──
+  const { data: usersWithPos } = await supabase
+    .from('positions')
+    .select('user_id')
+    .eq('status', 'active')
+
+  const uniqueUserIds = Array.from(new Set((usersWithPos ?? []).map((r) => r.user_id as string)))
+  let snapshotsCreated = 0
+  for (const uid of uniqueUserIds) {
+    try {
+      const snap = await persistPortfolioSnapshot(supabase, uid, 'cron')
+      if (snap) snapshotsCreated++
+    } catch (e) {
+      console.warn(`[cron] snapshot failed for user ${uid}:`, e)
+    }
+  }
+
   return Response.json({
     refreshed,
     skipped,
     errors,
     instrumentsScanned: instruments?.length ?? 0,
+    snapshotsCreated,
   })
 }
