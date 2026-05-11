@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer,
@@ -41,6 +42,9 @@ function formatYAxis(value: number): string {
 }
 
 export function PriceHistoryChart({ data, currency }: Props) {
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => { setMounted(true) }, [])
+
   if (data.length < 2) {
     return (
       <div className="h-56 flex items-center justify-center text-center px-6">
@@ -51,6 +55,10 @@ export function PriceHistoryChart({ data, currency }: Props) {
         </p>
       </div>
     )
+  }
+
+  if (!mounted) {
+    return <div className="h-56" />
   }
 
   // Tronque à yyyy-MM-dd pour l'axe X

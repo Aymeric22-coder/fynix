@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer,
@@ -46,6 +47,12 @@ function formatYAxis(value: number): string {
 }
 
 export function PortfolioEvolutionChart({ data }: Props) {
+  // Recharts plante parfois pendant l'hydratation (ResponsiveContainer mesure
+  // le DOM). On reporte le rendu après le premier mount pour éviter ce
+  // problème connu.
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => { setMounted(true) }, [])
+
   if (data.length < 2) {
     return (
       <div className="h-56 flex flex-col items-center justify-center text-center px-6">
@@ -59,6 +66,10 @@ export function PortfolioEvolutionChart({ data }: Props) {
         </p>
       </div>
     )
+  }
+
+  if (!mounted) {
+    return <div className="h-56" />
   }
 
   return (
