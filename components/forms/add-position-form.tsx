@@ -517,6 +517,14 @@ export function AddPositionForm({ open, onClose, envelopes, initialData }: Props
 
         {error && <p className="text-sm text-danger bg-danger-muted px-3 py-2 rounded-lg">{error}</p>}
 
+        {isEdit && initialData && values.quantity !== undefined && Number(values.quantity) !== Number(initialData.quantity) && (
+          <p className="text-xs text-secondary bg-surface-2 px-3 py-2 rounded-lg">
+            {Number(values.quantity) > Number(initialData.quantity)
+              ? <>Une transaction <span className="text-primary">achat complémentaire</span> sera enregistrée pour {(Number(values.quantity) - Number(initialData.quantity)).toFixed(4)} part(s).</>
+              : <>Une transaction <span className="text-primary">vente partielle</span> sera enregistrée pour {(Number(initialData.quantity) - Number(values.quantity)).toFixed(4)} part(s).</>}
+          </p>
+        )}
+
         <div className="flex justify-end gap-3 pt-2 border-t border-border">
           <Button variant="secondary" type="button" onClick={onClose}>Annuler</Button>
           <Button type="submit" loading={loading}>{isEdit ? 'Enregistrer' : 'Ajouter la position'}</Button>
