@@ -140,7 +140,87 @@ export interface PatrimoineComplet {
   /** Prénom utilisateur depuis profile (ou null). */
   prenom:        string | null
 
+  // ── Phase 3 — Intelligence ──────────────────────────────────────
+  /** Inputs nécessaires aux composants client (sliders projection FIRE). */
+  fireInputs:    {
+    age:                 number | null
+    age_cible:           number | null
+    epargne_mensuelle:   number   // €/mois
+    revenu_passif_cible: number   // €/mois
+    charges_mensuelles:  number   // pour le scoring solidité (loyer + crédits + fixes + courantes)
+    risk_score:          number   // recalculé depuis profile.risk_1..4 (0-100)
+    enveloppes:          string[]
+    tmi_rate:            number | null
+    actions_eu_value:    number   // valeur des positions stock+etf zone Europe (PEA-éligible)
+  }
+
+  /** Cinq scores d'intelligence (voir lib/analyse/scores.ts). */
+  scores:        ScoresComplets
+
+  /** Recommandations priorisées (voir lib/analyse/recommandations.ts). */
+  recommandations: Recommandation[]
+
   lastUpdated:   string         // ISO timestamp
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Phase 3 — Scores, projection FIRE, recommandations
+// ─────────────────────────────────────────────────────────────────
+
+/** Niveau visuel d'un score (couleur + libellé associé). */
+export type ScoreNiveau = 'rouge' | 'orange' | 'jaune' | 'vert' | 'gris'
+
+/** Un score 0-100 + son niveau + label humain + détails optionnels. */
+export interface Score {
+  /** Valeur 0..100, ou null si données insuffisantes. */
+  value:   number | null
+  niveau:  ScoreNiveau
+  label:   string                     // ex: "Bien diversifié"
+  /** Texte court qui explique pourquoi ce score (affiché en sous-titre). */
+  details?: string
+}
+
+/** Snapshot des 5 scores d'intelligence. */
+export interface ScoresComplets {
+  diversification:    Score
+  coherence_profil:   Score
+  progression_fire:   Score
+  solidite:           Score
+  efficience_fiscale: Score
+}
+
+/** Une recommandation personnalisée. */
+export interface Recommandation {
+  id:             string
+  priorite:       'haute' | 'moyenne' | 'info'
+  categorie:      'diversification' | 'fiscalite' | 'fire' | 'risque' | 'liquidite'
+  titre:          string
+  description:    string
+  /** Ex : "Gain de 3 ans sur votre FIRE". Null si non quantifiable. */
+  impact_estime:  string | null
+  /** Action concrète à mener. */
+  action:         string
+}
+
+/** Un point de la courbe de projection FIRE (1 par année). */
+export interface ProjectionPoint {
+  age:               number
+  pessimiste:        number
+  central:           number
+  optimiste:         number
+}
+
+/** Résultat global d'une simulation. */
+export interface ProjectionResult {
+  points:                  ProjectionPoint[]
+  /** Âge auquel la courbe centrale atteint la cible (null si jamais en 35 ans). */
+  ageIndependanceCentral:  number | null
+  /** Différence en années vs âge cible déclaré (positif = retard). */
+  ecartObjectif:           number | null
+  /** Patrimoine projeté à l'âge cible (scénario central). */
+  patrimoineAgeCible:      number
+  /** Hypothèse de rendement central appliquée (%). */
+  rendementUtilise:        number
 }
 
 /** Couleurs stables par classe d'actif (alignées avec la spec Phase 2). */

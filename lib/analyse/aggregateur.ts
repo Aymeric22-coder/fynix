@@ -16,6 +16,8 @@ import { getEnrichedPositions } from './enrichPositions'
 import { diversificationScore } from './diversification'
 import { translateSector } from './sectorMapping'
 import { geoZone } from './geoMapping'
+import { calculerTousLesScores } from './scores'
+import { genererRecommandations } from './recommandations'
 import type {
   PatrimoineComplet, BienImmo, CompteCash,
   ClasseAlloc, SecteurAlloc, GeoAlloc, EnrichedPosition, AnalyseAssetType,
@@ -198,43 +200,83 @@ async function loadCash(userId: string): Promise<{ comptes: CompteCash[]; totalC
 
 interface ProfileRow {
   prenom: string | null
-  // Note : on n'a pas le profilType en DB — on le calcule depuis les
-  // réponses du questionnaire si dispo. Pour rester simple ici, on
-  // expose juste le prénom et on délègue le calcul à computeProfileMetrics
-  // côté Profil. Le dashboard d'analyse n'a pas besoin de retoucher le
-  // profilType ; on le lit déjà depuis le profil quand il est rempli.
+  age: number | null
+  age_cible: number | null
+  epargne_mensuelle: number | null
+  revenu_passif_cible: number | null
+  loyer: number | null; autres_credits: number | null
+  charges_fixes: number | null; depenses_courantes: number | null
+  enveloppes: string[] | null
+  tmi_rate: number | null
   risk_1: string | null; risk_2: string | null; risk_3: string | null; risk_4: string | null
   quiz_bourse: number[] | null; quiz_crypto: number[] | null; quiz_immo: number[] | null
 }
 
-async function loadProfile(userId: string): Promise<{ prenom: string | null; profilType: string | null }> {
+interface ProfileLoaded {
+  prenom:               string | null
+  profilType:           string | null
+  age:                  number | null
+  age_cible:            number | null
+  epargne_mensuelle:    number
+  revenu_passif_cible:  number
+  charges_mensuelles:   number
+  risk_score:           number
+  enveloppes:           string[]
+  tmi_rate:             number | null
+}
+
+async function loadProfile(userId: string): Promise<ProfileLoaded> {
   const supabase = await createServerClient()
   const { data } = await supabase
     .from('profiles')
-    .select('prenom, risk_1, risk_2, risk_3, risk_4, quiz_bourse, quiz_crypto, quiz_immo')
+    .select(`
+      prenom, age, age_cible, epargne_mensuelle, revenu_passif_cible,
+      loyer, autres_credits, charges_fixes, depenses_courantes,
+      enveloppes, tmi_rate,
+      risk_1, risk_2, risk_3, risk_4,
+      quiz_bourse, quiz_crypto, quiz_immo
+    `)
     .eq('id', userId)
     .maybeSingle()
-  if (!data) return { prenom: null, profilType: null }
+  if (!data) {
+    return {
+      prenom: null, profilType: null,
+      age: null, age_cible: null,
+      epargne_mensuelle: 0, revenu_passif_cible: 0,
+      charges_mensuelles: 0, risk_score: 50, enveloppes: [], tmi_rate: null,
+    }
+  }
   const p = data as unknown as ProfileRow
 
-  // Calcul du profilType en réutilisant la lib du module Profil (déjà testée).
-  // Import dynamique pour éviter une circularité au boot.
+  // Réutilise la lib du module Profil (déjà testée). Import dynamique pour
+  // éviter une circularité au boot.
   const { riskScore, experienceScore, inferProfileType } = await import('@/lib/profil/calculs')
   const risk = riskScore({ risk_1: p.risk_1, risk_2: p.risk_2, risk_3: p.risk_3, risk_4: p.risk_4 })
   const exp  = experienceScore({
-    bourse: { correct: countCorrect(p.quiz_bourse, 'bourse'), total: 4 },
-    crypto: { correct: countCorrect(p.quiz_crypto, 'crypto'), total: 4 },
-    immo:   { correct: countCorrect(p.quiz_immo,   'immo'),   total: 3 },
+    bourse: { correct: countCorrect(p.quiz_bourse), total: 4 },
+    crypto: { correct: countCorrect(p.quiz_crypto), total: 4 },
+    immo:   { correct: countCorrect(p.quiz_immo),   total: 3 },
   })
-  return { prenom: p.prenom, profilType: inferProfileType(risk, exp) }
+  const charges = num(p.loyer) + num(p.autres_credits) + num(p.charges_fixes) + num(p.depenses_courantes)
+
+  return {
+    prenom:              p.prenom,
+    profilType:          inferProfileType(risk, exp),
+    age:                 p.age,
+    age_cible:           p.age_cible,
+    epargne_mensuelle:   num(p.epargne_mensuelle),
+    revenu_passif_cible: num(p.revenu_passif_cible),
+    charges_mensuelles:  charges,
+    risk_score:          risk,
+    enveloppes:          p.enveloppes ?? [],
+    tmi_rate:            p.tmi_rate,
+  }
 }
 
-function countCorrect(answers: number[] | null, _quiz: string): number {
-  // Calcul minimal pour évaluer le profil sans rechercher la bonne réponse
-  // par quiz (déjà fait dans calculs.ts via quizScore). Pour simplifier, on
-  // retourne un proxy : nombre de réponses non nulles / non -1. Ce n'est PAS
-  // exact mais c'est suffisant pour catégoriser. Pour la valeur officielle,
-  // consulter /profil.
+function countCorrect(answers: number[] | null): number {
+  // Proxy : nombre de réponses fournies (non -1). La valeur officielle de
+  // niveau de quiz est dans /profil ; ici on n'a besoin que d'un score
+  // approximatif pour inférer le profilType (Conservateur/Équilibré/…).
   if (!answers || answers.length === 0) return 0
   return answers.filter((a) => typeof a === 'number' && a >= 0).length
 }
@@ -359,13 +401,14 @@ export async function getPatrimoineComplet(userId: string): Promise<PatrimoineCo
     { positions, totalValue: totalPortefeuille },
     { biens, totalImmo, totalDettes, loyersMensuels },
     { comptes, totalCash },
-    { prenom, profilType },
+    profile,
   ] = await Promise.all([
     getEnrichedPositions(userId),
     loadImmo(userId),
     loadCash(userId),
     loadProfile(userId),
   ])
+  const { prenom, profilType } = profile
 
   const totalBrut = totalPortefeuille + totalImmo + totalCash
   const totalNet  = totalBrut - totalDettes
@@ -381,9 +424,29 @@ export async function getPatrimoineComplet(userId: string): Promise<PatrimoineCo
     .reduce((s, p) => s + p.current_value, 0) * 0.02 / 12
   const revenuPassif    = loyersMensuels + dividendesProxy
 
-  console.log(`[aggregateur] patrimoine complet en ${Date.now() - t0}ms — ${positions.length} pos, ${biens.length} biens, ${comptes.length} comptes, total ${totalBrut.toFixed(0)}€`)
+  // Phase 3 — fireInputs : ce dont les composants client ont besoin pour
+  // les sliders + ce que les scores/recos consomment.
+  const actionsEuValue = positions
+    .filter((p) => (p.asset_type === 'stock' || p.asset_type === 'etf')
+      && p.country
+      && geoZone(p.country) === 'Europe')
+    .reduce((s, p) => s + p.current_value, 0)
 
-  return {
+  const fireInputs = {
+    age:                 profile.age,
+    age_cible:           profile.age_cible,
+    epargne_mensuelle:   profile.epargne_mensuelle,
+    revenu_passif_cible: profile.revenu_passif_cible,
+    charges_mensuelles:  profile.charges_mensuelles,
+    risk_score:          profile.risk_score,
+    enveloppes:          profile.enveloppes,
+    tmi_rate:            profile.tmi_rate,
+    actions_eu_value:    actionsEuValue,
+  }
+
+  // Construction temporaire pour calculer scores + recos (besoin de l'objet
+  // PatrimoineComplet partiellement rempli sans les scores eux-mêmes).
+  const partial: PatrimoineComplet = {
     totalBrut, totalNet,
     totalPortefeuille, totalImmo, totalCash, totalDettes,
     positions, biens, comptes,
@@ -396,6 +459,15 @@ export async function getPatrimoineComplet(userId: string): Promise<PatrimoineCo
     revenuPassifActuel:     revenuPassif,
     profilType,
     prenom,
+    fireInputs,
+    scores:                 {} as PatrimoineComplet['scores'],
+    recommandations:        [],
     lastUpdated:            new Date().toISOString(),
   }
+  const scores          = calculerTousLesScores(partial)
+  const recommandations = genererRecommandations({ ...partial, scores }, scores)
+
+  console.log(`[aggregateur] patrimoine complet en ${Date.now() - t0}ms — ${positions.length} pos, ${biens.length} biens, ${comptes.length} comptes, total ${totalBrut.toFixed(0)}€, ${recommandations.length} reco(s)`)
+
+  return { ...partial, scores, recommandations }
 }

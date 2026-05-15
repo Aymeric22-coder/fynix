@@ -19,6 +19,9 @@ import { GeographiqueChart }   from '@/components/analyse/GeographiqueChart'
 import { PositionsTable }      from '@/components/analyse/PositionsTable'
 import { ImmoSummary }         from '@/components/analyse/ImmoSummary'
 import { CashSummary }         from '@/components/analyse/CashSummary'
+import { ScoresBand }          from '@/components/analyse/ScoresBand'
+import { ProjectionFIRE }      from '@/components/analyse/ProjectionFIRE'
+import { Recommandations }     from '@/components/analyse/Recommandations'
 
 export function AnalyseClient() {
   const { data, isLoading, error, refresh, refreshing } = usePatrimoineAnalyse()
@@ -126,10 +129,26 @@ export function AnalyseClient() {
       </div>
 
       {/* 7 + 8. IMMO + CASH */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-6">
         <ImmoSummary biens={data.biens} totalImmo={data.totalImmo} totalDettes={data.totalDettes} />
         <CashSummary comptes={data.comptes} totalCash={data.totalCash} totalBrut={data.totalBrut} />
       </div>
+
+      {/* ─── Phase 3 : Intelligence ────────────────────────────── */}
+
+      {/* 9. Bande des 5 scores */}
+      <div className="mb-6">
+        <p className="text-xs text-secondary uppercase tracking-widest mb-3">Scores d&apos;intelligence</p>
+        <ScoresBand scores={data.scores} />
+      </div>
+
+      {/* 10. Projection FIRE interactive */}
+      <div className="mb-6">
+        <ProjectionFIRE patrimoine={data} />
+      </div>
+
+      {/* 11. Recommandations personnalisées */}
+      <Recommandations recos={data.recommandations} />
     </div>
   )
 }
