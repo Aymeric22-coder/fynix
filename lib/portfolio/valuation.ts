@@ -25,10 +25,7 @@ import type {
   InstrumentInput, PositionInput, PriceInput,
   PositionValuation, PortfolioSummary, PortfolioResult,
 } from './types'
-
-// ─── Constantes ──────────────────────────────────────────────────────────────
-
-const FRESH_THRESHOLD_MS = 24 * 60 * 60 * 1000  // 24 h
+import { freshThresholdMs } from './freshness'
 
 // ─── Options ─────────────────────────────────────────────────────────────────
 
@@ -114,8 +111,15 @@ function valueSinglePosition(
     priceFreshAt = price.pricedAt
     priceSource  = price.source
     confidence   = price.confidence
-    const ageMs  = nowMs - new Date(price.pricedAt).getTime()
-    priceFresh   = ageMs >= 0 && ageMs <= FRESH_THRESHOLD_MS
+    // Seuil de fraîcheur dépend de la fréquence de valorisation de l'instrument :
+    // un fonds mensuel reste frais 35j, une SCPI trimestrielle ~100j, etc.
+    const threshold = freshThresholdMs(inst.valuationFrequency)
+    if (threshold === Number.POSITIVE_INFINITY) {
+      priceFresh = true  // 'manual' : jamais stale
+    } else {
+      const ageMs = nowMs - new Date(price.pricedAt).getTime()
+      priceFresh  = ageMs >= 0 && ageMs <= threshold
+    }
   }
 
   const marketValue       = currentPriceLocal !== null ? pos.quantity * currentPriceLocal : null

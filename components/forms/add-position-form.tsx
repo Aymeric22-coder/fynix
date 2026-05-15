@@ -9,7 +9,10 @@ import { Field, Input, Select, Textarea, FormGrid, FormSection } from '@/compone
 import { AddEnvelopeForm } from '@/components/forms/add-envelope-form'
 import { useForm } from '@/hooks/use-form'
 import { formatCurrency, ASSET_CLASS_LABELS } from '@/lib/utils/format'
-import type { AssetClass, FinancialEnvelope } from '@/types/database.types'
+import {
+  FREQUENCY_LABELS, FREQUENCY_HINTS, defaultFrequencyForClass,
+} from '@/lib/portfolio/freshness'
+import type { AssetClass, FinancialEnvelope, ValuationFrequency } from '@/types/database.types'
 
 export interface PositionInitialData {
   id:               string
@@ -34,22 +37,26 @@ interface Props {
 }
 
 const INITIAL = {
-  name:               '',
-  asset_class:        'equity' as AssetClass,
-  ticker:             '',
-  isin:               '',
-  envelope_id:        '',
-  quantity:           undefined as number | undefined,
-  average_price:      undefined as number | undefined,
-  manual_price:       undefined as number | undefined,
+  name:                '',
+  asset_class:         'equity' as AssetClass,
+  ticker:              '',
+  isin:                '',
+  envelope_id:         '',
+  quantity:            undefined as number | undefined,
+  average_price:       undefined as number | undefined,
+  manual_price:        undefined as number | undefined,
   // Alternative au prix unitaire : valeur totale actuelle (typique AV).
   // Si renseigné, le backend déduit le prix = total / quantité.
-  manual_total_value: undefined as number | undefined,
-  currency:           'EUR' as const,
-  broker:             '',
-  acquisition_date:   '',
-  notes:              '',
+  manual_total_value:  undefined as number | undefined,
+  currency:            'EUR' as const,
+  broker:              '',
+  acquisition_date:    '',
+  notes:               '',
+  // Migration 013 : cadence de valorisation. Défaut auto selon asset_class.
+  valuation_frequency: 'daily' as ValuationFrequency,
 }
+
+const FREQUENCY_OPTIONS: ValuationFrequency[] = ['daily', 'weekly', 'monthly', 'quarterly', 'manual']
 
 const ASSET_CLASSES: AssetClass[] = [
   'equity','etf','fund','crypto','scpi','reit','bond','metal',
@@ -73,23 +80,27 @@ export function AddPositionForm({ open, onClose, envelopes, initialData }: Props
   const [resolverState, setResolverState] = useState<'idle' | 'loading' | 'ok' | 'notfound'>('idle')
   const [resolvedHint, setResolvedHint]   = useState<string | null>(null)
   const lastResolvedRef = useRef<string | null>(null)
+  // Mémorise si l'utilisateur a explicitement choisi une fréquence : si oui,
+  // on n'écrase plus quand asset_class change. Sinon on suit la classe.
+  const freqOverriddenRef = useRef(false)
 
   const { values, set, setNumber, loading, error, handleSubmit, reset } = useForm({
     initialValues: initialData
       ? {
-          name:               initialData.name,
-          asset_class:        initialData.asset_class,
-          ticker:             initialData.ticker,
-          isin:               initialData.isin,
-          envelope_id:        initialData.envelope_id,
-          quantity:           initialData.quantity as number | undefined,
-          average_price:      initialData.average_price as number | undefined,
-          manual_price:       undefined as number | undefined,
-          manual_total_value: undefined as number | undefined,
-          currency:           initialData.currency,
-          broker:             initialData.broker,
-          acquisition_date:   initialData.acquisition_date,
-          notes:              initialData.notes,
+          name:                initialData.name,
+          asset_class:         initialData.asset_class,
+          ticker:              initialData.ticker,
+          isin:                initialData.isin,
+          envelope_id:         initialData.envelope_id,
+          quantity:            initialData.quantity as number | undefined,
+          average_price:       initialData.average_price as number | undefined,
+          manual_price:        undefined as number | undefined,
+          manual_total_value:  undefined as number | undefined,
+          currency:            initialData.currency,
+          broker:              initialData.broker,
+          acquisition_date:    initialData.acquisition_date,
+          notes:               initialData.notes,
+          valuation_frequency: 'daily' as ValuationFrequency,  // pas exposé en édition
         }
       : INITIAL,
     async onSubmit(v) {
@@ -125,11 +136,12 @@ export function AddPositionForm({ open, onClose, envelopes, initialData }: Props
           }
         : {
             instrument: {
-              name:        v.name,
-              asset_class: v.asset_class,
-              ticker:      v.ticker.trim() || undefined,
-              isin:        v.isin.trim()   || undefined,
-              currency:    v.currency,
+              name:                v.name,
+              asset_class:         v.asset_class,
+              ticker:              v.ticker.trim() || undefined,
+              isin:                v.isin.trim()   || undefined,
+              currency:            v.currency,
+              valuation_frequency: v.valuation_frequency,
             },
             envelope_id:      v.envelope_id || undefined,
             quantity:         v.quantity,
@@ -253,6 +265,19 @@ export function AddPositionForm({ open, onClose, envelopes, initialData }: Props
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [values.isin, isEdit])
 
+  // Préselectionne la fréquence de valorisation selon la classe d'actif.
+  // S'arrête dès que l'utilisateur a explicitement choisi une fréquence
+  // (freqOverriddenRef).
+  useEffect(() => {
+    if (isEdit) return
+    if (freqOverriddenRef.current) return
+    const auto = defaultFrequencyForClass(values.asset_class)
+    if (auto !== values.valuation_frequency) {
+      set('valuation_frequency', auto)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [values.asset_class, isEdit])
+
   const investedTotal = values.quantity && values.average_price
     ? values.quantity * values.average_price
     : null
@@ -321,6 +346,30 @@ export function AddPositionForm({ open, onClose, envelopes, initialData }: Props
                 />
               </Field>
             </FormGrid>
+
+            {/* Fréquence de valorisation : auto selon la classe, override possible */}
+            <Field
+              label="Fréquence de valorisation"
+              hint={
+                freqOverriddenRef.current
+                  ? 'Vous avez choisi manuellement la fréquence'
+                  : `Pré-rempli selon la classe d'actif. ${FREQUENCY_HINTS[values.valuation_frequency]}`
+              }
+            >
+              <Select
+                value={values.valuation_frequency}
+                onChange={(e) => {
+                  freqOverriddenRef.current = true
+                  set('valuation_frequency', e.target.value as ValuationFrequency)
+                }}
+              >
+                {FREQUENCY_OPTIONS.map((f) => (
+                  <option key={f} value={f}>
+                    {FREQUENCY_LABELS[f]} — {FREQUENCY_HINTS[f]}
+                  </option>
+                ))}
+              </Select>
+            </Field>
 
             {(values.ticker.trim().length >= 2 || values.isin.trim().length >= 10) && (
               <div className="bg-surface-2 rounded-lg px-4 py-3 text-sm flex items-center gap-2 flex-wrap">

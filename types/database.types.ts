@@ -36,6 +36,9 @@ export type AssetClass =
 
 export type PositionStatus = 'active' | 'closed' | 'pending'
 
+// Migration 013 — fréquence de valorisation par instrument
+export type ValuationFrequency = 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'manual'
+
 // ─── Row types ────────────────────────────────────────────────────────────────
 
 export interface Profile {
@@ -416,6 +419,8 @@ export interface Instrument {
   geography: string | null
   provider_id: string | null
   data_source: DataSource
+  /** Migration 013 : cadence de valorisation. Défaut 'daily'. */
+  valuation_frequency: ValuationFrequency
   metadata: Json
   created_at: string
   updated_at: string

@@ -31,18 +31,20 @@
 import { createServerClient } from '@/lib/supabase/server'
 import { ok, err, withAuth, parseBody } from '@/lib/utils/api'
 import type { User } from '@supabase/supabase-js'
-import type { AssetClass, CurrencyCode } from '@/types/database.types'
+import type { AssetClass, CurrencyCode, ValuationFrequency } from '@/types/database.types'
 
 interface CreateBody {
   instrument_id?:    string
   instrument?: {
-    name:        string
-    asset_class: AssetClass
-    ticker?:     string
-    isin?:       string
-    currency?:   CurrencyCode
-    sector?:     string
-    geography?:  string
+    name:                 string
+    asset_class:          AssetClass
+    ticker?:              string
+    isin?:                string
+    currency?:            CurrencyCode
+    sector?:              string
+    geography?:           string
+    /** Migration 013 : cadence de valorisation. Défaut 'daily' côté backend. */
+    valuation_frequency?: ValuationFrequency
   }
   quantity:          number
   average_price:     number
@@ -109,14 +111,15 @@ export const POST = withAuth(async (req: Request, user: User) => {
       const { data: created, error: ie } = await supabase
         .from('instruments')
         .insert({
-          name:           i.name,
-          asset_class:    i.asset_class,
-          ticker:         i.ticker  ?? null,
-          isin:           i.isin    ?? null,
-          currency:       i.currency ?? 'EUR',
-          sector:         i.sector  ?? null,
-          geography:      i.geography ?? null,
-          data_source:    'manual',
+          name:                i.name,
+          asset_class:         i.asset_class,
+          ticker:              i.ticker  ?? null,
+          isin:                i.isin    ?? null,
+          currency:            i.currency ?? 'EUR',
+          sector:              i.sector  ?? null,
+          geography:           i.geography ?? null,
+          data_source:         'manual',
+          valuation_frequency: i.valuation_frequency ?? 'daily',
         })
         .select('id')
         .single()

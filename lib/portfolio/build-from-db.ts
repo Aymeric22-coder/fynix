@@ -9,7 +9,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type {
-  AssetClass, ConfidenceLevel, CurrencyCode, PositionStatus,
+  AssetClass, ConfidenceLevel, CurrencyCode, PositionStatus, ValuationFrequency,
 } from '@/types/database.types'
 import {
   valuePortfolio, type ValuationOptions,
@@ -33,15 +33,16 @@ interface PositionRow {
 }
 
 interface InstrumentRow {
-  id:             string
-  name:           string
-  ticker:         string | null
-  isin:           string | null
-  asset_class:    AssetClass
-  asset_subclass: string | null
-  currency:       CurrencyCode
-  sector:         string | null
-  geography:      string | null
+  id:                  string
+  name:                string
+  ticker:              string | null
+  isin:                string | null
+  asset_class:         AssetClass
+  asset_subclass:      string | null
+  currency:            CurrencyCode
+  sector:              string | null
+  geography:           string | null
+  valuation_frequency: ValuationFrequency | null
 }
 
 interface PriceRow {
@@ -91,7 +92,7 @@ export async function buildPortfolioFromDb(
   const ids = Array.from(new Set(positions.map((p) => p.instrument_id)))
   const { data: instRows, error: instErr } = await supabase
     .from('instruments')
-    .select('id, name, ticker, isin, asset_class, asset_subclass, currency, sector, geography')
+    .select('id, name, ticker, isin, asset_class, asset_subclass, currency, sector, geography, valuation_frequency')
     .in('id', ids)
 
   if (instErr) {
@@ -131,15 +132,16 @@ export async function buildPortfolioFromDb(
   }))
 
   const instrumentInputs: InstrumentInput[] = instruments.map((i) => ({
-    id:         i.id,
-    ticker:     i.ticker,
-    isin:       i.isin,
-    name:       i.name,
-    assetClass: i.asset_class,
-    subclass:   i.asset_subclass,
-    currency:   i.currency,
-    sector:     i.sector,
-    geography:  i.geography,
+    id:                 i.id,
+    ticker:             i.ticker,
+    isin:               i.isin,
+    name:               i.name,
+    assetClass:         i.asset_class,
+    subclass:           i.asset_subclass,
+    currency:           i.currency,
+    sector:             i.sector,
+    geography:          i.geography,
+    valuationFrequency: i.valuation_frequency ?? 'daily',
   }))
 
   const priceInputs: PriceInput[] = Array.from(latestByInstrument.values()).map((p) => ({

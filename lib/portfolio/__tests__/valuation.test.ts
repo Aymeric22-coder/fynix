@@ -5,7 +5,7 @@ import type { InstrumentInput, PositionInput, PriceInput } from '../types'
 // ─── Fixtures helpers ─────────────────────────────────────────────────────
 
 const I = (id: string, over: Partial<InstrumentInput> = {}): InstrumentInput => ({
-  id, ticker: 'TST', isin: null, name: 'Test', assetClass: 'equity',
+  id, ticker: 'TST', isin: null, name: 'Test', assetClass: 'equity', valuationFrequency: 'daily',
   subclass: null, currency: 'EUR', sector: null, geography: null, ...over,
 })
 
@@ -117,7 +117,8 @@ describe('valuePortfolio — edge cases', () => {
   })
 
   it('marque comme stale un prix vieux de plus de 24h', () => {
-    const oldDate = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString()
+    // Pour daily, le seuil est 36h (week-end & jours fériés). Donc 48h doit être stale.
+    const oldDate = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString()
     const r = valuePortfolio(
       [P('p1', 'i1')],
       [I('i1')],
@@ -127,7 +128,7 @@ describe('valuePortfolio — edge cases', () => {
     expect(r.summary.freshnessRatio).toBe(0)
   })
 
-  it('marque comme frais un prix de moins de 24h', () => {
+  it('marque comme frais un prix recent (daily, < 36h)', () => {
     const r = valuePortfolio([P('p1', 'i1')], [I('i1')], [PR('i1')])
     expect(r.positions[0]!.priceStale).toBe(false)
     expect(r.summary.freshnessRatio).toBe(1)

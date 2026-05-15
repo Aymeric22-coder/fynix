@@ -5,22 +5,24 @@
  */
 
 import type {
-  AssetClass, ConfidenceLevel, CurrencyCode, PositionStatus,
+  AssetClass, ConfidenceLevel, CurrencyCode, PositionStatus, ValuationFrequency,
 } from '@/types/database.types'
 
 // ─── Inputs (données brutes côté DB ou import) ───────────────────────────────
 
 /** Représentation minimale d'un instrument (catalogue partagé). */
 export interface InstrumentInput {
-  id:           string
-  ticker:       string | null
-  isin:         string | null
-  name:         string
-  assetClass:   AssetClass
-  subclass:     string | null
-  currency:     CurrencyCode
-  sector:       string | null
-  geography:    string | null
+  id:                   string
+  ticker:               string | null
+  isin:                 string | null
+  name:                 string
+  assetClass:           AssetClass
+  subclass:             string | null
+  currency:             CurrencyCode
+  sector:               string | null
+  geography:            string | null
+  /** Migration 013 : cadence de valorisation attendue (daily/weekly/monthly/quarterly/manual). */
+  valuationFrequency:   ValuationFrequency
 }
 
 /** Représentation minimale d'une position utilisateur. */
