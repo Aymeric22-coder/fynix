@@ -8,6 +8,7 @@
 import { CoinGeckoProvider } from './coingecko'
 import { YahooPortfolioProvider } from './yahoo'
 import { BoursoramaProvider } from './boursorama'
+import { JustEtfProvider } from './justetf'
 import { PriceOrchestrator, type ProviderConfig } from './orchestrator'
 import type { AssetClass } from '@/types/database.types'
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -17,6 +18,7 @@ export { PriceOrchestrator, type ProviderConfig } from './orchestrator'
 export { YahooPortfolioProvider } from './yahoo'
 export { CoinGeckoProvider } from './coingecko'
 export { BoursoramaProvider } from './boursorama'
+export { JustEtfProvider } from './justetf'
 
 /**
  * Charge la config DB et instancie l'orchestrateur prêt à l'emploi.
@@ -59,6 +61,8 @@ function instantiate(
       return new YahooPortfolioProvider()
     case 'boursorama':
       return new BoursoramaProvider()
+    case 'justetf':
+      return new JustEtfProvider()
     case 'coingecko': {
       const key = raw.api_key_env ? process.env[raw.api_key_env] : undefined
       return new CoinGeckoProvider(key)
