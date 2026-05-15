@@ -94,3 +94,56 @@ export const FREQUENCY_HINTS: Record<ValuationFrequency, string> = {
   quarterly: 'SCPI, OPCI',
   manual:    'Private equity, crowdfunding',
 }
+
+/**
+ * Calcule la prochaine date attendue de valorisation à partir d'un prix
+ * existant et de la fréquence de l'instrument.
+ *
+ * @returns Date de la prochaine valeur attendue, ou null pour 'manual'
+ *   (pas de rythme imposé) ou si la fréquence est inconnue.
+ */
+export function nextValuationDue(
+  lastPricedAtISO: string,
+  freq:            ValuationFrequency | null | undefined,
+): Date | null {
+  if (!freq || freq === 'manual') return null
+  const d = new Date(lastPricedAtISO)
+  if (isNaN(d.getTime())) return null
+
+  switch (freq) {
+    case 'daily':     d.setUTCDate(d.getUTCDate() + 1);   break
+    case 'weekly':    d.setUTCDate(d.getUTCDate() + 7);   break
+    case 'monthly':   d.setUTCMonth(d.getUTCMonth() + 1); break
+    case 'quarterly': d.setUTCMonth(d.getUTCMonth() + 3); break
+  }
+  return d
+}
+
+/**
+ * Statut d'une valorisation par rapport à sa cadence attendue.
+ *
+ * - 'on_time'   : on n'a pas encore atteint la date attendue
+ * - 'due'       : on est dans la fenêtre de publication (jusqu'à 1 cycle de retard)
+ * - 'overdue'   : ça fait plus d'un cycle qu'on n'a pas eu de valeur
+ * - 'unknown'   : pas de prix encore, ou fréquence 'manual'
+ */
+export type ValuationStatus = 'on_time' | 'due' | 'overdue' | 'unknown'
+
+export function valuationStatus(
+  lastPricedAtISO: string | null,
+  freq:            ValuationFrequency | null | undefined,
+  now:             Date = new Date(),
+): ValuationStatus {
+  if (!freq || freq === 'manual') return 'unknown'
+  if (!lastPricedAtISO) return 'unknown'
+
+  const due = nextValuationDue(lastPricedAtISO, freq)
+  if (!due) return 'unknown'
+
+  if (now < due) return 'on_time'
+
+  // Au-delà de 1.5 × intervalle, c'est overdue
+  const intervalMs = due.getTime() - new Date(lastPricedAtISO).getTime()
+  const overdueAt  = new Date(due.getTime() + intervalMs * 0.5)
+  return now > overdueAt ? 'overdue' : 'due'
+}

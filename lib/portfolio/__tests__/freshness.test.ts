@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   freshThresholdMs, isPriceFresh, defaultFrequencyForClass,
+  nextValuationDue, valuationStatus,
 } from '../freshness'
 
 const DAY = 24 * 60 * 60 * 1000
@@ -84,5 +85,64 @@ describe('defaultFrequencyForClass', () => {
     expect(defaultFrequencyForClass('crowdfunding')).toBe('manual')
     expect(defaultFrequencyForClass('private_debt')).toBe('manual')
     expect(defaultFrequencyForClass('structured')).toBe('manual')
+  })
+})
+
+describe('nextValuationDue', () => {
+  it('daily : +1 jour', () => {
+    const d = nextValuationDue('2026-05-10T12:00:00Z', 'daily')
+    expect(d?.toISOString().slice(0, 10)).toBe('2026-05-11')
+  })
+
+  it('weekly : +7 jours', () => {
+    const d = nextValuationDue('2026-05-01T12:00:00Z', 'weekly')
+    expect(d?.toISOString().slice(0, 10)).toBe('2026-05-08')
+  })
+
+  it('monthly : +1 mois', () => {
+    const d = nextValuationDue('2026-04-15T12:00:00Z', 'monthly')
+    expect(d?.toISOString().slice(0, 10)).toBe('2026-05-15')
+  })
+
+  it('quarterly : +3 mois', () => {
+    const d = nextValuationDue('2026-01-15T12:00:00Z', 'quarterly')
+    expect(d?.toISOString().slice(0, 10)).toBe('2026-04-15')
+  })
+
+  it('manual → null', () => {
+    expect(nextValuationDue('2026-01-01T12:00:00Z', 'manual')).toBeNull()
+  })
+
+  it('null/undefined freq → null', () => {
+    expect(nextValuationDue('2026-01-01T12:00:00Z', null)).toBeNull()
+    expect(nextValuationDue('2026-01-01T12:00:00Z', undefined)).toBeNull()
+  })
+})
+
+describe('valuationStatus', () => {
+  const now = new Date('2026-06-15T12:00:00Z')
+
+  it('on_time : prix récent (daily, hier)', () => {
+    expect(valuationStatus('2026-06-14T18:00:00Z', 'daily', now)).toBe('on_time')
+  })
+
+  it('due : prix dépassé mais < 1.5 cycle (daily, ~30h)', () => {
+    expect(valuationStatus('2026-06-14T06:00:00Z', 'daily', now)).toBe('due')
+  })
+
+  it('overdue : prix très en retard (daily, 5 jours)', () => {
+    expect(valuationStatus('2026-06-10T12:00:00Z', 'daily', now)).toBe('overdue')
+  })
+
+  it('monthly : prix de 6 semaines → due', () => {
+    expect(valuationStatus('2026-05-01T12:00:00Z', 'monthly', now)).toBe('due')
+  })
+
+  it('manual → unknown (jamais en retard)', () => {
+    expect(valuationStatus('2020-01-01T12:00:00Z', 'manual', now)).toBe('unknown')
+  })
+
+  it('null lastPrice → unknown', () => {
+    expect(valuationStatus(null, 'daily', now)).toBe('unknown')
   })
 })

@@ -3,18 +3,22 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import {
   ArrowLeft, Wallet, TrendingUp, Activity, LineChart as LineChartIcon,
-  Receipt, Hash, Globe,
+  Receipt, Hash, Globe, Clock,
 } from 'lucide-react'
 import { createServerClient } from '@/lib/supabase/server'
 import { PageHeader } from '@/components/shared/page-header'
 import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PriceHistoryChart, type PricePoint } from '@/components/portfolio/price-history-chart'
+import { AddPriceModalTrigger } from '@/components/portfolio/add-price-modal'
 import {
   formatCurrency, formatPercent, formatQuantity, formatDate,
   ASSET_CLASS_LABELS,
 } from '@/lib/utils/format'
-import type { AssetClass, CurrencyCode } from '@/types/database.types'
+import {
+  FREQUENCY_LABELS, nextValuationDue, valuationStatus,
+} from '@/lib/portfolio/freshness'
+import type { AssetClass, CurrencyCode, ValuationFrequency } from '@/types/database.types'
 
 export const metadata: Metadata = { title: 'Détail position' }
 
@@ -31,10 +35,7 @@ export default async function PositionDetailPage({ params }: Props) {
     .select(`
       id, instrument_id, envelope_id, quantity, average_price, currency,
       broker, acquisition_date, notes, status, created_at,
-      instrument:instruments!instrument_id (
-        id, name, ticker, isin, asset_class, asset_subclass, currency,
-        sector, geography
-      ),
+      instrument:instruments!instrument_id (*),
       envelope:financial_envelopes!envelope_id (
         id, name, envelope_type, broker
       )
@@ -49,6 +50,7 @@ export default async function PositionDetailPage({ params }: Props) {
     id: string; name: string; ticker: string | null; isin: string | null
     asset_class: AssetClass; asset_subclass: string | null
     currency: CurrencyCode; sector: string | null; geography: string | null
+    valuation_frequency?: ValuationFrequency | null
   }
   type EnvelopeRow = { id: string; name: string; envelope_type: string; broker: string | null }
 
@@ -96,6 +98,12 @@ export default async function PositionDetailPage({ params }: Props) {
   const pnlPct    = mv !== null && cost > 0 ? ((mv - cost) / cost) * 100 : null
   const currency  = position.currency as CurrencyCode
 
+  // ── Cadence de valorisation ─────────────────────────────────────────
+  const freq      = (instrument.valuation_frequency ?? 'daily') as ValuationFrequency
+  const lastDate  = latestPrice?.priced_at ?? null
+  const dueDate   = lastDate ? nextValuationDue(lastDate, freq) : null
+  const status    = valuationStatus(lastDate, freq)
+
   return (
     <div>
       {/* ── Header ──────────────────────────────────────────────────── */}
@@ -106,20 +114,32 @@ export default async function PositionDetailPage({ params }: Props) {
         >
           <ArrowLeft size={12} /> Retour au portefeuille
         </Link>
-        <PageHeader
-          title={instrument.name}
-          subtitle={
-            <span className="flex items-center gap-2 flex-wrap">
-              <Badge variant="muted">{ASSET_CLASS_LABELS[instrument.asset_class] ?? instrument.asset_class}</Badge>
-              {instrument.ticker && <span className="text-xs text-muted">{instrument.ticker}</span>}
-              {instrument.isin && <span className="text-xs text-muted">· ISIN {instrument.isin}</span>}
-              {envelope && <span className="text-xs text-secondary">· {envelope.name}</span>}
-              {position.status !== 'active' && (
-                <Badge variant="muted">{position.status}</Badge>
-              )}
-            </span>
-          }
-        />
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <PageHeader
+            title={instrument.name}
+            subtitle={
+              <span className="flex items-center gap-2 flex-wrap">
+                <Badge variant="muted">{ASSET_CLASS_LABELS[instrument.asset_class] ?? instrument.asset_class}</Badge>
+                {instrument.ticker && <span className="text-xs text-muted">{instrument.ticker}</span>}
+                {instrument.isin && <span className="text-xs text-muted">· ISIN {instrument.isin}</span>}
+                {envelope && <span className="text-xs text-secondary">· {envelope.name}</span>}
+                {position.status !== 'active' && (
+                  <Badge variant="muted">{position.status}</Badge>
+                )}
+              </span>
+            }
+          />
+          <div className="pt-1">
+            <AddPriceModalTrigger
+              positionId={position.id}
+              positionName={instrument.name}
+              quantity={qty}
+              currency={currency}
+              lastPrice={curPrice}
+              lastDate={lastDate}
+            />
+          </div>
+        </div>
       </div>
 
       {/* ── KPIs ───────────────────────────────────────────────────── */}
@@ -184,6 +204,31 @@ export default async function PositionDetailPage({ params }: Props) {
             {latestPrice ? `source : ${latestPrice.source}` : 'aucun prix enregistré'}
           </p>
         </div>
+      </div>
+
+      {/* ── Cadence de valorisation ───────────────────────────────── */}
+      <div className="card p-4 mb-6 flex items-center gap-3 flex-wrap text-sm">
+        <Clock size={14} className="text-secondary" />
+        <span className="text-xs text-secondary uppercase tracking-widest">Cadence</span>
+        <span className="text-primary">{FREQUENCY_LABELS[freq]}</span>
+        {dueDate && (
+          <>
+            <span className="text-muted">·</span>
+            <span className="text-xs text-secondary">prochaine valeur attendue</span>
+            <span className="text-primary financial-value">
+              {dueDate.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+            </span>
+          </>
+        )}
+        {status === 'on_time' && (
+          <Badge variant="success" className="ml-auto">À jour</Badge>
+        )}
+        {status === 'due' && (
+          <Badge variant="warning" className="ml-auto">À mettre à jour</Badge>
+        )}
+        {status === 'overdue' && (
+          <Badge variant="danger" className="ml-auto">En retard</Badge>
+        )}
       </div>
 
       {/* ── Courbe historique des prix ────────────────────────────── */}
