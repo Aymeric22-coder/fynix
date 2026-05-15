@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Search, Plus } from 'lucide-react'
 import { Modal }  from '@/components/ui/modal'
@@ -68,6 +68,11 @@ export function AddPositionForm({ open, onClose, envelopes, initialData }: Props
   const [localEnvelopes, setLocalEnvelopes] = useState(envelopes)
   // Sync si la prop change (router.refresh côté parent)
   useEffect(() => { setLocalEnvelopes(envelopes) }, [envelopes])
+
+  // Resolver OpenFIGI : auto-fill nom/ticker/classe à partir de l'ISIN
+  const [resolverState, setResolverState] = useState<'idle' | 'loading' | 'ok' | 'notfound'>('idle')
+  const [resolvedHint, setResolvedHint]   = useState<string | null>(null)
+  const lastResolvedRef = useRef<string | null>(null)
 
   const { values, set, setNumber, loading, error, handleSubmit, reset } = useForm({
     initialValues: initialData
@@ -196,6 +201,58 @@ export function AddPositionForm({ open, onClose, envelopes, initialData }: Props
     return () => clearTimeout(handle)
   }, [values.ticker, values.isin, values.name, values.asset_class, isEdit])
 
+  // ── Resolver OpenFIGI : auto-fill quand un ISIN est tapé ─────────────
+  // Quand l'utilisateur saisit un ISIN à 12 caractères, on appelle
+  // /api/portfolio/resolve qui interroge OpenFIGI pour récupérer
+  // {name, ticker, assetClass}. On ne remplit QUE les champs vides
+  // (pas d'écrasement si l'utilisateur a déjà tapé un nom).
+  useEffect(() => {
+    if (isEdit) return
+    const isin = values.isin.trim().toUpperCase()
+    if (isin.length !== 12) {
+      setResolverState('idle')
+      setResolvedHint(null)
+      return
+    }
+    if (lastResolvedRef.current === isin) return  // déjà résolu, skip
+
+    const handle = setTimeout(async () => {
+      setResolverState('loading')
+      try {
+        const res  = await fetch(`/api/portfolio/resolve?isin=${encodeURIComponent(isin)}`)
+        const json = await res.json()
+        const r    = json.data
+        lastResolvedRef.current = isin
+
+        if (!r) {
+          setResolverState('notfound')
+          setResolvedHint(null)
+          return
+        }
+
+        // Auto-fill : ne JAMAIS écraser un champ déjà rempli par l'user.
+        // C'est lui qui valide, on ne fait que pré-remplir les vides.
+        if (!values.name && r.name)                set('name', r.name)
+        if (!values.ticker && r.ticker)            set('ticker', r.ticker)
+        if (values.asset_class === 'equity' && r.assetClass && r.assetClass !== 'equity') {
+          // 'equity' est le défaut au chargement → on l'écrase si OpenFIGI
+          // dit autre chose (ex: 'etf', 'fund', 'bond'…)
+          set('asset_class', r.assetClass)
+        }
+
+        setResolverState('ok')
+        setResolvedHint(
+          `${r.name}${r.ticker ? ` (${r.ticker})` : ''}${r.exchCode ? ` · ${r.exchCode}` : ''}`,
+        )
+      } catch {
+        setResolverState('notfound')
+        setResolvedHint(null)
+      }
+    }, 600)
+    return () => clearTimeout(handle)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [values.isin, isEdit])
+
   const investedTotal = values.quantity && values.average_price
     ? values.quantity * values.average_price
     : null
@@ -245,7 +302,18 @@ export function AddPositionForm({ open, onClose, envelopes, initialData }: Props
                   <Search size={13} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted" />
                 </div>
               </Field>
-              <Field label="ISIN" hint="ex: US0378331005">
+              <Field
+                label="ISIN"
+                hint={
+                  resolverState === 'loading'
+                    ? 'Résolution OpenFIGI…'
+                    : resolverState === 'ok' && resolvedHint
+                      ? `✓ ${resolvedHint}`
+                      : resolverState === 'notfound'
+                        ? 'ISIN non reconnu par OpenFIGI (tu peux remplir à la main)'
+                        : 'ex: US0378331005 — auto-remplit nom/ticker/classe'
+                }
+              >
                 <Input
                   value={values.isin}
                   onChange={(e) => set('isin', e.target.value.toUpperCase())}
