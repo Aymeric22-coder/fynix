@@ -12,6 +12,10 @@ import { buildPortfolioFromDb }   from '@/lib/portfolio/build-from-db'
 import { computeHistoricalAnalytics } from '@/lib/portfolio/historical-analytics'
 import { transactionsToCashFlows }    from '@/lib/portfolio/cash-flows'
 import {
+  filterPortfolioByCategory, summarizeCategories, isValidCategoryId,
+} from '@/lib/portfolio/categories'
+import { CategoryTabs }               from '@/components/portfolio/category-tabs'
+import {
   formatCurrency, formatPercent, formatQuantity,
   ASSET_CLASS_LABELS,
 } from '@/lib/utils/format'
@@ -24,7 +28,14 @@ import type { AssetClass, CurrencyCode } from '@/types/database.types'
 
 export const metadata: Metadata = { title: 'Portefeuille' }
 
-export default async function PortefeuillePage() {
+interface Props {
+  searchParams: Promise<{ cat?: string }>
+}
+
+export default async function PortefeuillePage({ searchParams }: Props) {
+  const { cat } = await searchParams
+  const activeCategory = isValidCategoryId(cat) ? cat : 'global'
+
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
 
@@ -36,8 +47,22 @@ export default async function PortefeuillePage() {
     .eq('is_active', true)
     .order('name')
 
-  // Compute portfolio
-  const result = await buildPortfolioFromDb(supabase, user!.id)
+  // Compute portfolio (TOUTES positions, toutes catégories)
+  const fullResult = await buildPortfolioFromDb(supabase, user!.id)
+
+  // Compteurs par catégorie (pour les onglets) sur l'ensemble complet
+  const categorySummaries = summarizeCategories(fullResult.positions)
+  // Patch : la 1ere ligne "global" affiche la valeur totale du portefeuille
+  if (categorySummaries[0]) {
+    categorySummaries[0] = {
+      ...categorySummaries[0],
+      positionsCount: fullResult.summary.positionsCount,
+      totalValue:     fullResult.summary.totalMarketValue,
+    }
+  }
+
+  // Vue filtrée selon ?cat= (par défaut : global = pas de filtre)
+  const result = filterPortfolioByCategory(fullResult, activeCategory)
   const { positions, summary } = result
 
   // Charge les 90 derniers snapshots pour la courbe d'evolution
@@ -103,24 +128,39 @@ export default async function PortefeuillePage() {
       <PageHeader
         title="Portefeuille"
         subtitle={
-          summary.positionsCount > 0
-            ? `${summary.positionsCount} position${summary.positionsCount > 1 ? 's' : ''} active${summary.positionsCount > 1 ? 's' : ''}`
-            : 'Suivi unifié actions, ETF, crypto, SCPI'
+          fullResult.summary.positionsCount > 0
+            ? `${fullResult.summary.positionsCount} position${fullResult.summary.positionsCount > 1 ? 's' : ''} au total`
+            : 'Suivi unifié actions, ETF, crypto, SCPI…'
         }
         action={
           <div className="flex items-center gap-3">
-            {summary.positionsCount > 0 && <RefreshPricesButton />}
+            {fullResult.summary.positionsCount > 0 && <RefreshPricesButton />}
             <PortefeuilleActions envelopes={envelopes ?? []} />
           </div>
         }
       />
 
-      {summary.positionsCount === 0 ? (
+      {/* Onglets de catégorie (visibles dès qu'il y a au moins 1 position) */}
+      {fullResult.summary.positionsCount > 0 && (
+        <CategoryTabs
+          summaries={categorySummaries}
+          activeId={activeCategory}
+          currency={fullResult.summary.referenceCurrency}
+        />
+      )}
+
+      {fullResult.summary.positionsCount === 0 ? (
         <EmptyState
           icon={Briefcase}
           title="Aucune position"
           description="Ajoutez votre première position (action, ETF, crypto, SCPI…) pour démarrer le suivi unifié."
           action={<PortefeuilleActions envelopes={envelopes ?? []} />}
+        />
+      ) : summary.positionsCount === 0 ? (
+        <EmptyState
+          icon={Briefcase}
+          title="Aucune position dans cette catégorie"
+          description="Sélectionne une autre catégorie ou retourne sur Global pour voir l'ensemble du portefeuille."
         />
       ) : (
         <>
@@ -183,16 +223,20 @@ export default async function PortefeuillePage() {
             </div>
           </div>
 
-          {/* ── Courbe d'évolution ──────────────────────────────────────── */}
-          <div className="card p-5 mb-6">
-            <p className="text-xs text-secondary uppercase tracking-widest flex items-center gap-1 mb-4">
-              <LineChart size={11} /> Évolution de la valeur de marché
-            </p>
-            <PortfolioEvolutionChart data={snapshots} />
-          </div>
+          {/* ── Courbe d'évolution (uniquement en vue Global) ─────────────
+              Les snapshots sont stockés au niveau du portefeuille global,
+              pas par catégorie. La courbe est donc cachée quand on filtre. */}
+          {activeCategory === 'global' && (
+            <div className="card p-5 mb-6">
+              <p className="text-xs text-secondary uppercase tracking-widest flex items-center gap-1 mb-4">
+                <LineChart size={11} /> Évolution de la valeur de marché
+              </p>
+              <PortfolioEvolutionChart data={snapshots} />
+            </div>
+          )}
 
-          {/* ── Analytics historiques (TWR / MWR / drawdown / volatilité / sharpe) ── */}
-          {historicalAnalytics.pointsCount >= 2 && (
+          {/* ── Analytics historiques (Global uniquement, même raison) ── */}
+          {activeCategory === 'global' && historicalAnalytics.pointsCount >= 2 && (
             <div className="card p-5 mb-6">
               <p className="text-xs text-secondary uppercase tracking-widest flex items-center gap-1 mb-4">
                 <History size={11} /> Performance historique
