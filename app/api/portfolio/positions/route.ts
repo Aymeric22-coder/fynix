@@ -108,23 +108,39 @@ export const POST = withAuth(async (req: Request, user: User) => {
     }
 
     if (!instrumentId) {
-      const { data: created, error: ie } = await supabase
+      // Insert defensif : tente d'inclure valuation_frequency (migration 013).
+      // Si la colonne n'existe pas en DB (migration pas appliquee), retry sans.
+      const baseRow: Record<string, unknown> = {
+        name:        i.name,
+        asset_class: i.asset_class,
+        ticker:      i.ticker  ?? null,
+        isin:        i.isin    ?? null,
+        currency:    i.currency ?? 'EUR',
+        sector:      i.sector  ?? null,
+        geography:   i.geography ?? null,
+        data_source: 'manual',
+      }
+
+      const withFreq = { ...baseRow, valuation_frequency: i.valuation_frequency ?? 'daily' }
+      let { data: created, error: ie } = await supabase
         .from('instruments')
-        .insert({
-          name:                i.name,
-          asset_class:         i.asset_class,
-          ticker:              i.ticker  ?? null,
-          isin:                i.isin    ?? null,
-          currency:            i.currency ?? 'EUR',
-          sector:              i.sector  ?? null,
-          geography:           i.geography ?? null,
-          data_source:         'manual',
-          valuation_frequency: i.valuation_frequency ?? 'daily',
-        })
+        .insert(withFreq)
         .select('id')
         .single()
+
+      // Retry sans valuation_frequency si la colonne manque (schema cache PostgREST)
+      if (ie && /valuation_frequency/.test(ie.message)) {
+        const retry = await supabase
+          .from('instruments')
+          .insert(baseRow)
+          .select('id')
+          .single()
+        created = retry.data
+        ie      = retry.error
+      }
+
       if (ie) return err(`Failed to create instrument: ${ie.message}`, 500)
-      instrumentId = created.id as string
+      instrumentId = created!.id as string
     }
   }
 

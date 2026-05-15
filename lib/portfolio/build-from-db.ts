@@ -92,7 +92,9 @@ export async function buildPortfolioFromDb(
   const ids = Array.from(new Set(positions.map((p) => p.instrument_id)))
   const { data: instRows, error: instErr } = await supabase
     .from('instruments')
-    .select('id, name, ticker, isin, asset_class, asset_subclass, currency, sector, geography, valuation_frequency')
+    // SELECT * pour tolerer un schema partiel (migration 013 pas encore appliquee).
+    // On lit valuation_frequency avec fallback 'daily' si la colonne n'existe pas.
+    .select('*')
     .in('id', ids)
 
   if (instErr) {
