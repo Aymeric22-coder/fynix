@@ -73,11 +73,18 @@ async function traceQuery(query: string): Promise<QueryTrace> {
     trace.parsedPrice    = parsed?.price ?? null
     trace.parsedCurrency = parsed?.currency ?? null
 
-    // Snippet autour de "Prix de souscription" si présent
-    const idx = html.search(/Prix de souscription/i)
-    if (idx >= 0) {
-      trace.scpiSnippet = html.slice(Math.max(0, idx - 30), idx + 300)
+    // Toutes les occurrences de "Prix de souscription" + contexte large
+    const allMatches: Array<{ idx: number; snippet: string }> = []
+    const re = /Prix de souscription/gi
+    let m: RegExpExecArray | null
+    while ((m = re.exec(html)) !== null) {
+      allMatches.push({
+        idx: m.index,
+        snippet: html.slice(Math.max(0, m.index - 80), m.index + 500),
+      })
+      if (allMatches.length >= 5) break
     }
+    trace.scpiSnippet = JSON.stringify(allMatches, null, 2)
   } catch (e) {
     trace.error = e instanceof Error ? e.message : String(e)
   }
