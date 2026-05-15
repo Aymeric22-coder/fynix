@@ -37,11 +37,16 @@ async function loadCacheBulk(isins: string[]): Promise<Map<string, ISINData>> {
   if (isins.length === 0) return out
 
   const supabase = await createServerClient()
+  // Filtre sector NOT NULL pour éviter les caches cassés (anciens
+  // enregistrements pré-fix). Le sentinel équivalent existe aussi dans
+  // getCachedIsin() pour les appels unitaires.
   const { data, error } = await supabase
     .from('isin_cache')
     .select('*')
     .in('isin', isins)
     .gt('cache_expires_at', new Date().toISOString())
+    .not('sector', 'is', null)
+    .not('country', 'is', null)
 
   if (error || !data) return out
 

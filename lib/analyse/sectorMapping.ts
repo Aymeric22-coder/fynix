@@ -22,6 +22,10 @@ export const SECTOR_MAP: Record<string, string> = {
   'Utilities':              'Services publics',
   'Real Estate':            'Immobilier',
   'Communication Services': 'Communication',
+  // Étiquettes de fallback ajoutées par l'enricher quand Yahoo ne renvoie
+  // pas de secteur (ETFs notamment) — déjà en français, passe-plat.
+  'ETF Diversifié':         'ETF Diversifié',
+  'Non identifié':          'Non identifié',
 }
 
 /**

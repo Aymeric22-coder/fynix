@@ -1,14 +1,22 @@
 /**
  * Wrapper Yahoo Finance pour récupérer secteur / industrie / pays /
- * description d'une action ou d'un ETF, via `quoteSummary` modules.
+ * description d'un instrument coté, via `quoteSummary` modules.
  *
- * Réutilise la dépendance `yahoo-finance2` déjà installée (cf. package.json).
- * L'avantage par rapport à un fetch direct sur query1.finance.yahoo.com :
- * la lib gère les cookies CSRF, la rotation d'endpoints, le retry, et
- * livre une typage strict des modules (assetProfile, summaryProfile…).
+ * Couvre 2 cas distincts :
  *
- * À n'utiliser QUE côté serveur (Server Component, route handler) — la
- * lib n'est pas faite pour le navigateur (ESM Node + DNS lookups).
+ *   1. **Action / EQUITY** : Yahoo renseigne `assetProfile.sector`,
+ *      `assetProfile.industry`, `assetProfile.country` directement.
+ *
+ *   2. **ETF / Fund** : `assetProfile` est VIDE pour les fonds. On
+ *      bascule sur :
+ *        - `topHoldings.sectorWeightings` → secteur dominant (max %)
+ *        - `summaryProfile.country`        → pays du gestionnaire (ex
+ *          "Ireland" pour les UCITS irlandais)
+ *        - `fundProfile.categoryName`      → label "Large Blend",
+ *          "Sector - Technology"…  utilisé comme industry de fallback.
+ *
+ * Réutilise `yahoo-finance2` qui gère les cookies CSRF et la rotation
+ * d'endpoints. À n'utiliser QUE côté serveur (Node only).
  */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -28,16 +36,70 @@ export interface YahooEnrichment {
   quoteType:     string | null
   /** Prix temps réel quand disponible. */
   currentPrice:  number | null
+  /** Indique si le secteur a été déduit (ETF via topHoldings) plutôt que lu direct. */
+  sector_inferred: boolean
   /** Payload brut pour stockage en isin_cache.raw_data. */
   raw:           unknown
 }
 
 /**
+ * Extrait le secteur dominant d'un ETF depuis `topHoldings.sectorWeightings`.
+ * Yahoo renvoie un tableau d'objets type `{ realestate: 0.05 }`, etc., un
+ * key par objet — on cherche celui avec le poids max.
+ *
+ * @returns le libellé Yahoo en anglais (ex "Technology") déjà compatible
+ *   avec `lib/analyse/sectorMapping.translateSector()`. Null si absent.
+ */
+function dominantSectorFromHoldings(topHoldings: any): string | null {
+  const weights = topHoldings?.sectorWeightings
+  if (!Array.isArray(weights) || weights.length === 0) return null
+
+  // Map clé Yahoo (lowercase, snake-ish) → libellé GICS standard
+  const KEY_TO_LABEL: Record<string, string> = {
+    technology:            'Technology',
+    healthcare:            'Healthcare',
+    financial_services:    'Financial Services',
+    financialservices:     'Financial Services',
+    consumer_cyclical:     'Consumer Cyclical',
+    consumercyclical:      'Consumer Cyclical',
+    consumer_defensive:    'Consumer Defensive',
+    consumerdefensive:     'Consumer Defensive',
+    industrials:           'Industrials',
+    basic_materials:       'Basic Materials',
+    basicmaterials:        'Basic Materials',
+    energy:                'Energy',
+    utilities:             'Utilities',
+    real_estate:           'Real Estate',
+    realestate:            'Real Estate',
+    communication_services:'Communication Services',
+    communicationservices: 'Communication Services',
+  }
+
+  let bestKey: string | null = null
+  let bestVal = 0
+  for (const entry of weights) {
+    if (entry && typeof entry === 'object') {
+      for (const [k, v] of Object.entries(entry)) {
+        const num = typeof v === 'number' ? v : Number((v as any)?.raw ?? NaN)
+        if (isFinite(num) && num > bestVal) {
+          bestVal = num
+          bestKey = k.toLowerCase()
+        }
+      }
+    }
+  }
+  if (!bestKey) return null
+  return KEY_TO_LABEL[bestKey] ?? bestKey  // au pire, on renvoie la clé brute
+}
+
+/**
  * Récupère les modules d'analyse depuis Yahoo Finance pour un symbol donné.
+ * Fait 2 appels séquentiels en cas d'échec du premier (assetProfile vide
+ * → on retente avec uniquement les modules ETF).
  *
  * @param symbol Ticker au format Yahoo (ex: "AAPL", "BNP.PA", "IWDA.AS")
- * @returns enrichissement avec champs nullables. Renvoie null si Yahoo
- *   ne reconnaît pas le symbol.
+ * @returns enrichissement avec champs nullables. Renvoie null SEULEMENT si
+ *   Yahoo ne reconnaît pas du tout le symbol.
  */
 export async function fetchYahooEnrichment(symbol: string): Promise<YahooEnrichment | null> {
   const trimmed = symbol.trim()
@@ -45,7 +107,14 @@ export async function fetchYahooEnrichment(symbol: string): Promise<YahooEnrichm
 
   try {
     const result = await yf.quoteSummary(trimmed, {
-      modules: ['assetProfile', 'summaryProfile', 'price', 'defaultKeyStatistics'],
+      modules: [
+        'assetProfile',
+        'summaryProfile',
+        'price',
+        'defaultKeyStatistics',
+        'topHoldings',
+        'fundProfile',
+      ],
     }, { validateResult: false })
 
     if (!result) return null
@@ -53,12 +122,27 @@ export async function fetchYahooEnrichment(symbol: string): Promise<YahooEnrichm
     const ap = result.assetProfile    ?? {}
     const sp = result.summaryProfile  ?? {}
     const p  = result.price           ?? {}
+    const th = result.topHoldings     ?? {}
+    const fp = result.fundProfile     ?? {}
 
-    // assetProfile prend la priorité (rempli pour les actions cotées),
-    // summaryProfile sert de fallback (parfois mieux rempli pour ETFs).
-    const sector   = ap.sector   ?? sp.sector   ?? null
-    const industry = ap.industry ?? sp.industry ?? null
-    const country  = ap.country  ?? sp.country  ?? null
+    // 1) Sector : assetProfile (actions) → topHoldings.sectorWeightings (ETFs)
+    let sector: string | null = ap.sector ?? sp.sector ?? null
+    let sectorInferred = false
+    if (!sector) {
+      const inferred = dominantSectorFromHoldings(th)
+      if (inferred) {
+        sector = inferred
+        sectorInferred = true
+      }
+    }
+
+    // 2) Industry : assetProfile, sinon summaryProfile, sinon catégorie de fonds
+    const industry =
+      ap.industry ?? sp.industry ??
+      (fp.categoryName as string | undefined) ?? null
+
+    // 3) Country : assetProfile (actions) → summaryProfile (pays gestionnaire ETF)
+    const country = ap.country ?? sp.country ?? null
 
     const currency = (p.currency ?? null) as string | null
     const exchange = (p.exchange ?? null) as string | null
@@ -70,6 +154,7 @@ export async function fetchYahooEnrichment(symbol: string): Promise<YahooEnrichm
       longBusinessSummary: summary,
       quoteType:    (p.quoteType ?? null) as string | null,
       currentPrice: typeof p.regularMarketPrice === 'number' ? p.regularMarketPrice : null,
+      sector_inferred: sectorInferred,
       raw:          result,
     }
   } catch (e) {

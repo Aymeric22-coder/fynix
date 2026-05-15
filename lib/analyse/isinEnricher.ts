@@ -134,7 +134,13 @@ function rowToData(row: CacheRow): ISINData {
 }
 
 /**
- * Récupère depuis le cache une ligne ISIN si elle existe et n'a pas expiré.
+ * Récupère depuis le cache une ligne ISIN si elle existe, n'a pas expiré,
+ * ET contient des données utiles (sector + country non null).
+ *
+ * Sentinel : les rows écrits par l'ancienne version du code ont sector=NULL
+ * pour les ETFs. On les traite comme un MISS pour forcer un re-fetch avec
+ * la nouvelle logique de fallback. Évite à l'utilisateur de devoir wipe la
+ * table à la main après le déploiement.
  */
 export async function getCachedIsin(isin: string): Promise<ISINData | null> {
   const supabase = await createServerClient()
@@ -144,8 +150,13 @@ export async function getCachedIsin(isin: string): Promise<ISINData | null> {
     .eq('isin', isin)
     .maybeSingle()
   if (error || !data) return null
+
   const expiresAt = new Date(data.cache_expires_at as string).getTime()
   if (isFinite(expiresAt) && expiresAt < Date.now()) return null
+
+  // Sentinel anti-cache cassé : si sector OU country sont null → re-fetch
+  if (data.sector === null || data.country === null) return null
+
   return rowToData(data as CacheRow)
 }
 
@@ -231,15 +242,42 @@ export async function enrichISIN(isin: string): Promise<ISINData> {
     assetType = 'scpi'
   }
 
-  // 6. Construction de l'ISINData
+  // 6. Sector / country : compose les fallbacks pour ne JAMAIS laisser null.
+  //    Ordre de priorité (1 = le meilleur) :
+  //      1. Yahoo direct (assetProfile pour actions, topHoldings pour ETFs)
+  //      2. SCPI française → 'Real Estate' / 'France'
+  //      3. ETF / fund sans secteur déduit → 'ETF Diversifié' / 'International'
+  //      4. ISIN FR* sans rien → '—' / 'France'
+  //      5. Dernier recours → 'Non identifié' / 'International'
+  let sector: string  = yahoo?.sector ?? ''
+  let country: string = yahoo?.country ?? ''
+
+  if (!sector || !country) {
+    if (assetType === 'scpi') {
+      if (!sector)  sector  = 'Real Estate'
+      if (!country) country = 'France'
+    } else if (assetType === 'etf') {
+      // ETF sans données détaillées : on annote comme diversifié pour
+      // éviter qu'il pollue les vues avec "Sans secteur" en gros.
+      if (!sector)  sector  = 'ETF Diversifié'
+      if (!country) country = 'International'
+    } else if (norm.startsWith('FR')) {
+      if (!sector)  sector  = 'Non identifié'
+      if (!country) country = 'France'
+    } else {
+      if (!sector)  sector  = 'Non identifié'
+      if (!country) country = 'International'
+    }
+  }
+
   const data: ISINData = {
     isin:          norm,
     symbol:        yahooSymbol,
     name:          yahoo?.longName ?? figi?.name ?? norm,
     asset_type:    assetType,
-    sector:        yahoo?.sector  ?? (assetType === 'scpi' ? 'Real Estate' : null),
+    sector,
     industry:      yahoo?.industry ?? null,
-    country:       yahoo?.country ?? (assetType === 'scpi' ? 'France' : null),
+    country,
     currency:      yahoo?.currency ?? (assetType === 'scpi' ? 'EUR' : 'EUR'),
     exchange:      yahoo?.exchange ?? figi?.exchCode ?? null,
     current_price: yahoo?.currentPrice ?? null,
