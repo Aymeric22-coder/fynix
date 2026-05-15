@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
   LayoutDashboard, Building2, PiggyBank,
-  ArrowLeftRight, RefreshCw, Briefcase, Settings, LogOut, ChevronRight,
+  ArrowLeftRight, RefreshCw, Briefcase, Settings, LogOut, ChevronRight, UserCircle2,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
@@ -16,6 +16,7 @@ import { createClient } from '@/lib/supabase/client'
 // et /scpi ont été supprimées (migration 012).
 const NAV = [
   { href: '/dashboard',    label: 'Dashboard',     icon: LayoutDashboard },
+  { href: '/profil',       label: 'Profil',        icon: UserCircle2 },
   { href: '/portefeuille', label: 'Portefeuille',  icon: Briefcase },
   { href: '/immobilier',   label: 'Immobilier',    icon: Building2 },
   { href: '/cash',         label: 'Cash',          icon: PiggyBank },

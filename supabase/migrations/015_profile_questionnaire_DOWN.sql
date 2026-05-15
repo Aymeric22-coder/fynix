@@ -1,0 +1,32 @@
+-- Rollback migration 015 — Supprime les colonnes ajoutees au questionnaire
+-- ATTENTION : destructive — supprime toutes les reponses des utilisateurs.
+
+ALTER TABLE profiles
+  DROP COLUMN IF EXISTS prenom,
+  DROP COLUMN IF EXISTS age,
+  DROP COLUMN IF EXISTS situation_familiale,
+  DROP COLUMN IF EXISTS enfants,
+  DROP COLUMN IF EXISTS statut_pro,
+  DROP COLUMN IF EXISTS revenu_mensuel,
+  DROP COLUMN IF EXISTS revenu_conjoint,
+  DROP COLUMN IF EXISTS autres_revenus,
+  DROP COLUMN IF EXISTS stabilite_revenus,
+  DROP COLUMN IF EXISTS loyer,
+  DROP COLUMN IF EXISTS autres_credits,
+  DROP COLUMN IF EXISTS charges_fixes,
+  DROP COLUMN IF EXISTS depenses_courantes,
+  DROP COLUMN IF EXISTS epargne_mensuelle,
+  DROP COLUMN IF EXISTS invest_mensuel,
+  DROP COLUMN IF EXISTS enveloppes,
+  DROP COLUMN IF EXISTS quiz_bourse,
+  DROP COLUMN IF EXISTS quiz_crypto,
+  DROP COLUMN IF EXISTS quiz_immo,
+  DROP COLUMN IF EXISTS risk_1,
+  DROP COLUMN IF EXISTS risk_2,
+  DROP COLUMN IF EXISTS risk_3,
+  DROP COLUMN IF EXISTS risk_4,
+  DROP COLUMN IF EXISTS fire_type,
+  DROP COLUMN IF EXISTS revenu_passif_cible,
+  DROP COLUMN IF EXISTS age_cible,
+  DROP COLUMN IF EXISTS priorite,
+  DROP COLUMN IF EXISTS profile_completed_at;

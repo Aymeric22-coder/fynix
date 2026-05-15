@@ -49,6 +49,45 @@ export interface Profile {
   fiscal_situation: string | null
   created_at: string
   updated_at: string
+
+  // ── Migration 015 — Questionnaire de profil investisseur ───────────
+  // Toutes les colonnes sont nullable : un profile cree avant la migration
+  // 015 (ou par un user qui n'a pas encore rempli le wizard) renvoie null.
+  prenom:               string | null
+  age:                  number | null
+  situation_familiale:  string | null
+  enfants:              string | null      // "0".."4+"
+  statut_pro:           string | null
+
+  revenu_mensuel:       number | null
+  revenu_conjoint:      number | null
+  autres_revenus:       number | null
+  stabilite_revenus:    string | null
+
+  loyer:                number | null
+  autres_credits:       number | null
+  charges_fixes:        number | null
+  depenses_courantes:   number | null
+
+  epargne_mensuelle:    number | null
+  invest_mensuel:       number | null
+  enveloppes:           string[] | null
+
+  quiz_bourse:          number[] | null
+  quiz_crypto:          number[] | null
+  quiz_immo:            number[] | null
+
+  risk_1:               string | null
+  risk_2:               string | null
+  risk_3:               string | null
+  risk_4:               string | null
+  fire_type:            string | null
+  revenu_passif_cible:  number | null
+  age_cible:            number | null
+  priorite:             string | null
+
+  /** Sentinel : si null, le wizard n'a jamais ete soumis. */
+  profile_completed_at: string | null
 }
 
 export interface Asset {
