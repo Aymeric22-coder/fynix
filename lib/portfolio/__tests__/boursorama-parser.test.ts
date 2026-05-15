@@ -52,14 +52,18 @@ describe('parseBoursoramaHtml — extraction prix Boursorama', () => {
     expect(result?.price).toBeCloseTo(42.10, 2)
   })
 
-  it('parse une fiche SCPI ("Prix de souscription YYYY XXX EUR")', () => {
-    // Format observé sur /immobilier/scpi/cours/SCPI88960069800019/ pour Iroko Zen
+  it('parse une fiche SCPI avec structure c-list-info__value (format reel)', () => {
+    // Format réel observé sur /immobilier/scpi/cours/SCPI88960069800019/ pour Iroko Zen
+    // (verifié via /api/debug/scpi-trace en production)
     const html = `
-      <div class="c-faceplate__about">
-        <div class="c-faceplate__subscription">Prix de souscription 2025
-          <span>204 EUR</span>
-        </div>
-      </div>
+      <li class="no-gutter">
+        <p class="c-list-info__heading">
+          Prix de souscription 2025
+        </p>
+        <p class="c-list-info__value u-text-size-lg">
+          204 EUR
+        </p>
+      </li>
     `
     const result = parseBoursoramaHtml(html)
     expect(result).not.toBeNull()
@@ -67,8 +71,24 @@ describe('parseBoursoramaHtml — extraction prix Boursorama', () => {
     expect(result!.currency).toBe('EUR')
   })
 
+  it('SCPI : ignore widgets sidebar (c-instrument--last des autres titres)', () => {
+    // Page SCPI avec un widget sidebar contenant le cours du CAC 40 ou autre
+    // Le parser SCPI doit IGNORER c-instrument--last et cibler c-list-info__value
+    const html = `
+      <aside>
+        <span class="c-instrument c-instrument--last">109,45</span>
+      </aside>
+      <div class="c-faceplate">
+        <p class="c-list-info__heading">Prix de souscription 2025</p>
+        <p class="c-list-info__value">204 EUR</p>
+      </div>
+    `
+    const result = parseBoursoramaHtml(html)
+    expect(result?.price).toBe(204)  // PAS 109,45 (widget sidebar)
+  })
+
   it('SCPI : ignore "Prix de souscription" tout seul (sans nombre EUR à coté)', () => {
-    const html = `<p>Prix de souscription</p><p>Autre info</p>`
+    const html = `<p class="c-list-info__heading">Prix de souscription</p><p>Autre info</p>`
     const result = parseBoursoramaHtml(html)
     expect(result).toBeNull()
   })

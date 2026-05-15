@@ -4,10 +4,13 @@
  *
  * Stratégie :
  *   1. Recherche par providerId → ISIN → ticker → name (fallback ultime).
- *   2. /recherche/?query= redirige vers la fiche canonique
- *      /bourse/trackers/cours/... ou /bourse/action/cours/... ou
- *      /immobilier/scpi/cours/... selon le type d'actif.
- *   3. Parse extrait le prix selon plusieurs patterns (ETF, action, SCPI).
+ *   2. /recherche/?query= redirige vers la fiche canonique :
+ *        - /bourse/trackers/cours/... ou /bourse/action/cours/... (ETF, action…)
+ *        - /immobilier/scpi/cours/... (SCPI)
+ *   3. Parse selon l'URL : parser SCPI dédié si /immobilier/scpi/, sinon
+ *      parser standard. Cette séparation évite que les widgets de sidebar
+ *      (qui contiennent des classes c-instrument--last pour d'autres titres)
+ *      polluent le prix extrait pour les SCPI.
  *
  * Pas de clé API requise.
  */
@@ -37,9 +40,6 @@ export class BoursoramaProvider implements PortfolioPriceProvider {
   }
 
   async fetchQuote(instrument: InstrumentLookup): Promise<PriceQuote | null> {
-    // Ordre de résolution : providerId, ISIN, ticker, nom.
-    // Le nom est indispensable pour les SCPI (codes AMF non-ISIN) et les
-    // fonds dont l'ISIN n'est pas indexé par Boursorama.
     const queries: string[] = []
     if (instrument.providerId)                              queries.push(instrument.providerId)
     if (instrument.isin && instrument.isin.length >= 10)    queries.push(instrument.isin)
@@ -68,14 +68,18 @@ export class BoursoramaProvider implements PortfolioPriceProvider {
       const html     = await res.text()
 
       // L'URL finale doit contenir /cours/ : Boursorama a redirigé vers une fiche
-      // /bourse/<type>/cours/<symbol>/ ou /immobilier/scpi/cours/<symbol>/
       const symMatch = finalUrl.match(/\/cours\/([^/?#]+)\/?/)
       if (!symMatch) return null
       const symbol = symMatch[1]!
 
-      const parsed = parseBoursoramaHtml(html)
+      // Choix du parser selon le type de fiche
+      const isScpiPage = finalUrl.includes('/immobilier/scpi/')
+      const parsed = isScpiPage
+        ? parseScpiHtml(html)
+        : parseStandardHtml(html)
+
       if (!parsed) {
-        console.warn(`[boursorama] price parse failed for ${query} (resolved=${symbol})`)
+        console.warn(`[boursorama] price parse failed for ${query} (resolved=${symbol}, scpi=${isScpiPage})`)
         return null
       }
 
@@ -92,73 +96,92 @@ export class BoursoramaProvider implements PortfolioPriceProvider {
       return null
     }
   }
-
-  private parsePrice(html: string): { price: number; currency: CurrencyCode } | null {
-    return parseBoursoramaHtml(html)
-  }
 }
 
 /**
- * Extrait le prix et la devise depuis le HTML d'une fiche cotation Boursorama.
- * Exposé en top-level pour pouvoir être unit-testé.
+ * Parser dédié aux fiches SCPI (URL /immobilier/scpi/cours/...).
  *
- * Patterns supportés (testés dans l'ordre) :
- *   - <span class="c-instrument c-instrument--last">99,09</span>  ← ETF, action
- *   - data-ist-last="..." (ancien format, fallback)
- *   - "Prix de souscription YYYY ... XXX EUR" ← fiche SCPI (peut traverser des balises HTML)
- *   - Pattern générique "NB EUR" (fallback ultime)
+ * Structure HTML observée :
+ *   <p class="c-list-info__heading">Prix de souscription 2025</p>
+ *   <p class="c-list-info__value u-text-size-lg">204 EUR</p>
+ *
+ * On NE peut PAS utiliser c-instrument--last comme sur les ETF/actions car
+ * la page SCPI contient des widgets sidebar (indices, autres SCPI, etc.) qui
+ * ont aussi cette classe et fausseraient le prix.
  */
-export function parseBoursoramaHtml(html: string): { price: number; currency: CurrencyCode } | null {
-  let priceMatch: RegExpMatchArray | null = null
-  let detectedCurrency: CurrencyCode | null = null
+export function parseScpiHtml(html: string): { price: number; currency: CurrencyCode } | null {
+  // Pattern strict : "Prix de souscription" dans un c-list-info__heading,
+  // suivi (avec balises HTML entre) d'un c-list-info__value contenant XX EUR.
+  // Tolérance de 500 chars pour absorber les retours à la ligne et indentations.
+  const re = /c-list-info__heading[^>]*>\s*Prix de souscription[\s\S]{0,500}?c-list-info__value[^>]*>\s*([0-9][0-9 ]*(?:[.,][0-9]+)?)\s*(EUR|USD|GBP|CHF)/i
+  const m = html.match(re)
+  if (m && m[1] && m[2]) {
+    const price = parseFloat(m[1].replace(/\s/g, '').replace(',', '.'))
+    if (isFinite(price) && price > 0) {
+      return { price, currency: toCurrency(m[2]) }
+    }
+  }
 
-  // 1. Pattern principal : class contenant c-instrument--last (ETF, action…)
-  priceMatch = html.match(/class="[^"]*c-instrument--last[^"]*"[^>]*>\s*([0-9][0-9  ]*[.,][0-9]+)/)
+  // Fallback : si la structure HTML change, regarde le tout premier
+  // "Prix de souscription" et le prochain montant + devise dans un span/p.
+  const fallback = html.match(
+    /Prix de souscription[\s\S]{0,400}?>\s*([0-9][0-9 ]*(?:[.,][0-9]+)?)\s*(EUR|USD|GBP|CHF)/i,
+  )
+  if (fallback && fallback[1] && fallback[2]) {
+    const price = parseFloat(fallback[1].replace(/\s/g, '').replace(',', '.'))
+    if (isFinite(price) && price > 0) {
+      return { price, currency: toCurrency(fallback[2]) }
+    }
+  }
+
+  return null
+}
+
+/**
+ * Parser pour fiches ETF / action / fonds (toutes sauf SCPI).
+ *
+ * Patterns observés :
+ *   - <span class="c-instrument c-instrument--last">99,09</span>
+ *   - data-ist-last="..." (legacy)
+ */
+export function parseStandardHtml(html: string): { price: number; currency: CurrencyCode } | null {
+  let priceMatch: RegExpMatchArray | null = null
+
+  // 1. Pattern principal : c-instrument--last
+  priceMatch = html.match(/class="[^"]*c-instrument--last[^"]*"[^>]*>\s*([0-9][0-9 ]*[.,][0-9]+)/)
 
   // 2. Fallback : ordre des classes inversé
   if (!priceMatch) {
-    priceMatch = html.match(/class="c-instrument--last[^"]*"[^>]*>\s*([0-9][0-9  ]*[.,][0-9]+)/)
+    priceMatch = html.match(/class="c-instrument--last[^"]*"[^>]*>\s*([0-9][0-9 ]*[.,][0-9]+)/)
   }
 
   // 3. Fallback : data-ist-last="VALEUR" (ancien format)
   if (!priceMatch) {
-    priceMatch = html.match(/data-ist-last="([0-9][0-9.,  ]*)"/)
-  }
-
-  // 4. Pattern SCPI : "Prix de souscription [annee] ... XXX EUR".
-  //    Le prix peut être separe par des balises HTML (span, div…). On accepte
-  //    tout caractère entre "Prix de souscription" et le montant final, dans
-  //    une fenêtre limitée (250 chars) pour éviter de matcher un montant non
-  //    lié plus loin dans la page.
-  if (!priceMatch) {
-    const scpi = html.match(
-      /Prix de souscription[\s\S]{0,250}?([0-9][0-9  ]*(?:[.,][0-9]+)?)\s*(EUR|USD|GBP|CHF)/i,
-    )
-    if (scpi && scpi[1] && scpi[2]) {
-      priceMatch       = [scpi[0], scpi[1]] as RegExpMatchArray
-      detectedCurrency = toCurrency(scpi[2])
-    }
-  }
-
-  // 5. Fallback ultime : "NB EUR" (peut faire un faux positif sur graphes)
-  if (!priceMatch) {
-    priceMatch = html.match(/>\s*([0-9][0-9  ]*[.,][0-9]{2,4})\s*<\/?\w*[^>]*>\s*EUR/)
+    priceMatch = html.match(/data-ist-last="([0-9][0-9.,]*)"/)
   }
 
   if (!priceMatch || !priceMatch[1]) return null
 
-  const raw   = priceMatch[1].replace(/[\s ]/g, '').replace(',', '.')
+  const raw   = priceMatch[1].replace(/\s/g, '').replace(',', '.')
   const price = parseFloat(raw)
   if (!isFinite(price) || price <= 0) return null
 
-  // Devise : déjà détectée pour SCPI, sinon c-instrument--currency, sinon EUR
-  let currency = detectedCurrency
-  if (!currency) {
-    const currMatch =
-      html.match(/class="[^"]*c-instrument--currency[^"]*"[^>]*>\s*([A-Z]{3})/) ||
-      html.match(/class="c-instrument--currency[^"]*"[^>]*>\s*([A-Z]{3})/)
-    currency = toCurrency(currMatch?.[1])
-  }
+  const currMatch =
+    html.match(/class="[^"]*c-instrument--currency[^"]*"[^>]*>\s*([A-Z]{3})/) ||
+    html.match(/class="c-instrument--currency[^"]*"[^>]*>\s*([A-Z]{3})/)
+  const currency = toCurrency(currMatch?.[1])
 
   return { price, currency }
+}
+
+/**
+ * Compatibilité ascendante : ancien parser unifié. Garde-le pour ne pas
+ * casser les tests existants. Détecte heuristiquement si l'input contient
+ * "c-list-info__heading" → SCPI, sinon standard.
+ */
+export function parseBoursoramaHtml(html: string): { price: number; currency: CurrencyCode } | null {
+  if (/c-list-info__heading[^>]*>\s*Prix de souscription/i.test(html)) {
+    return parseScpiHtml(html)
+  }
+  return parseStandardHtml(html)
 }
