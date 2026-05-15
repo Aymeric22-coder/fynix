@@ -41,13 +41,114 @@ export interface EnrichedPosition {
   quantity:            number
   pru:                 number
   current_price:       number
-  current_value:       number
-  gain_loss:           number
+  current_value:       number       // valeur en EUR (post-conversion FX)
+  current_value_local: number       // valeur dans la devise de cotation (avant FX)
+  gain_loss:           number       // EUR
   gain_loss_pct:       number
   asset_type:          AnalyseAssetType
   sector:              string | null
   country:             string | null
-  currency:            string
+  currency:            string       // devise de cotation (USD, EUR, …)
+  /** True si current_price provient du PRU (Yahoo + DB sans donnée). */
+  price_estimated:     boolean
   /** % de cette position dans la valeur totale du portefeuille (0-100). */
   weight_in_portfolio: number
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Phase 2 — Agrégat patrimonial complet
+// ─────────────────────────────────────────────────────────────────
+
+/** Bien immobilier consolidé, prêt pour la vue d'analyse. */
+export interface BienImmo {
+  id:               string
+  nom:              string
+  ville:            string | null
+  pays:             string | null
+  type:             string                  // 'Résidence principale' | 'Locatif' | 'SCPI' | …
+  valeur:           number                  // valeur de marché EUR
+  loyer_mensuel:    number                  // loyer brut EUR/mois
+  credit_restant:   number                  // capital restant dû (EUR)
+  equity:           number                  // valeur - credit_restant
+  rendement_brut:   number                  // % annuel brut (loyers × 12 / valeur × 100)
+}
+
+/** Compte cash / livret consolidé. */
+export interface CompteCash {
+  id:        string
+  nom:       string
+  type:      string             // 'livret_a' | 'ldds' | 'compte_courant' | …
+  banque:    string | null
+  solde:     number             // EUR (post-FX si devise étrangère)
+  devise:    string             // devise d'origine
+}
+
+/** Classe d'actif agrégée pour la vue d'allocation patrimoniale. */
+export interface ClasseAlloc {
+  label:       string         // 'Actions' | 'ETF / Fonds' | 'Crypto' | 'Immobilier' | 'Cash' | 'Obligataire'
+  valeur:      number          // EUR
+  pourcentage: number          // 0..100
+  color:       string          // hex stable par classe
+}
+
+/** Allocation sectorielle (avec alerte de surexposition). */
+export interface SecteurAlloc {
+  secteur:     string          // libellé FR (ex: 'Technologie')
+  valeur:      number
+  pourcentage: number
+  positions:   string[]        // noms des actifs dans ce secteur (max 10 dans l'UI)
+  alerte:      boolean         // true si > 30 %
+}
+
+/** Allocation géographique (avec alerte de surexposition zone). */
+export interface GeoAlloc {
+  zone:        string
+  valeur:      number
+  pourcentage: number
+  pays:        string[]        // libellés bruts ou codes ISO
+  alerte:      boolean         // true si > 50 %
+}
+
+/** Snapshot complet du patrimoine d'un utilisateur, prêt à être affiché. */
+export interface PatrimoineComplet {
+  totalBrut:        number     // somme de tout (financier + immo + cash, hors dettes)
+  totalNet:         number     // totalBrut - totalDettes
+  totalPortefeuille: number    // actions + ETF + crypto + obligs (positions)
+  totalImmo:        number     // valeur brute immobilier
+  totalCash:        number     // tous les comptes / livrets
+  totalDettes:      number     // capital restant dû tous crédits
+
+  positions:        EnrichedPosition[]
+  biens:            BienImmo[]
+  comptes:          CompteCash[]
+
+  repartitionClasses:     ClasseAlloc[]
+  repartitionSectorielle: SecteurAlloc[]
+  repartitionGeo:         GeoAlloc[]
+
+  /** Score de diversification 0..100 : 100 = parfaitement réparti. */
+  scoreDiversificationSectorielle: number
+  scoreDiversificationGeo:         number
+
+  /** Rendement estimé annuel (% pondéré : rendement immo + dividendes). */
+  rendementEstime:    number
+  /** Loyers + dividendes mensuels estimés. */
+  revenuPassifActuel: number
+
+  /** Sentinel : 'Conservateur' | 'Équilibré' | 'Dynamique' | 'Offensif' | 'Stratège' | null */
+  profilType:    string | null
+  /** Prénom utilisateur depuis profile (ou null). */
+  prenom:        string | null
+
+  lastUpdated:   string         // ISO timestamp
+}
+
+/** Couleurs stables par classe d'actif (alignées avec la spec Phase 2). */
+export const CLASSE_COLOR: Record<string, string> = {
+  Actions:      '#38BDF8',     // bleu ciel
+  'ETF / Fonds':'#10B981',     // emerald (cohérent avec accent app)
+  Crypto:       '#A78BFA',     // violet
+  Immobilier:   '#E8B84B',     // or (seul écart visuel — utile pour distinguer immo)
+  Cash:         '#71717a',     // muted
+  Obligataire:  '#F97316',     // orange
 }

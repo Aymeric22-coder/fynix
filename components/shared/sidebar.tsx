@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
   LayoutDashboard, Building2, PiggyBank,
-  ArrowLeftRight, RefreshCw, Briefcase, Settings, LogOut, ChevronRight, UserCircle2,
+  ArrowLeftRight, RefreshCw, Briefcase, Settings, LogOut, ChevronRight, UserCircle2, PieChart,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
@@ -18,6 +18,7 @@ const NAV = [
   { href: '/dashboard',    label: 'Dashboard',     icon: LayoutDashboard },
   { href: '/profil',       label: 'Profil',        icon: UserCircle2 },
   { href: '/portefeuille', label: 'Portefeuille',  icon: Briefcase },
+  { href: '/analyse',      label: 'Analyse',       icon: PieChart },
   { href: '/immobilier',   label: 'Immobilier',    icon: Building2 },
   { href: '/cash',         label: 'Cash',          icon: PiggyBank },
   { href: '/transactions', label: 'Transactions',  icon: ArrowLeftRight },
