@@ -10,10 +10,10 @@ import { createClient } from '@/lib/supabase/client'
 
 // Migration 006 : la section "Dettes" a été supprimée (crédits immobiliers
 // gérés directement depuis chaque bien — onglet Crédit).
-// Migration 007 + Phase 8 : la section "Portefeuille" unifie actions, ETF,
-// crypto, SCPI, fonds, REIT, etc. Les anciennes pages /financier et /scpi
-// restent accessibles par URL directe pour rétro-compatibilité, mais
-// disparaissent de la navigation principale au profit de /portefeuille.
+// Migrations 007-014 : la section "Portefeuille" unifie actions, ETF, crypto,
+// SCPI, fonds, REIT, obligations, métaux et actifs alternatifs sous un
+// modèle unique positions/instruments. Les anciennes routes /financier
+// et /scpi ont été supprimées (migration 012).
 const NAV = [
   { href: '/dashboard',    label: 'Dashboard',     icon: LayoutDashboard },
   { href: '/portefeuille', label: 'Portefeuille',  icon: Briefcase },
