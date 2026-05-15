@@ -14,13 +14,14 @@ import { createServerClient } from '@/lib/supabase/server'
 import { toEur } from '@/lib/providers/fx'
 import { getEnrichedPositions } from './enrichPositions'
 import { diversificationScore } from './diversification'
-import { translateSector } from './sectorMapping'
 import { geoZone } from './geoMapping'
 import { calculerTousLesScores } from './scores'
 import { genererRecommandations } from './recommandations'
+import { expandPositions, bucketsBySector, bucketsByZone } from './expandETF'
 import type {
   PatrimoineComplet, BienImmo, CompteCash,
   ClasseAlloc, SecteurAlloc, GeoAlloc, EnrichedPosition, AnalyseAssetType,
+  AnalyseFiabilite,
 } from '@/types/analyse'
 import type { CurrencyCode } from '@/types/database.types'
 import { CLASSE_COLOR } from '@/types/analyse'
@@ -312,46 +313,54 @@ function repartitionClasses(positions: EnrichedPosition[], totalImmo: number, to
 }
 
 // ─────────────────────────────────────────────────────────────────
-// Répartition sectorielle (avec alerte > 30 %)
+// Répartition sectorielle / géographique — version Phase 4
+// (utilise lib/analyse/expandETF pour décomposer les ETFs)
 // ─────────────────────────────────────────────────────────────────
 
 const SECTOR_ALERT_PCT = 30
 const GEO_ALERT_PCT    = 50
 
-function repartitionSectorielle(positions: EnrichedPosition[]): SecteurAlloc[] {
-  const totalPositions = positions.reduce((s, p) => s + p.current_value, 0)
-  const map = new Map<string, { valeur: number; positions: string[] }>()
-  for (const p of positions) {
-    const lbl = translateSector(p.sector) ?? 'Sans secteur'
-    const cur = map.get(lbl) ?? { valeur: 0, positions: [] }
-    cur.valeur += p.current_value
-    if (cur.positions.length < 10) cur.positions.push(p.name)
-    map.set(lbl, cur)
-  }
-  return Array.from(map.entries())
-    .map(([secteur, { valeur, positions }]) => {
-      const pct = totalPositions > 0 ? (valeur / totalPositions) * 100 : 0
-      return { secteur, valeur, pourcentage: pct, positions, alerte: pct > SECTOR_ALERT_PCT }
-    })
-    .sort((a, b) => b.valeur - a.valeur)
-}
+/**
+ * Construit les allocations sectorielle + géographique à partir de
+ * l'expansion des positions (ETFs éclatés en sous-jacents). Le cash
+ * est exclu — affiché séparément en KPI.
+ */
+function buildAllocations(positions: EnrichedPosition[], biens: BienImmo[]): {
+  secteur: SecteurAlloc[]
+  geo:     GeoAlloc[]
+  fiabilite: AnalyseFiabilite
+  unmappedEtfs: Array<{ isin: string; name: string; value: number }>
+} {
+  const exp = expandPositions(positions, biens)
 
-function repartitionGeoBuckets(positions: EnrichedPosition[]): GeoAlloc[] {
-  const totalPositions = positions.reduce((s, p) => s + p.current_value, 0)
-  const map = new Map<string, { valeur: number; pays: Set<string> }>()
-  for (const p of positions) {
-    const zone = p.country ? geoZone(p.country) : 'Non classé'
-    const cur = map.get(zone) ?? { valeur: 0, pays: new Set<string>() }
-    cur.valeur += p.current_value
-    if (p.country) cur.pays.add(p.country)
-    map.set(zone, cur)
-  }
-  return Array.from(map.entries())
-    .map(([zone, { valeur, pays }]) => {
-      const pct = totalPositions > 0 ? (valeur / totalPositions) * 100 : 0
-      return { zone, valeur, pourcentage: pct, pays: Array.from(pays), alerte: pct > GEO_ALERT_PCT }
-    })
-    .sort((a, b) => b.valeur - a.valeur)
+  // Buckets sectoriels (excluant "Non mappé" du graphique principal)
+  const secB = bucketsBySector(exp.sectorExposures, exp.totalValue, { excludeUnmapped: true })
+  const secteur: SecteurAlloc[] = secB.map((b) => ({
+    secteur:     b.secteur,
+    valeur:      b.value,
+    pourcentage: b.pct,
+    positions:   b.sources,
+    alerte:      b.pct > SECTOR_ALERT_PCT,
+  }))
+
+  // Buckets géo (excluant "Non mappé")
+  const geoB = bucketsByZone(exp.geoExposures, exp.totalValue, { excludeUnmapped: true })
+  const geo: GeoAlloc[] = geoB.map((b) => ({
+    zone:        b.zone,
+    valeur:      b.value,
+    pourcentage: b.pct,
+    pays:        b.pays,
+    alerte:      b.pct > GEO_ALERT_PCT,
+  }))
+
+  // Fiabilité de l'analyse
+  const pct = exp.totalValue > 0 ? Math.round((exp.identifiedValue / exp.totalValue) * 100) : 0
+  const fiabilite: AnalyseFiabilite =
+    pct >= 90 ? { pct, niveau: 'vert',   label: 'Analyse fiable' } :
+    pct >= 70 ? { pct, niveau: 'orange', label: 'Analyse partiellement fiable' } :
+                { pct, niveau: 'rouge',  label: 'Données insuffisantes — certains actifs non identifiés' }
+
+  return { secteur, geo, fiabilite, unmappedEtfs: exp.unmappedEtfs }
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -413,9 +422,11 @@ export async function getPatrimoineComplet(userId: string): Promise<PatrimoineCo
   const totalBrut = totalPortefeuille + totalImmo + totalCash
   const totalNet  = totalBrut - totalDettes
 
-  const repClasses     = repartitionClasses(positions, totalImmo, totalCash, totalBrut)
-  const repSecteur     = repartitionSectorielle(positions)
-  const repGeo         = repartitionGeoBuckets(positions)
+  const repClasses = repartitionClasses(positions, totalImmo, totalCash, totalBrut)
+  // Phase 4 : sectoriel + géo via expansion ETF (cash exclu, immo inclus)
+  const allocs = buildAllocations(positions, biens)
+  const repSecteur = allocs.secteur
+  const repGeo     = allocs.geo
 
   const rendement      = rendementEstime(positions, biens, totalCash, totalBrut)
   // Revenu passif : loyers immobiliers + estimation dividendes (2 % du portfolio
@@ -462,12 +473,21 @@ export async function getPatrimoineComplet(userId: string): Promise<PatrimoineCo
     fireInputs,
     scores:                 {} as PatrimoineComplet['scores'],
     recommandations:        [],
+    analyseFiabilite:       allocs.fiabilite,
+    unmappedEtfs:           allocs.unmappedEtfs,
     lastUpdated:            new Date().toISOString(),
   }
   const scores          = calculerTousLesScores(partial)
   const recommandations = genererRecommandations({ ...partial, scores }, scores)
 
-  console.log(`[aggregateur] patrimoine complet en ${Date.now() - t0}ms — ${positions.length} pos, ${biens.length} biens, ${comptes.length} comptes, total ${totalBrut.toFixed(0)}€, ${recommandations.length} reco(s)`)
+  console.log(`[aggregateur] patrimoine complet en ${Date.now() - t0}ms — ${positions.length} pos, ${biens.length} biens, ${comptes.length} comptes, total ${totalBrut.toFixed(0)}€, fiabilité ${allocs.fiabilite.pct}%, ${recommandations.length} reco(s)`)
+  if (allocs.unmappedEtfs.length > 0) {
+    console.warn(`[aggregateur] ⚠ ${allocs.unmappedEtfs.length} ETF non mappé(s) — secteurs estimés uniquement :`)
+    for (const u of allocs.unmappedEtfs) {
+      console.warn(`  ${u.isin}  ${u.name}  (${u.value.toFixed(0)}€)`)
+    }
+    console.warn('  → Ces ISIN à ajouter dans lib/analyse/etfCompositions.ts')
+  }
 
   return { ...partial, scores, recommandations }
 }

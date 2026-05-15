@@ -14,9 +14,12 @@
 export type GeoZone =
   | 'Amérique du Nord'
   | 'Europe'
+  | 'Europe émergente'
   | 'Asie développée'
   | 'Asie émergente'
   | 'Amérique latine'
+  | 'Moyen-Orient'
+  | 'Afrique'
   | 'Autres'
 
 /**
@@ -65,6 +68,26 @@ const COUNTRY_NAME_TO_ISO: Record<string, string> = {
   'Chile':                'CL',
   'Colombia':             'CO',
   'Peru':                 'PE',
+  // Europe émergente
+  'Poland':               'PL',
+  'Czech Republic':       'CZ',
+  'Hungary':              'HU',
+  'Romania':              'RO',
+  'Greece':               'GR',
+  'Turkey':               'TR',
+  'Russia':               'RU',
+  // Moyen-Orient
+  'Israel':               'IL',
+  'Saudi Arabia':         'SA',
+  'United Arab Emirates': 'AE',
+  'UAE':                  'AE',
+  'Qatar':                'QA',
+  'Kuwait':               'KW',
+  // Afrique
+  'South Africa':         'ZA',
+  'Nigeria':              'NG',
+  'Egypt':                'EG',
+  'Morocco':              'MA',
 }
 
 const ZONE_BY_ISO: Record<string, GeoZone> = {
@@ -89,6 +112,18 @@ const ZONE_BY_ISO: Record<string, GeoZone> = {
   // Amérique latine
   BR: 'Amérique latine', MX: 'Amérique latine', AR: 'Amérique latine',
   CL: 'Amérique latine', CO: 'Amérique latine', PE: 'Amérique latine',
+
+  // Europe émergente
+  PL: 'Europe émergente', CZ: 'Europe émergente', HU: 'Europe émergente',
+  RO: 'Europe émergente', GR: 'Europe émergente', TR: 'Europe émergente',
+  RU: 'Europe émergente',
+
+  // Moyen-Orient
+  IL: 'Moyen-Orient', SA: 'Moyen-Orient', AE: 'Moyen-Orient',
+  QA: 'Moyen-Orient', KW: 'Moyen-Orient',
+
+  // Afrique
+  ZA: 'Afrique', NG: 'Afrique', EG: 'Afrique', MA: 'Afrique',
 }
 
 /**
@@ -117,8 +152,11 @@ export function geoZone(rawCountry: string | null | undefined): GeoZone {
 export const ALL_ZONES: GeoZone[] = [
   'Amérique du Nord',
   'Europe',
+  'Europe émergente',
   'Asie développée',
   'Asie émergente',
   'Amérique latine',
+  'Moyen-Orient',
+  'Afrique',
   'Autres',
 ]

@@ -22,6 +22,7 @@ import { CashSummary }         from '@/components/analyse/CashSummary'
 import { ScoresBand }          from '@/components/analyse/ScoresBand'
 import { ProjectionFIRE }      from '@/components/analyse/ProjectionFIRE'
 import { Recommandations }     from '@/components/analyse/Recommandations'
+import { FiabiliteBadge }      from '@/components/analyse/FiabiliteBadge'
 
 export function AnalyseClient() {
   const { data, isLoading, error, refresh, refreshing } = usePatrimoineAnalyse()
@@ -118,6 +119,7 @@ export function AnalyseClient() {
       </div>
 
       {/* 4 + 5. ANALYSE SECTORIELLE + GÉOGRAPHIQUE */}
+      <FiabiliteBadge fiabilite={data.analyseFiabilite} unmappedEtfs={data.unmappedEtfs} />
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-6">
         <SectorielleChart  buckets={data.repartitionSectorielle} score={data.scoreDiversificationSectorielle} />
         <GeographiqueChart buckets={data.repartitionGeo}         score={data.scoreDiversificationGeo} />

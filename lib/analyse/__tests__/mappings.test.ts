@@ -82,13 +82,16 @@ describe('geoZone', () => {
     expect(geoZone('Atlantis')).toBe('Autres')
     expect(geoZone(null)).toBe('Autres')
     expect(geoZone(undefined)).toBe('Autres')
-    // Code ISO valide mais pas dans une zone (ex: ZA Afrique du Sud)
-    expect(geoZone('ZA')).toBe('Autres')
+    // ZA est désormais mappé en 'Afrique' depuis Phase 4 — on teste une zone vraiment inconnue.
+    expect(geoZone('ZZ')).toBe('Autres')
   })
 
   it('expose toutes les zones', () => {
-    expect(ALL_ZONES).toHaveLength(6)
+    expect(ALL_ZONES).toHaveLength(9)   // Phase 4 : +Europe émergente, +Moyen-Orient, +Afrique
     expect(ALL_ZONES).toContain('Europe')
     expect(ALL_ZONES).toContain('Autres')
+    expect(ALL_ZONES).toContain('Europe émergente')
+    expect(ALL_ZONES).toContain('Moyen-Orient')
+    expect(ALL_ZONES).toContain('Afrique')
   })
 })

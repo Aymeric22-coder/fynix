@@ -25,31 +25,42 @@ export function genererRecommandations(
 ): Recommandation[] {
   const out: Recommandation[] = []
 
+  // Filtre les buckets "fallback" qui ne sont pas des insights actionnables.
+  const isInsightful = (label: string) =>
+    !['Non mappé', 'Non identifié', 'Sans secteur', 'ETF Diversifié', 'Non classé', 'Autres'].includes(label)
+  const realSecteurs = p.repartitionSectorielle.filter((s) => isInsightful(s.secteur))
+  const realZones    = p.repartitionGeo.filter((z) => isInsightful(z.zone))
+
   // 1. Surexposition sectorielle (>30 %)
-  const secteurMax = p.repartitionSectorielle[0]
+  const secteurMax = realSecteurs[0]
   if (secteurMax && secteurMax.pourcentage > 30) {
+    // Cite les sources contributrices (ETFs/actions) si disponibles.
+    const sourcesTxt = secteurMax.positions.length > 0
+      ? ` (principalement via ${secteurMax.positions.slice(0, 3).join(', ')})`
+      : ''
     out.push({
       id:           'surexpo-secteur',
       priorite:     'haute',
       categorie:    'diversification',
       titre:        `Surexposition ${secteurMax.secteur} détectée`,
-      description:  `${secteurMax.pourcentage.toFixed(0)} % de votre portefeuille est concentré sur le secteur ${secteurMax.secteur}. Un choc sur ce secteur impacterait fortement votre patrimoine.`,
+      description:  `${secteurMax.pourcentage.toFixed(0)} % de votre patrimoine analysable est exposé au secteur ${secteurMax.secteur}${sourcesTxt}. Un choc sur ce secteur impacterait fortement votre patrimoine.`,
       impact_estime: null,
-      action:       'Envisagez de diversifier vers les secteurs sous-représentés (Santé, Industrie, Énergie…) pour réduire votre concentration.',
+      action:       'Envisagez de diversifier vers des secteurs sous-représentés (Santé, Industrie, Énergie, Matières premières…) pour réduire votre concentration.',
     })
   }
 
   // 2. Surexposition géographique (>50 %)
-  const zoneMax = p.repartitionGeo[0]
-  if (zoneMax && zoneMax.pourcentage > 50 && zoneMax.zone !== 'Non classé') {
+  const zoneMax = realZones[0]
+  if (zoneMax && zoneMax.pourcentage > 50) {
+    const paysExtra = zoneMax.pays.length > 0 ? ` (${zoneMax.pays.slice(0, 3).join(', ')})` : ''
     out.push({
       id:           'surexpo-geo',
       priorite:     'haute',
       categorie:    'diversification',
       titre:        `Concentration géographique ${zoneMax.zone}`,
-      description:  `${zoneMax.pourcentage.toFixed(0)} % de votre portefeuille financier est exposé à la zone ${zoneMax.zone}.`,
+      description:  `${zoneMax.pourcentage.toFixed(0)} % de votre patrimoine est exposé à la zone ${zoneMax.zone}${paysExtra}. Un choc sur cette zone affecterait fortement votre patrimoine.`,
       impact_estime: null,
-      action:       'Rééquilibrez vers les zones sous-représentées (Europe, Asie, marchés émergents) pour réduire votre dépendance à une seule économie.',
+      action:       'Rééquilibrez vers les zones sous-représentées (Europe, Asie développée, marchés émergents) pour réduire votre dépendance à une seule économie.',
     })
   }
 

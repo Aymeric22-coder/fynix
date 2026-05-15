@@ -96,8 +96,18 @@ export interface SecteurAlloc {
   secteur:     string          // libellé FR (ex: 'Technologie')
   valeur:      number
   pourcentage: number
-  positions:   string[]        // noms des actifs dans ce secteur (max 10 dans l'UI)
+  positions:   string[]        // noms des actifs sources (max 10 affichés)
   alerte:      boolean         // true si > 30 %
+}
+
+/** Indicateur de fiabilité de l'analyse sectorielle / géographique. */
+export interface AnalyseFiabilite {
+  /** % du patrimoine analysable (positions+immo, hors cash) qui est identifié. */
+  pct:        number          // 0..100
+  /** Statut visuel (vert/orange/rouge). */
+  niveau:     'vert' | 'orange' | 'rouge'
+  /** Texte humain prêt pour l'UI. */
+  label:      string          // ex: "Analyse fiable" / "Données insuffisantes"
 }
 
 /** Allocation géographique (avec alerte de surexposition zone). */
@@ -159,6 +169,12 @@ export interface PatrimoineComplet {
 
   /** Recommandations priorisées (voir lib/analyse/recommandations.ts). */
   recommandations: Recommandation[]
+
+  // ── Phase 4 — Expansion ETF + fiabilité ──────────────────────────
+  /** Indicateur de fiabilité de l'analyse sectorielle/géo. */
+  analyseFiabilite: AnalyseFiabilite
+  /** ISIN d'ETF non référencés dans la table de compositions. */
+  unmappedEtfs:     Array<{ isin: string; name: string; value: number }>
 
   lastUpdated:   string         // ISO timestamp
 }

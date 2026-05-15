@@ -68,6 +68,8 @@ function patrimoine(over: Partial<PatrimoineComplet> = {}): PatrimoineComplet {
       actions_eu_value: 30000,
     },
     scores: {} as never, recommandations: [],
+    analyseFiabilite: { pct: 100, niveau: 'vert', label: 'Analyse fiable' },
+    unmappedEtfs: [],
     lastUpdated: new Date().toISOString(),
     ...over,
   }
