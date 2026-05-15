@@ -12,9 +12,8 @@
  *   - HTML snippet autour de "Prix de souscription"
  */
 
-import { ok, err, withAuth } from '@/lib/utils/api'
+import { ok, err } from '@/lib/utils/api'
 import { parseBoursoramaHtml } from '@/lib/portfolio/providers/boursorama'
-import type { User } from '@supabase/supabase-js'
 
 const BASE       = 'https://www.boursorama.com'
 const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
@@ -86,7 +85,7 @@ async function traceQuery(query: string): Promise<QueryTrace> {
   return trace
 }
 
-export const GET = withAuth(async (req: Request, _user: User) => {
+export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
   const name   = searchParams.get('name')?.trim()   || null
   const isin   = searchParams.get('isin')?.trim()   || null
@@ -108,4 +107,4 @@ export const GET = withAuth(async (req: Request, _user: User) => {
     inputs: { name, isin, ticker },
     traces,
   })
-})
+}
