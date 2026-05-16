@@ -83,12 +83,21 @@ function isMeaningfulCountry(c: string | null | undefined): boolean {
 }
 
 /**
- * Éclate une liste de positions + biens immo en micro-expositions
- * sectorielles et géographiques. Le cash est exclu (à appliquer en amont).
+ * Éclate une liste de positions du PORTEFEUILLE FINANCIER UNIQUEMENT en
+ * micro-expositions sectorielles et géographiques.
+ *
+ * Cash et immobilier physique sont volontairement EXCLUS — ce sont des
+ * classes d'actif distinctes qui ont leur propre section dans l'app
+ * (vues /cash et /immobilier). Les inclure ici fausserait totalement
+ * l'analyse sectorielle (un patrimoine 80 % immo afficherait "Immobilier
+ * 80 %" et écraserait toute lecture des secteurs financiers).
+ *
+ * Le paramètre `biens` est conservé dans la signature pour rétro-compat
+ * avec d'anciens tests, mais ignoré dans le calcul actuel.
  */
 export function expandPositions(
   positions: ReadonlyArray<EnrichedPosition>,
-  biens:     ReadonlyArray<BienImmo> = [],
+  _biens:    ReadonlyArray<BienImmo> = [],
 ): ExpansionResult {
   const sectorExposures: SectorExposure[] = []
   const geoExposures:    GeoExposure[]    = []
@@ -170,15 +179,8 @@ export function expandPositions(
     geoExposures.push({ zone: 'Non mappé', value: v, source: pos.name, pays: null })
   }
 
-  // ── Immobilier physique : injection comme exposition unique ──────
-  for (const b of biens) {
-    if (b.valeur <= 0) continue
-    totalValue += b.valeur
-    identifiedValue += b.valeur
-    sectorExposures.push({ secteur: 'Immobilier', value: b.valeur, source: b.nom })
-    const z = b.pays ? (geoZone(b.pays) as string) : 'Europe'
-    geoExposures.push({ zone: z, value: b.valeur, source: b.nom, pays: b.pays })
-  }
+  // L'immobilier physique (paramètre `_biens`) est volontairement IGNORÉ
+  // ici : c'est une classe d'actif distincte avec sa propre vue.
 
   return { sectorExposures, geoExposures, totalValue, identifiedValue, unmappedEtfs }
 }

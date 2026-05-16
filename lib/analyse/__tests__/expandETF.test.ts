@@ -85,16 +85,18 @@ describe('expandPositions — SCPI / immo papier', () => {
 })
 
 describe('expandPositions — biens immobiliers physiques', () => {
-  it('inclus dans les expositions', () => {
+  it('Phase 5 : exclus de l\'expansion (classe d\'actif distincte)', () => {
     const biens: BienImmo[] = [{
       id: 'b1', nom: 'Appart Lyon', ville: 'Lyon', pays: 'France',
       type: 'Locatif', valeur: 200000, loyer_mensuel: 800,
       credit_restant: 100000, equity: 100000, rendement_brut: 4.8,
     }]
     const r = expandPositions([], biens)
-    expect(r.identifiedValue).toBe(200000)
-    expect(r.sectorExposures[0]).toMatchObject({ secteur: 'Immobilier' })
-    expect(r.geoExposures[0]).toMatchObject({ zone: 'Europe', pays: 'France' })
+    // L'immo physique ne doit PAS apparaître dans l'analyse sectorielle/géo
+    expect(r.totalValue).toBe(0)
+    expect(r.identifiedValue).toBe(0)
+    expect(r.sectorExposures).toHaveLength(0)
+    expect(r.geoExposures).toHaveLength(0)
   })
 })
 

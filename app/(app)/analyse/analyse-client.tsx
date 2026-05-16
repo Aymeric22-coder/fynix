@@ -118,12 +118,27 @@ export function AnalyseClient() {
         <RepartitionChart classes={data.repartitionClasses} totalNet={data.totalNet} />
       </div>
 
-      {/* 4 + 5. ANALYSE SECTORIELLE + GÉOGRAPHIQUE */}
-      <FiabiliteBadge fiabilite={data.analyseFiabilite} unmappedEtfs={data.unmappedEtfs} />
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-6">
-        <SectorielleChart  buckets={data.repartitionSectorielle} score={data.scoreDiversificationSectorielle} />
-        <GeographiqueChart buckets={data.repartitionGeo}         score={data.scoreDiversificationGeo} />
-      </div>
+      {/* 4 + 5. ANALYSE SECTORIELLE + GÉOGRAPHIQUE — uniquement si le
+          portefeuille financier est non vide (l'immo et le cash ont leurs
+          sections dédiées et ne polluent PAS ces graphiques). */}
+      {data.totalPortefeuille >= 1 ? (
+        <>
+          <FiabiliteBadge fiabilite={data.analyseFiabilite} unmappedEtfs={data.unmappedEtfs} />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-6">
+            <SectorielleChart  buckets={data.repartitionSectorielle} score={data.scoreDiversificationSectorielle} />
+            <GeographiqueChart buckets={data.repartitionGeo}         score={data.scoreDiversificationGeo} />
+          </div>
+        </>
+      ) : (
+        <div className="card p-6 mb-6 text-center">
+          <p className="text-sm text-secondary">
+            Ajoutez des positions dans <a href="/portefeuille" className="text-accent underline">votre portefeuille financier</a> pour voir l&apos;analyse sectorielle et géographique.
+          </p>
+          <p className="text-xs text-muted mt-2">
+            (L&apos;immobilier physique et le cash ne sont volontairement pas inclus dans ces graphiques.)
+          </p>
+        </div>
+      )}
 
       {/* 6. DÉTAIL DES POSITIONS */}
       <div className="mb-6">

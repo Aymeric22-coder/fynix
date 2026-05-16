@@ -17,7 +17,8 @@ import { diversificationScore } from './diversification'
 import { geoZone } from './geoMapping'
 import { calculerTousLesScores } from './scores'
 import { genererRecommandations } from './recommandations'
-import { expandPositions, bucketsBySector, bucketsByZone } from './expandETF'
+import { expandPositions, bucketsBySector, bucketsByZone, type ExpansionResult } from './expandETF'
+import { getEtfComposition } from './etfCompositions'
 import type {
   PatrimoineComplet, BienImmo, CompteCash,
   ClasseAlloc, SecteurAlloc, GeoAlloc, EnrichedPosition, AnalyseAssetType,
@@ -313,25 +314,66 @@ function repartitionClasses(positions: EnrichedPosition[], totalImmo: number, to
 }
 
 // ─────────────────────────────────────────────────────────────────
-// Répartition sectorielle / géographique — version Phase 4
-// (utilise lib/analyse/expandETF pour décomposer les ETFs)
+// Répartition sectorielle / géographique — version Phase 5
+// (utilise lib/analyse/expandETF pour décomposer les ETFs ; cash et
+// immo physique exclus)
 // ─────────────────────────────────────────────────────────────────
 
 const SECTOR_ALERT_PCT = 30
 const GEO_ALERT_PCT    = 50
 
 /**
- * Construit les allocations sectorielle + géographique à partir de
- * l'expansion des positions (ETFs éclatés en sous-jacents). Le cash
- * est exclu — affiché séparément en KPI.
+ * Debug : trace dans les logs serveur le détail de l'expansion. Aide à
+ * diagnostiquer pourquoi un ETF n'est pas décomposé (ISIN absent de la
+ * table, asset_type incorrect, ISIN avec espaces/casse différente, etc.).
+ *
+ * À garder activé en prod : volume modéré (1 ligne par position) et
+ * ces logs sont la 1ère chose qu'on consulte quand un user remonte un
+ * bug "secteurs vides".
  */
-function buildAllocations(positions: EnrichedPosition[], biens: BienImmo[]): {
+function logExpansionDebug(positions: EnrichedPosition[], exp: ExpansionResult) {
+  console.log(`[expandETF] ────── début expansion (${positions.length} positions, total ${exp.totalValue.toFixed(0)}€) ──────`)
+
+  for (const p of positions) {
+    const compo = p.isin ? getEtfComposition(p.isin) : null
+    const isInTable = compo !== null
+    console.log(
+      `[expandETF] ${p.isin || '(no ISIN)'}` +
+      ` ${p.name.padEnd(30).slice(0, 30)}` +
+      ` type=${p.asset_type.padEnd(7)}` +
+      ` value=${p.current_value.toFixed(0).padStart(7)}€` +
+      ` mappe=${isInTable ? 'OUI' : 'non'}`,
+    )
+    if (compo) {
+      const decomp = Object.entries(compo.sectors)
+        .sort(([, a], [, b]) => b - a)
+        .map(([s, pct]) => `${s}:${(p.current_value * pct / 100).toFixed(0)}€`)
+        .join(', ')
+      console.log(`[expandETF]    → ${compo.name} décomposé en ${decomp}`)
+    }
+  }
+
+  console.log(`[expandETF] identifié=${exp.identifiedValue.toFixed(0)}€ / ${exp.totalValue.toFixed(0)}€ (${exp.totalValue > 0 ? Math.round(exp.identifiedValue / exp.totalValue * 100) : 0}%)`)
+  console.log(`[expandETF] ────── fin expansion ──────`)
+}
+
+/**
+ * Construit les allocations sectorielle + géographique à partir des
+ * positions du PORTEFEUILLE FINANCIER UNIQUEMENT.
+ *
+ * Cash et immobilier physique sont EXCLUS volontairement (classes
+ * d'actif distinctes affichées dans leurs sections dédiées). Inclure
+ * l'immo polluerait les graphiques (un patrimoine 80 % immo afficherait
+ * "Immobilier 80 %" et écraserait toute analyse des secteurs).
+ */
+function buildAllocations(positions: EnrichedPosition[]): {
   secteur: SecteurAlloc[]
   geo:     GeoAlloc[]
   fiabilite: AnalyseFiabilite
   unmappedEtfs: Array<{ isin: string; name: string; value: number }>
 } {
-  const exp = expandPositions(positions, biens)
+  const exp = expandPositions(positions)
+  logExpansionDebug(positions, exp)
 
   // Buckets sectoriels (excluant "Non mappé" du graphique principal)
   const secB = bucketsBySector(exp.sectorExposures, exp.totalValue, { excludeUnmapped: true })
@@ -423,8 +465,9 @@ export async function getPatrimoineComplet(userId: string): Promise<PatrimoineCo
   const totalNet  = totalBrut - totalDettes
 
   const repClasses = repartitionClasses(positions, totalImmo, totalCash, totalBrut)
-  // Phase 4 : sectoriel + géo via expansion ETF (cash exclu, immo inclus)
-  const allocs = buildAllocations(positions, biens)
+  // Phase 5 : sectoriel + géo SEULEMENT sur le portefeuille financier
+  // (cash + immo physique exclus — classes d'actif distinctes)
+  const allocs = buildAllocations(positions)
   const repSecteur = allocs.secteur
   const repGeo     = allocs.geo
 
