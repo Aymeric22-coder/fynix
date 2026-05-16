@@ -208,6 +208,13 @@ export function expandPositions(
  * (valeur décroissante), avec liste des sources contributrices et
  * pourcentage du total. Filtre optionnel des "Non mappé" (utile pour
  * exclure des graphiques principaux).
+ *
+ * Important : quand `excludeUnmapped=true`, le dénominateur des
+ * pourcentages est RENORMALISÉ sur la valeur identifiée (somme des
+ * buckets restants). Sinon les % du graph ne somment pas à 100 %
+ * (ex: 91 % identifié + non mappé exclus → reste 91 % en somme).
+ * La fiabilité globale du portefeuille reste exposée séparément via
+ * `analyseFiabilite` (cf. aggregateur.ts).
  */
 export function bucketsBySector(
   exposures: SectorExposure[],
@@ -222,10 +229,15 @@ export function bucketsBySector(
     cur.sources.add(e.source)
     map.set(e.secteur, cur)
   }
+  // Dénominateur : si on a exclu les non mappés, on prend la somme des
+  // restants pour que les pourcentages du graph somment à 100 %.
+  const denom = options.excludeUnmapped
+    ? Array.from(map.values()).reduce((s, b) => s + b.value, 0)
+    : totalValue
   return Array.from(map.entries())
     .map(([secteur, { value, sources }]) => ({
       secteur, value,
-      pct:     totalValue > 0 ? (value / totalValue) * 100 : 0,
+      pct:     denom > 0 ? (value / denom) * 100 : 0,
       sources: Array.from(sources).slice(0, 10),
     }))
     .sort((a, b) => b.value - a.value)
@@ -246,10 +258,13 @@ export function bucketsByZone(
     cur.sources.add(e.source)
     map.set(e.zone, cur)
   }
+  const denom = options.excludeUnmapped
+    ? Array.from(map.values()).reduce((s, b) => s + b.value, 0)
+    : totalValue
   return Array.from(map.entries())
     .map(([zone, { value, pays, sources }]) => ({
       zone, value,
-      pct:     totalValue > 0 ? (value / totalValue) * 100 : 0,
+      pct:     denom > 0 ? (value / denom) * 100 : 0,
       pays:    Array.from(pays),
       sources: Array.from(sources).slice(0, 10),
     }))

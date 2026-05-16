@@ -156,6 +156,25 @@ describe('bucketsBySector', () => {
     expect(all.some((b) => b.secteur === 'Non mappé')).toBe(true)
     expect(onlyMapped.some((b) => b.secteur === 'Non mappé')).toBe(false)
   })
+
+  it('excludeUnmapped renormalise les % à 100 (denom = identifié)', () => {
+    // 1000€ Mystery (Non mappé) + 1000€ MSCI World (identifié)
+    // Avec excludeUnmapped, denom = 1000€ → MSCI World somme à 100 %
+    const r = expandPositions([
+      pos({ isin: 'XX0000XXXXXX', asset_type: 'etf', name: 'Mystery',    current_value: 1000 }),
+      pos({ isin: 'IE00B4L5Y983', asset_type: 'etf', name: 'MSCI World', current_value: 1000 }),
+    ])
+    const onlyMapped = bucketsBySector(r.sectorExposures, r.totalValue, { excludeUnmapped: true })
+    const sum = onlyMapped.reduce((s, b) => s + b.pct, 0)
+    expect(sum).toBeCloseTo(100, 0)
+
+    // Sans excludeUnmapped, denom = totalValue = 2000€ → MSCI World à 50 %, Non mappé 50 %
+    const all = bucketsBySector(r.sectorExposures, r.totalValue)
+    const sumAll = all.reduce((s, b) => s + b.pct, 0)
+    expect(sumAll).toBeCloseTo(100, 0)
+    const nonMappe = all.find((b) => b.secteur === 'Non mappé')
+    expect(nonMappe?.pct).toBeCloseTo(50, 0)
+  })
 })
 
 describe('bucketsByZone', () => {
