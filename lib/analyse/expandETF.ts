@@ -37,7 +37,7 @@
 
 import { translateSector } from './sectorMapping'
 import { geoZone } from './geoMapping'
-import { getEtfComposition } from './etfCompositions'
+import { getEtfComposition, getEtfCompositionByName } from './etfCompositions'
 import type { EnrichedPosition, BienImmo } from '@/types/analyse'
 
 /** Une exposition unitaire après expansion : un secteur + une valeur €. */
@@ -110,22 +110,40 @@ export function expandPositions(
     if (v <= 0) continue
     totalValue += v
 
-    // ── Cas 1 : ETF référencé → expansion par % ────────────────────
-    const compo = pos.isin ? getEtfComposition(pos.isin) : null
+    // ── Cas 1a : ETF référencé par ISIN → expansion par % ─────────
+    let compo = pos.isin ? getEtfComposition(pos.isin) : null
+
+    // ── Cas 1b : fallback par NOM (MSCI World, Nasdaq, S&P 500…) ──
+    // Utile quand un nouvel ISIN n'a pas encore été ajouté à la table
+    // mais que le nom contient une référence d'indice connue.
+    let nameFallbackLabel: string | null = null
+    if (!compo && pos.asset_type === 'etf') {
+      const fb = getEtfCompositionByName(pos.name)
+      if (fb) {
+        compo = fb.composition
+        nameFallbackLabel = fb.matchedLabel
+        console.log(`[expandETF] fallback par nom: "${pos.name}" → composition ${fb.matchedLabel}`)
+      }
+    }
+
     if (compo) {
       identifiedValue += v
       const sumS = Object.values(compo.sectors).reduce((s, p) => s + p, 0) || 100
       const sumZ = Object.values(compo.zones).reduce((s, p) => s + p, 0) || 100
+      // Suffixe le nom de la source quand on a utilisé un fallback, pour
+      // que l'utilisateur voie clairement dans le tooltip que c'est une
+      // approximation (et puisse compléter la table avec le bon ISIN).
+      const source = nameFallbackLabel ? `${pos.name} (~${nameFallbackLabel})` : pos.name
       for (const [secteur, pct] of Object.entries(compo.sectors)) {
-        sectorExposures.push({ secteur, value: v * (pct / sumS), source: pos.name })
+        sectorExposures.push({ secteur, value: v * (pct / sumS), source })
       }
       for (const [zone, pct] of Object.entries(compo.zones)) {
-        geoExposures.push({ zone, value: v * (pct / sumZ), source: pos.name, pays: null })
+        geoExposures.push({ zone, value: v * (pct / sumZ), source, pays: null })
       }
       continue
     }
 
-    // ── Cas 2 : ETF NON référencé → bucket Non mappé ──────────────
+    // ── Cas 2 : ETF NON référencé (ni par ISIN ni par nom) ────────
     if (pos.asset_type === 'etf') {
       unmappedEtfs.push({ isin: pos.isin, name: pos.name, value: v })
       sectorExposures.push({ secteur: 'Non mappé', value: v, source: pos.name })

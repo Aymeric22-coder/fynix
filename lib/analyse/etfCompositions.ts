@@ -316,3 +316,54 @@ export function getEtfComposition(isin: string): ETFComposition | null {
 export function isMappedEtf(isin: string): boolean {
   return getEtfComposition(isin) !== null
 }
+
+// ─────────────────────────────────────────────────────────────────
+// Fallback par nom — pour les ETFs dont l'ISIN n'est pas dans la
+// table mais dont le nom contient une référence d'indice connue.
+// Évite que la fiabilité s'effondre dès qu'un nouvel ISIN apparaît.
+// ─────────────────────────────────────────────────────────────────
+
+interface NameFallback {
+  /** Regex insensible à la casse appliquée au nom de l'ETF. */
+  pattern: RegExp
+  /** Clé d'un ETF déjà référencé dont on copie la composition. */
+  baseKey: string
+  /** Label humain (utilisé pour les logs). */
+  label:   string
+}
+
+const NAME_FALLBACKS: NameFallback[] = [
+  // Ordre : les patterns les plus spécifiques en premier
+  { pattern: /nasdaq[\s-]?100/i,           baseKey: 'IE00B53SZB19', label: 'Nasdaq 100' },
+  { pattern: /\bs[\s&]+p\s*500\b/i,        baseKey: 'IE00B5BMR087', label: 'S&P 500' },
+  { pattern: /\bcac\s*40\b/i,              baseKey: 'FR0007080973', label: 'CAC 40' },
+  { pattern: /\beuro\s*stoxx\s*50\b/i,     baseKey: 'FR0007054358', label: 'Euro Stoxx 50' },
+  { pattern: /stoxx\s*europe\s*600/i,      baseKey: 'FR0011550193', label: 'Stoxx Europe 600' },
+  { pattern: /msci\s*europe\s*mid/i,       baseKey: 'IE00BF20LF40', label: 'MSCI Europe Mid Cap' },
+  { pattern: /msci\s*europe(?!\s*mid)/i,   baseKey: 'IE00B4K48X80', label: 'MSCI Europe' },
+  { pattern: /russell\s*2000/i,            baseKey: 'LU1681038672', label: 'Russell 2000' },
+  { pattern: /msci\s*em(?:\b|erging)/i,    baseKey: 'IE00B0M63177', label: 'MSCI Emerging Markets' },
+  { pattern: /clean\s*energy/i,            baseKey: 'IE00B1XNHC34', label: 'Clean Energy' },
+  { pattern: /automation|robotic/i,        baseKey: 'IE00BYZK4552', label: 'Automation & Robotics' },
+  { pattern: /quantum/i,                   baseKey: 'IE0007Y8Y157', label: 'Quantum Computing' },
+  { pattern: /euro\s*gov(?:ernment|t)\s*bond/i, baseKey: 'IE00B4WXJJ64', label: 'Euro Gov Bond' },
+  // MSCI World en DERNIER (le plus large)
+  { pattern: /msci\s*world|\bworld\s*swap\b|\bworld\s*ucits\b/i, baseKey: 'IE00B4L5Y983', label: 'MSCI World' },
+]
+
+/**
+ * Cherche une composition par approximation sur le NOM de l'ETF.
+ * Utilisé en fallback quand l'ISIN n'est pas dans la table.
+ *
+ * @returns la composition à utiliser, ou null si aucun pattern ne matche.
+ */
+export function getEtfCompositionByName(name: string): { composition: ETFComposition; matchedLabel: string } | null {
+  if (!name) return null
+  for (const fb of NAME_FALLBACKS) {
+    if (fb.pattern.test(name)) {
+      const base = ETF_COMPOSITIONS[fb.baseKey]
+      if (base) return { composition: base, matchedLabel: fb.label }
+    }
+  }
+  return null
+}

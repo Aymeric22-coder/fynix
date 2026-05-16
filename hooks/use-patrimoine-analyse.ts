@@ -4,17 +4,25 @@
  *   const { data, isLoading, error, refresh } = usePatrimoineAnalyse()
  *
  * - Charge GET /api/analyse/patrimoine au montage.
- * - Met le résultat en cache mémoire 5 min côté client (évite un re-fetch
- *   si l'utilisateur navigue entre /analyse et /portefeuille puis revient).
- * - `refresh()` : invalide le cache ISIN serveur (POST /api/analyse/refresh)
- *   PUIS recharge le patrimoine. C'est l'action "Actualiser les prix".
+ * - Cache mémoire client : 30 secondes seulement. Évite un re-fetch
+ *   immédiat si l'utilisateur navigue entre /analyse et /portefeuille,
+ *   sans servir de la donnée stale plus longtemps. La vraie couche de
+ *   cache (24 h) est côté serveur sur `isin_cache`.
+ * - Le 1er montage de /analyse (jamais visité dans la session)
+ *   contourne le cache : `force=true`. Garantit que tout nouveau déploiement
+ *   est immédiatement visible.
+ * - `refresh()` : invalide le cache ISIN serveur + memCache + recharge.
+ *
+ * Historique : le cache était à 5 min, ce qui causait des bugs perçus
+ * comme "l'app n'a pas pris le déploiement". Réduit à 30 s + invalidation
+ * automatique au premier mount.
  */
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { PatrimoineComplet } from '@/types/analyse'
 
-const CLIENT_CACHE_MS = 5 * 60 * 1000
+const CLIENT_CACHE_MS = 30 * 1000
 
 let memCache: { data: PatrimoineComplet; expiresAt: number } | null = null
 
@@ -41,6 +49,9 @@ export function usePatrimoineAnalyse(): UsePatrimoineResult {
   const [error,      setError]      = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
 
+  // Ref pour distinguer le 1er montage (force=true) des suivants
+  const firstMountRef = useRef(true)
+
   const load = useCallback(async (force: boolean) => {
     if (!force && memCache && memCache.expiresAt > Date.now()) {
       setData(memCache.data)
@@ -60,7 +71,13 @@ export function usePatrimoineAnalyse(): UsePatrimoineResult {
     }
   }, [])
 
-  useEffect(() => { load(false) }, [load])
+  useEffect(() => {
+    // Au 1er mount du hook dans la session, on force le fetch pour ne
+    // jamais servir de la donnée potentiellement issue d'une ancienne
+    // version de l'app (cas typique : nouveau déploiement).
+    load(firstMountRef.current)
+    firstMountRef.current = false
+  }, [load])
 
   const refresh = useCallback(async () => {
     setRefreshing(true)

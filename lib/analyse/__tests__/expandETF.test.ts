@@ -42,7 +42,7 @@ describe('expandPositions — ETF référencé', () => {
 })
 
 describe('expandPositions — ETF non référencé', () => {
-  it('alimente unmappedEtfs et bucket "Non mappé"', () => {
+  it('alimente unmappedEtfs et bucket "Non mappé" pour les ETF vraiment inconnus', () => {
     const r = expandPositions([
       pos({ isin: 'XX0000XXXXXX', asset_type: 'etf', name: 'Mystery ETF', current_value: 1000 }),
     ])
@@ -50,6 +50,35 @@ describe('expandPositions — ETF non référencé', () => {
     expect(r.unmappedEtfs).toEqual([{ isin: 'XX0000XXXXXX', name: 'Mystery ETF', value: 1000 }])
     expect(r.sectorExposures[0]?.secteur).toBe('Non mappé')
     expect(r.geoExposures[0]?.zone).toBe('Non mappé')
+  })
+
+  it('fallback par NOM : ISIN inconnu mais nom = MSCI World → expansion correcte', () => {
+    const r = expandPositions([
+      pos({ isin: 'IE9999XZSH01', asset_type: 'etf', name: 'iShares MSCI World Swap PEA', current_value: 10000 }),
+    ])
+    expect(r.identifiedValue).toBe(10000)
+    expect(r.unmappedEtfs).toHaveLength(0)
+    // MSCI World a Technologie 23 % → ~2300 €
+    const tech = r.sectorExposures.find((e) => e.secteur === 'Technologie')
+    expect(tech?.value).toBeCloseTo(2300, 0)
+  })
+
+  it('fallback par nom : "NASDAQ 100 ETF" → composition Nasdaq', () => {
+    const r = expandPositions([
+      pos({ isin: 'YY0000YYYYYY', asset_type: 'etf', name: 'AmazingFund Nasdaq 100', current_value: 5000 }),
+    ])
+    expect(r.identifiedValue).toBe(5000)
+    // Nasdaq Technologie 58 %
+    const tech = r.sectorExposures.find((e) => e.secteur === 'Technologie')
+    expect(tech?.value).toBeCloseTo(2900, 0)
+  })
+
+  it('fallback par nom : nom totalement inconnu → bucket Non mappé', () => {
+    const r = expandPositions([
+      pos({ isin: 'ZZ0000ZZZZZZ', asset_type: 'etf', name: 'BizarroBondFund X', current_value: 1000 }),
+    ])
+    expect(r.identifiedValue).toBe(0)
+    expect(r.unmappedEtfs).toHaveLength(1)
   })
 })
 
