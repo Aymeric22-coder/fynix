@@ -80,6 +80,83 @@ export interface BienImmo {
   niveau_levier:       'Sans crédit' | 'Faible' | 'Modéré' | 'Fort'
   risque_immo:         number                  // 30-75
   donnees_completes:   boolean
+  /** Taux d'intérêt annuel estimé du crédit (utilisé pour amortir année par
+   *  année dans la projection FIRE). Defaut 3 % si inconnu. */
+  taux_interet_estime: number
+  /** Durée restante du crédit en mois (utilisée pour la projection).
+   *  Calculée depuis capital + mensualité + taux ; 0 si pas de crédit. */
+  duree_restante_mois: number
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Phase 9 — Projection FIRE multi-composantes
+// ─────────────────────────────────────────────────────────────────
+
+/** Acquisition immobilière future (simulateur, pas stockée en DB). */
+export interface AcquisitionFuture {
+  id:                       string
+  nom:                      string
+  dans_combien_annees:      number      // 1..20
+  prix_achat:               number      // FAI (frais agence inclus)
+  frais_notaire_pct:        number      // % (défaut 8)
+  apport:                   number      // capital sorti à l'achat
+  taux_interet:             number      // % annuel
+  duree_credit_ans:         number      // 15 / 20 / 25
+  type:                     'locatif' | 'RP'
+  loyer_brut_mensuel:       number      // 0 si RP
+  taux_vacance_pct:         number      // % (défaut 5)
+  charges_mensuelles:       number      // taxe/12, copro, PNO…
+  appreciation_annuelle_pct: number     // % (défaut 2)
+}
+
+/** Snapshot d'une année dans la projection patrimoniale combinée. */
+export interface AnneeProjection {
+  age:                  number
+  patrimoineFinancier:  number
+  equityImmoExistant:   number      // somme des equities des biens DB
+  equityImmoFuture:     number      // somme des equities des acquisitions futures
+  cash:                 number
+  total:                number      // somme des 4
+  /** Loyers nets annuels (cashflow positif) — sert pour le revenu passif. */
+  loyersNetsAnnuels:    number
+  /** Mensualités totales sorties (DCA + mensualités crédits immo). */
+  effortMensuel:        number
+}
+
+export interface ProjectionGlobaleResult {
+  points:                  AnneeProjection[]
+  ageIndependanceCentral:  number | null
+  ecartObjectif:           number | null
+  patrimoineAgeCible:      number
+  rendementUtilise:        number      // rendement central financier (info)
+  /** Détail à l'âge cible pour les 5 cartes résumé. */
+  detailsAgeCible: {
+    financier:           number
+    equityImmoExistant:  number
+    equityImmoFuture:    number
+    cash:                number
+    loyersNetsMensuels:  number
+    mensualitesSortantes: number
+    valeurBruteImmo:     number  // pour la carte "levier immobilier"
+  }
+  /** Warnings (ex : "apport insuffisant en année N"). */
+  warnings: string[]
+}
+
+/** Inputs requis par la projection globale. */
+export interface ProjectionInputs {
+  ageActuel:                number
+  ageCible:                 number
+  revenuPassifCible:        number      // €/mois
+  epargneMensuelle:         number      // DCA financier
+  rendementCentral:         number      // % annuel financier
+  appreciationImmoPct:      number      // %, applied to biens existants
+  inflationLoyersPct:       number      // %, applied to all loyers
+  patrimoineFinancierActuel: number     // totalPortefeuille
+  cashActuel:               number      // totalCash
+  biensExistants:           BienImmo[]
+  acquisitionsFutures:      AcquisitionFuture[]
+  horizonAnnees?:           number      // defaut 35
 }
 
 /** Compte cash / livret consolidé. */

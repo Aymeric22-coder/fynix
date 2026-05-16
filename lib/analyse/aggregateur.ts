@@ -63,6 +63,7 @@ interface DebtRow {
   asset_id:           string | null
   capital_remaining:  number | string | null
   monthly_payment:    number | string | null
+  interest_rate:      number | string | null
 }
 
 interface LotRow {
@@ -80,6 +81,24 @@ interface PropertyChargeRow {
   accountant:      number | string | null
   cfe:             number | string | null
   other:           number | string | null
+}
+
+/**
+ * Estime le nombre de mois restants d'un crédit à mensualité fixe (PMT).
+ *
+ *   M = P × r × (1+r)^n / ((1+r)^n − 1)
+ *   → n = −log(1 − r·P / M) / log(1+r)
+ *
+ * Renvoie 0 si formule non résoluble (mensualité ≤ intérêts), pour
+ * éviter NaN / Infinity dans la projection.
+ */
+function estimerDureeRestante(capital: number, mensualite: number, tauxAnnuel: number): number {
+  if (capital <= 0 || mensualite <= 0 || tauxAnnuel <= 0) return 0
+  const r = tauxAnnuel / 12
+  const ratio = r * capital / mensualite
+  if (ratio >= 1) return 0   // mensualité ne couvre même pas les intérêts → indéterminé
+  const n = -Math.log(1 - ratio) / Math.log(1 + r)
+  return Math.max(0, Math.round(n))
 }
 
 const FISCAL_TO_TYPE: Record<string, string> = {
@@ -142,17 +161,22 @@ async function loadImmo(userId: string): Promise<ImmoLoadResult> {
     }
   }
 
-  // Dettes : capital_remaining ET monthly_payment par asset_id
+  // Dettes : capital_remaining + monthly_payment + interest_rate par asset_id
   const { data: debtsRaw } = await supabase
     .from('debts')
-    .select('asset_id, capital_remaining, monthly_payment')
+    .select('asset_id, capital_remaining, monthly_payment, interest_rate')
     .in('asset_id', assetIds)
   const debtByAsset       = new Map<string, number>()
   const mensualiteByAsset = new Map<string, number>()
+  const tauxByAsset       = new Map<string, number>()
   for (const d of (debtsRaw ?? []) as DebtRow[]) {
     if (d.asset_id) {
       debtByAsset.set(d.asset_id, (debtByAsset.get(d.asset_id) ?? 0) + num(d.capital_remaining))
       mensualiteByAsset.set(d.asset_id, (mensualiteByAsset.get(d.asset_id) ?? 0) + num(d.monthly_payment))
+      // taux : on prend le 1er rencontré (un asset = un crédit actif depuis migration 006)
+      if (!tauxByAsset.has(d.asset_id) && d.interest_rate !== null) {
+        tauxByAsset.set(d.asset_id, num(d.interest_rate))
+      }
     }
   }
 
@@ -197,6 +221,12 @@ async function loadImmo(userId: string): Promise<ImmoLoadResult> {
       charges_annuelles: chargesAnnuelles,
     })
 
+    // Taux + durée restante estimés (pour la projection FIRE)
+    const tauxAnnuelPct = tauxByAsset.get(r.asset_id) ?? 3.0  // défaut 3 %
+    const dureeRestanteMois = creditRestant > 0 && mensualite > 0
+      ? estimerDureeRestante(creditRestant, mensualite, tauxAnnuelPct / 100)
+      : 0
+
     totalImmo        += valeur
     totalDettes      += creditRestant
     loyersMensuels   += loyerMensuel
@@ -222,6 +252,8 @@ async function loadImmo(userId: string): Promise<ImmoLoadResult> {
       niveau_levier:       kpis.niveau_levier,
       risque_immo:         kpis.risque_immo,
       donnees_completes:   kpis.donnees_completes,
+      taux_interet_estime: tauxAnnuelPct,
+      duree_restante_mois: dureeRestanteMois,
     }
   })
 

@@ -210,6 +210,7 @@ describe('expandPositions — biens immobiliers physiques', () => {
       equity: 100000, rendement_brut: 4.8, rendement_net: 3.9,
       cashflow_mensuel: 50, ltv: 50, niveau_levier: 'Modéré', risque_immo: 45,
       donnees_completes: true,
+      taux_interet_estime: 3, duree_restante_mois: 180,
     }]
     const r = expandPositions([], biens)
     // L'immo physique ne doit PAS apparaître dans l'analyse sectorielle/géo
