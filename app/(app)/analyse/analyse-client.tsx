@@ -153,7 +153,15 @@ export function AnalyseClient() {
 
       {/* 7 + 8. IMMO + CASH */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-6">
-        <ImmoSummary biens={data.biens} totalImmo={data.totalImmo} totalDettes={data.totalDettes} />
+        <ImmoSummary
+          biens={data.biens}
+          totalImmo={data.totalImmo}
+          totalDettes={data.totalDettes}
+          totalImmoEquity={data.totalImmoEquity}
+          revenuPassifImmo={data.revenuPassifImmo}
+          rendementNetImmoMoyen={data.rendementNetImmoMoyen}
+          revenuPassifCible={data.fireInputs.revenu_passif_cible}
+        />
         <CashSummary comptes={data.comptes} totalCash={data.totalCash} totalBrut={data.totalBrut} />
       </div>
 

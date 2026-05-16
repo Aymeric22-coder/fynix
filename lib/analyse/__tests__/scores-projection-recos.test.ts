@@ -34,6 +34,8 @@ function patrimoine(over: Partial<PatrimoineComplet> = {}): PatrimoineComplet {
   return {
     totalBrut: 100000, totalNet: 100000,
     totalPortefeuille: 80000, totalImmo: 0, totalCash: 20000, totalDettes: 0,
+    totalImmoEquity: 0, risqueImmoGlobal: 30, revenuPassifImmo: 0,
+    mensualitesImmoTotal: 0, rendementNetImmoMoyen: 0,
     positions: [
       pos({ asset_type: 'etf', current_value: 50000, sector: 'Technology', country: 'United States' }),
       pos({ asset_type: 'stock', current_value: 30000, sector: 'Healthcare', country: 'France' }),
@@ -145,9 +147,18 @@ describe('calculerCoherenceProfil', () => {
 })
 
 describe('calculerProgressionFIRE', () => {
-  it('100 si déjà arrivé à la cible', () => {
+  it('100 si patrimoine financier déjà arrivé à la cible (cible = 3000 × 12 × 25 = 900k)', () => {
+    // Phase 8 : actuel = totalPortefeuille + totalCash (financier seul)
     const s = calculerProgressionFIRE(patrimoine({
-      totalNet: 1_000_000,
+      totalNet: 1_000_000, totalPortefeuille: 950_000, totalCash: 50_000,
+      fireInputs: { ...patrimoine().fireInputs, revenu_passif_cible: 3000 },
+    }))
+    expect(s.value).toBe(100)
+  })
+
+  it('Phase 8 : 100 si les loyers immo couvrent déjà 100 % de la cible', () => {
+    const s = calculerProgressionFIRE(patrimoine({
+      revenuPassifImmo: 3000,
       fireInputs: { ...patrimoine().fireInputs, revenu_passif_cible: 3000 },
     }))
     expect(s.value).toBe(100)
@@ -155,7 +166,7 @@ describe('calculerProgressionFIRE', () => {
 
   it('haut quand on est dans les temps', () => {
     const s = calculerProgressionFIRE(patrimoine({
-      totalNet: 600000,
+      totalNet: 600000, totalPortefeuille: 600_000, totalCash: 0,
       fireInputs: {
         ...patrimoine().fireInputs,
         age: 35, age_cible: 60, epargne_mensuelle: 2000,

@@ -133,7 +133,6 @@ const RISQUE_PAR_CLASSE: Record<AnalyseAssetType, number> = {
   unknown:  0,
 }
 
-const RISQUE_IMMO = 25
 const RISQUE_CASH = 0
 
 export function calculerCoherenceProfil(p: PatrimoineComplet): Score {
@@ -142,20 +141,29 @@ export function calculerCoherenceProfil(p: PatrimoineComplet): Score {
     return insufficientData('Cohérence profil')
   }
 
-  // 1. Risque pondéré du portefeuille (positions par asset_type + immo + cash)
-  let risqueReel = 0
-  const total    = p.totalBrut
+  // Risque pondéré sur la "richesse réelle" = portefeuille + equity_immo
+  // + cash. On utilise l'equity immo (et non la valeur brute) parce que
+  // c'est la part réellement détenue ; le reste est financé par la banque.
+  //
+  // Pour l'immo : risque dynamique calculé par calculerRisqueImmoGlobal
+  // (par défaut 30, modulé selon LTV et cashflow par bien).
+  const richesseReelle = p.totalPortefeuille + p.totalImmoEquity + p.totalCash
+  if (richesseReelle <= 0) return insufficientData('Cohérence profil')
 
+  let risqueReel = 0
   for (const pos of p.positions) {
     const r = RISQUE_PAR_CLASSE[pos.asset_type] ?? 0
-    risqueReel += (pos.current_value / total) * r
+    risqueReel += (pos.current_value / richesseReelle) * r
   }
-  if (p.totalImmo > 0) risqueReel += (p.totalImmo / total) * RISQUE_IMMO
-  if (p.totalCash > 0) risqueReel += (p.totalCash / total) * RISQUE_CASH
+  if (p.totalImmoEquity > 0) risqueReel += (p.totalImmoEquity / richesseReelle) * p.risqueImmoGlobal
+  if (p.totalCash > 0)       risqueReel += (p.totalCash       / richesseReelle) * RISQUE_CASH
 
   risqueReel = Math.round(risqueReel)
   const value = clamp(100 - Math.abs(p.fireInputs.risk_score - risqueReel))
   const niveau = niveauCoherence(value)
+
+  // Part immobilier dans la richesse réelle (pour le message)
+  const partImmoPct = richesseReelle > 0 ? Math.round((p.totalImmoEquity / richesseReelle) * 100) : 0
 
   const ecart = risqueReel - p.fireInputs.risk_score
   let label: string
@@ -171,26 +179,40 @@ export function calculerCoherenceProfil(p: PatrimoineComplet): Score {
     details = `Risque réel ${risqueReel}/100 vs profil ${p.fireInputs.risk_score}/100`
   }
 
+  // Si l'utilisateur a beaucoup d'immo, le portefeuille apparaît "trop
+  // prudent" — c'est une lecture nuancée à exposer dans le message.
+  const dominanceImmo = partImmoPct >= 60
+
   return {
     value, niveau, label, details,
     explanation: {
-      formule: 'Score = 100 − |risque déclaré (profil) − risque réel (portefeuille)|\nRisque réel = moyenne pondérée par classe : crypto 95, stock 60, etf 45, metal 30, scpi 25, bond 10, cash 0',
+      formule:
+        'Score = 100 − |risque déclaré (profil) − risque réel (patrimoine total)|\n' +
+        'Risque réel = pondéré par les actifs détenus :\n' +
+        '  - financier : crypto 95 / stock 60 / etf 45 / metal 30 / bond 10 / cash 0\n' +
+        '  - immobilier (equity) : risque dynamique 30-75 selon LTV + cashflow par bien',
       inputs: [
-        { label: 'Risque déclaré (profil)', value: `${p.fireInputs.risk_score} / 100` },
-        { label: 'Risque réel (portefeuille)', value: `${risqueReel} / 100` },
-        { label: 'Écart', value: `${ecart > 0 ? '+' : ''}${ecart}` },
-        { label: 'Score final', value: `${value} / 100`, highlight: true },
+        { label: 'Risque déclaré (profil)',         value: `${p.fireInputs.risk_score} / 100` },
+        { label: 'Risque réel (patrimoine total)',  value: `${risqueReel} / 100` },
+        { label: 'Risque immobilier pondéré',       value: p.totalImmoEquity > 0 ? `${p.risqueImmoGlobal} / 100` : '— (pas d\'immo)' },
+        { label: 'Part immobilier (equity / richesse)', value: `${partImmoPct} %` },
+        { label: 'Écart',                            value: `${ecart > 0 ? '+' : ''}${ecart}` },
+        { label: 'Score final',                      value: `${value} / 100`, highlight: true },
       ],
       lecture:
         value >= 70
-          ? 'Votre portefeuille reflète bien votre tolérance au risque déclarée. Pas de rééquilibrage nécessaire.'
+          ? 'Votre patrimoine reflète bien votre tolérance au risque déclarée. Pas de rééquilibrage nécessaire.'
+          : dominanceImmo && ecart < 0
+          ? `Votre patrimoine est majoritairement immobilier (${partImmoPct} %), ce qui le rend plus stable que votre profil déclaré "${p.profilType ?? 'défini'}". Si vous souhaitez vraiment un profil plus dynamique, augmentez la part de vos actifs financiers (ETF, actions).`
           : ecart > 0
-          ? `Votre portefeuille prend ${Math.abs(ecart)} points de risque DE PLUS que votre profil. Un krach pourrait être psychologiquement difficile à supporter et vous pousser à vendre au pire moment.`
-          : `Votre portefeuille prend ${Math.abs(ecart)} points de risque DE MOINS que votre profil. Vous laissez du rendement sur la table par rapport à vos objectifs.`,
+          ? `Votre patrimoine prend ${Math.abs(ecart)} points de risque DE PLUS que votre profil. Un krach pourrait être psychologiquement difficile à supporter.`
+          : `Votre patrimoine prend ${Math.abs(ecart)} points de risque DE MOINS que votre profil. Vous laissez du rendement sur la table par rapport à vos objectifs.`,
       action: value < 70
         ? ecart > 0
           ? 'Réduisez les actifs risqués (crypto, actions individuelles) au profit d\'ETF diversifiés et d\'obligations.'
-          : 'Augmentez la part d\'ETF actions monde / Nasdaq, ou ajoutez de la crypto modérément pour matcher votre tolérance déclarée.'
+          : dominanceImmo
+          ? 'Augmentez vos versements ETF mensuels pour rééquilibrer progressivement vers le financier, sans toucher à votre immobilier.'
+          : 'Augmentez la part d\'ETF actions monde / Nasdaq pour matcher votre tolérance déclarée.'
         : undefined,
     },
   }
@@ -220,9 +242,15 @@ export function calculerProgressionFIRE(p: PatrimoineComplet): Score {
     return insufficientData('Progression FIRE')
   }
 
-  const cible           = revenu_passif_cible * 12 * 25
-  const actuel          = p.totalNet
-  const anneesObjectif  = age_cible - age
+  // Réduction de la cible par les loyers nets déjà perçus :
+  // les revenus immo sont du revenu passif "déjà acquis" → le portefeuille
+  // financier n'a besoin de générer que le RESTE.
+  const revenuImmoMensuel    = Math.max(0, p.revenuPassifImmo)
+  const cibleRestanteMensuel = Math.max(0, revenu_passif_cible - revenuImmoMensuel)
+  const cible                = cibleRestanteMensuel * 12 * 25
+  // Patrimoine financier (les loyers immo couvrent déjà leur part).
+  const actuel               = p.totalPortefeuille + p.totalCash
+  const anneesObjectif       = age_cible - age
   if (anneesObjectif <= 0) return insufficientData('Progression FIRE')
 
   const anneesNec = anneesPourAtteindre(actuel, cible, epargne_mensuelle)
@@ -242,7 +270,7 @@ export function calculerProgressionFIRE(p: PatrimoineComplet): Score {
   value = clamp(value)
   const niveau = niveauScore(value)
 
-  const cheminPct = cible > 0 ? Math.round((actuel / cible) * 100) : 0
+  const cheminPct = cible > 0 ? Math.round((actuel / cible) * 100) : 100   // si cible=0 (déjà FIRE via loyers), 100 %
   const label =
     value >= 80 ? 'Sur la bonne trajectoire' :
     value >= 60 ? 'Trajectoire serrée' :
@@ -250,29 +278,41 @@ export function calculerProgressionFIRE(p: PatrimoineComplet): Score {
     'Très en retard sur l\'objectif'
   const ecartTexte = anneesNec >= 99
     ? 'objectif inatteignable au rythme actuel'
+    : cible === 0
+    ? 'objectif déjà couvert par vos loyers'
     : `${anneesNec.toFixed(1)} ans nécessaires vs ${anneesObjectif} d\'objectif`
   const manque = Math.max(0, cible - actuel)
+  const couvertureFirePct = Math.round((revenuImmoMensuel / revenu_passif_cible) * 100)
+
   return {
     value, niveau, label,
     details: `${cheminPct} % du chemin · ${ecartTexte}`,
     explanation: {
       formule:
-        'Cible FIRE = revenu passif × 12 × 25 (règle des 4 %)\n' +
-        'Années nécessaires = simulation intérêts composés à 7 %/an avec votre épargne mensuelle\n' +
+        'Étape 1 : revenu immo net mensuel REDUIT la cible (déjà acquis)\n' +
+        '  cible_restante = max(0, revenu_passif_cible − loyers_nets_actuels)\n' +
+        'Étape 2 : cible patrimoine = cible_restante × 12 × 25 (règle des 4 %)\n' +
+        'Étape 3 : simulation intérêts composés à 7 %/an sur le patrimoine financier\n' +
         'Score = 100 si arrivé, 80+ si dans les temps, dégradé selon le retard',
       inputs: [
-        { label: 'Patrimoine net actuel', value: `${actuel.toFixed(0)} €` },
-        { label: 'Cible FIRE',            value: `${cible.toFixed(0)} €` },
-        { label: 'Reste à constituer',    value: `${manque.toFixed(0)} €` },
-        { label: 'Épargne mensuelle',     value: `${epargne_mensuelle.toFixed(0)} € / mois` },
-        { label: 'Âge actuel',            value: `${age} ans` },
-        { label: 'Âge cible FIRE',        value: `${age_cible} ans (${anneesObjectif} ans pour y arriver)` },
-        { label: 'Années nécessaires',    value: anneesNec >= 99 ? '∞ (inatteignable)' : `${anneesNec.toFixed(1)} ans` },
-        { label: 'Chemin parcouru',       value: `${cheminPct} %` },
-        { label: 'Score final',           value: `${value} / 100`, highlight: true },
+        { label: 'Revenu passif cible',                    value: `${revenu_passif_cible.toFixed(0)} € / mois` },
+        { label: 'Loyers nets actuels (immo)',             value: `${revenuImmoMensuel.toFixed(0)} € / mois (${couvertureFirePct} % de la cible)` },
+        { label: 'Cible restante à générer (financier)',   value: `${cibleRestanteMensuel.toFixed(0)} € / mois` },
+        { label: 'Patrimoine financier à constituer',      value: `${cible.toFixed(0)} €` },
+        { label: 'Patrimoine financier actuel',            value: `${actuel.toFixed(0)} €` },
+        { label: 'Reste à constituer',                     value: `${manque.toFixed(0)} €` },
+        { label: 'Épargne mensuelle',                      value: `${epargne_mensuelle.toFixed(0)} € / mois` },
+        { label: 'Âge actuel',                             value: `${age} ans` },
+        { label: 'Âge cible FIRE',                         value: `${age_cible} ans (${anneesObjectif} ans pour y arriver)` },
+        { label: 'Années nécessaires',                     value: anneesNec >= 99 ? '∞ (inatteignable)' : `${anneesNec.toFixed(1)} ans` },
+        { label: 'Score final',                            value: `${value} / 100`, highlight: true },
       ],
       lecture:
-        value >= 80
+        cible === 0
+          ? `Vos loyers nets (${revenuImmoMensuel.toFixed(0)} €/mois) couvrent déjà 100 % de votre objectif FIRE de ${revenu_passif_cible.toFixed(0)} €/mois. Vous êtes financièrement indépendant.`
+          : revenuImmoMensuel > 0
+          ? `Vos loyers nets couvrent déjà ${revenuImmoMensuel.toFixed(0)} €/mois (${couvertureFirePct} % de votre objectif). Il vous manque ${cibleRestanteMensuel.toFixed(0)} €/mois à générer via votre portefeuille financier.`
+          : value >= 80
           ? `Sur la bonne trajectoire. À ce rythme vous atteindrez l'indépendance vers ${Math.round(age + anneesNec)} ans (${anneesObjectif - Math.round(anneesNec)} ans d'avance sur votre objectif).`
           : value >= 60
           ? 'Trajectoire serrée — vous êtes sur le fil. Une petite augmentation de l\'épargne sécuriserait l\'objectif.'
@@ -295,27 +335,39 @@ const ASSET_RISKY: AnalyseAssetType[] = ['stock', 'etf', 'crypto']
 export function calculerSolidite(p: PatrimoineComplet): Score {
   if (p.totalBrut <= 0) return insufficientData('Solidité')
 
-  // a) Coussin de sécurité : cash / (charges × 6)
-  const charges  = p.fireInputs.charges_mensuelles
+  // Charges TOTALES = dépenses courantes + mensualités de crédit immo
+  // (un user avec un crédit de 1500 €/mois doit garder du cash pour
+  // ces mensualités en cas de vacance locative).
+  const chargesProfile = p.fireInputs.charges_mensuelles
+  const chargesTotales = chargesProfile + p.mensualitesImmoTotal
+
   let pts        = 60   // base
   let coussinTxt = 'coussin OK'
-  if (charges > 0) {
-    const moisCouverts = p.totalCash / charges
-    if (moisCouverts < 6)  { pts -= 20; coussinTxt = `${moisCouverts.toFixed(1)} mois de cash` }
-    else if (moisCouverts > 12) { pts += 10; coussinTxt = `${moisCouverts.toFixed(0)} mois de cash` }
-    else { coussinTxt = `${moisCouverts.toFixed(1)} mois de cash` }
+
+  // a) Coussin de sécurité vs charges totales
+  if (chargesTotales > 0) {
+    const moisCouverts = p.totalCash / chargesTotales
+    if (moisCouverts < 3)       { pts -= 20; coussinTxt = `${moisCouverts.toFixed(1)} mois (fragile)` }
+    else if (moisCouverts < 6)  { pts +=  5; coussinTxt = `${moisCouverts.toFixed(1)} mois (correct)` }
+    else if (moisCouverts > 12) { pts += 20; coussinTxt = `${moisCouverts.toFixed(0)} mois (très bien)` }
+    else                        {            coussinTxt = `${moisCouverts.toFixed(1)} mois` }
   }
 
-  // b) Part d'actifs non corrélés (immo + cash) / patrimoine brut
-  const partRefuge = (p.totalImmo + p.totalCash) / p.totalBrut * 100
-  if (partRefuge > 40)      pts += 20
-  else if (partRefuge < 15) pts -= 20
+  // b) Ratio endettement (crédits immo / valeur brute totale)
+  const ratioEndettement = p.totalDettes / p.totalBrut
+  if      (ratioEndettement < 0.30) pts += 20    // très sain
+  else if (ratioEndettement < 0.50) {}           // normal
+  else if (ratioEndettement < 0.70) pts -= 15    // attention
+  else                              pts -= 30    // risqué
 
-  // c) Dettes lourdes
-  const ratioDettes = p.totalDettes / p.totalBrut
-  if (ratioDettes > 0.6) pts -= 30
+  // c) Couverture des charges par les loyers (autofinancement)
+  if (p.revenuPassifImmo > 0 && chargesTotales > 0) {
+    const couverture = (p.revenuPassifImmo / chargesTotales) * 100
+    if      (couverture >= 100) pts += 25
+    else if (couverture >= 50)  pts += 15
+  }
 
-  // Bonus / malus krach -30 % sur les actifs risqués
+  // d) Simulation krach -30 % sur les actifs risqués
   let valeurRisquee = 0
   for (const pos of p.positions) {
     if (ASSET_RISKY.includes(pos.asset_type)) valeurRisquee += pos.current_value
@@ -333,38 +385,47 @@ export function calculerSolidite(p: PatrimoineComplet): Score {
     value >= 40 ? 'Résistance limitée' :
     'Portefeuille fragile'
 
-  const moisCouverts = charges > 0 ? p.totalCash / charges : 0
+  const moisCouverts = chargesTotales > 0 ? p.totalCash / chargesTotales : 0
+  const couvertureLoyers = (p.revenuPassifImmo > 0 && chargesTotales > 0)
+    ? (p.revenuPassifImmo / chargesTotales) * 100 : 0
+
   return {
     value, niveau, label,
-    details: `${coussinTxt} · refuge ${partRefuge.toFixed(0)} % · krach -${partImpact.toFixed(0)} % du net`,
+    details: `${coussinTxt} · dettes ${(ratioEndettement * 100).toFixed(0)} % · loyers couvrent ${couvertureLoyers.toFixed(0)} %`,
     explanation: {
       formule:
         'Score base 60, ajusté par 4 facteurs :\n' +
-        '  a) Coussin cash : < 6 mois charges → −20, > 12 mois → +10\n' +
-        '  b) Actifs refuge (immo + cash) : > 40 % → +20, < 15 % → −20\n' +
-        '  c) Dettes : > 60 % du brut → −30\n' +
-        '  d) Simulation krach −30 % sur actions/ETF/crypto : impact > 30 % du net → −10, < 10 % → +10',
+        '  a) Coussin cash vs charges TOTALES (dépenses + mensualités immo)\n' +
+        '     < 3 mois → −20 / 3-6 mois → +5 / > 12 mois → +20\n' +
+        '  b) Ratio endettement (crédits immo / valeur brute) :\n' +
+        '     < 30 % → +20 sain / 30-50 % normal / 50-70 % attention −15 / > 70 % risqué −30\n' +
+        '  c) Couverture charges par loyers nets :\n' +
+        '     ≥ 50 % → +15 / ≥ 100 % autofinancé → +25\n' +
+        '  d) Krach −30 % sur actifs risqués : impact > 30 % du net → −10, < 10 % → +10',
       inputs: [
-        { label: 'Cash disponible',     value: `${p.totalCash.toFixed(0)} €` },
-        { label: 'Charges mensuelles',  value: charges > 0 ? `${charges.toFixed(0)} € / mois` : 'Non renseigné' },
-        { label: 'Coussin de sécurité', value: charges > 0 ? `${moisCouverts.toFixed(1)} mois couverts (cible 6-12)` : '—' },
-        { label: 'Actifs refuge',       value: `${partRefuge.toFixed(0)} % (immo + cash)` },
-        { label: 'Ratio dettes',        value: `${(ratioDettes * 100).toFixed(0)} % du brut` },
-        { label: 'Impact krach −30 %',  value: `${impactKrach.toFixed(0)} € (soit ${partImpact.toFixed(0)} % du net)` },
-        { label: 'Score final',         value: `${value} / 100`, highlight: true },
+        { label: 'Cash disponible',                value: `${p.totalCash.toFixed(0)} €` },
+        { label: 'Charges totales / mois',         value: chargesTotales > 0 ? `${chargesTotales.toFixed(0)} € (dépenses ${chargesProfile.toFixed(0)} + immo ${p.mensualitesImmoTotal.toFixed(0)})` : '—' },
+        { label: 'Coussin de sécurité',            value: chargesTotales > 0 ? `${moisCouverts.toFixed(1)} mois couverts` : '—' },
+        { label: 'Ratio endettement',              value: `${(ratioEndettement * 100).toFixed(0)} % (dettes / brut)` },
+        { label: 'Revenu passif immo / mois',      value: `${p.revenuPassifImmo.toFixed(0)} € (cashflow net)` },
+        { label: 'Couverture charges par loyers',  value: chargesTotales > 0 ? `${couvertureLoyers.toFixed(0)} %` : '—' },
+        { label: 'Impact krach −30 %',             value: `${impactKrach.toFixed(0)} € (soit ${partImpact.toFixed(0)} % du net)` },
+        { label: 'Score final',                    value: `${value} / 100`, highlight: true },
       ],
       lecture:
         value >= 80
-          ? 'Portefeuille très résilient. Vous traverserez un krach sans devoir vendre dans la panique.'
+          ? 'Patrimoine très résilient. Vous traverserez un krach ou un coup dur sans difficulté.'
           : value >= 60
-          ? 'Solide. Quelques ajustements (coussin, refuge) renforceraient la résistance.'
+          ? 'Solide. Quelques ajustements (coussin cash, désendettement) renforceraient encore la résistance.'
           : value >= 40
-          ? 'Résistance limitée. Un krach prolongé ou un coup dur personnel mettrait le patrimoine en tension.'
-          : 'Portefeuille fragile. Risque d\'avoir à vendre au pire moment ou de basculer dans la précarité en cas d\'imprévu.',
+          ? 'Résistance limitée. Un krach prolongé OU une vacance locative pourraient mettre le patrimoine en tension.'
+          : 'Patrimoine fragile. Risque d\'avoir à vendre des actifs ou prendre des arbitrages douloureux en cas d\'imprévu.',
       action: value < 60
         ? moisCouverts < 6
-          ? 'Priorité : constituer 6 mois de charges sur Livret A/LDDS avant tout nouvel investissement risqué.'
-          : 'Ajoutez de la diversification non corrélée (SCPI, oblig, immo) pour réduire la dépendance aux marchés actions.'
+          ? 'Priorité : constituer 6 mois de charges TOTALES (incluant mensualités immo) sur Livret A.'
+          : ratioEndettement > 0.6
+          ? 'Désendettement progressif (remboursements anticipés) pour ramener le ratio dettes/brut sous 50 %.'
+          : 'Renforcez la part de cash et SCPI pour ajouter de la stabilité non corrélée aux marchés actions.'
         : undefined,
     },
   }

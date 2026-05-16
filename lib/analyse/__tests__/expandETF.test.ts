@@ -206,7 +206,10 @@ describe('expandPositions — biens immobiliers physiques', () => {
     const biens: BienImmo[] = [{
       id: 'b1', nom: 'Appart Lyon', ville: 'Lyon', pays: 'France',
       type: 'Locatif', valeur: 200000, loyer_mensuel: 800,
-      credit_restant: 100000, equity: 100000, rendement_brut: 4.8,
+      credit_restant: 100000, mensualite_credit: 600, charges_annuelles: 1800,
+      equity: 100000, rendement_brut: 4.8, rendement_net: 3.9,
+      cashflow_mensuel: 50, ltv: 50, niveau_levier: 'Modéré', risque_immo: 45,
+      donnees_completes: true,
     }]
     const r = expandPositions([], biens)
     // L'immo physique ne doit PAS apparaître dans l'analyse sectorielle/géo

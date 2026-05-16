@@ -62,16 +62,24 @@ export interface EnrichedPosition {
 
 /** Bien immobilier consolidé, prêt pour la vue d'analyse. */
 export interface BienImmo {
-  id:               string
-  nom:              string
-  ville:            string | null
-  pays:             string | null
-  type:             string                  // 'Résidence principale' | 'Locatif' | 'SCPI' | …
-  valeur:           number                  // valeur de marché EUR
-  loyer_mensuel:    number                  // loyer brut EUR/mois
-  credit_restant:   number                  // capital restant dû (EUR)
-  equity:           number                  // valeur - credit_restant
-  rendement_brut:   number                  // % annuel brut (loyers × 12 / valeur × 100)
+  id:                  string
+  nom:                 string
+  ville:               string | null
+  pays:                string | null
+  type:                string                  // 'Résidence principale' | 'Locatif' | 'SCPI' | …
+  valeur:              number                  // valeur de marché EUR
+  loyer_mensuel:       number                  // loyer brut EUR/mois
+  credit_restant:      number                  // capital restant dû (EUR)
+  mensualite_credit:   number                  // mensualité (capital+intérêts+assurance) EUR/mois
+  charges_annuelles:   number                  // somme charges réelles (taxe + copro + PNO + gestion)
+  equity:              number                  // valeur - credit_restant
+  rendement_brut:      number                  // % annuel brut (loyers × 12 / valeur × 100)
+  rendement_net:       number                  // % annuel net (après charges)
+  cashflow_mensuel:    number                  // loyer - mensualité - charges/12 (peut être négatif)
+  ltv:                 number                  // 0-100, leverage ratio
+  niveau_levier:       'Sans crédit' | 'Faible' | 'Modéré' | 'Fort'
+  risque_immo:         number                  // 30-75
+  donnees_completes:   boolean
 }
 
 /** Compte cash / livret consolidé. */
@@ -140,6 +148,18 @@ export interface PatrimoineComplet {
   totalImmo:        number     // valeur brute immobilier
   totalCash:        number     // tous les comptes / livrets
   totalDettes:      number     // capital restant dû tous crédits
+
+  // Phase 8 — KPIs immobilier agrégés (utiles aux scores + UI)
+  /** Equity totale immo = somme valeur − somme dettes. */
+  totalImmoEquity:           number
+  /** Risque pondéré immobilier (par valeur du bien) 0-75. */
+  risqueImmoGlobal:          number
+  /** Revenu passif net mensuel des biens LOCATIFS uniquement. */
+  revenuPassifImmo:          number
+  /** Total mensualités crédit immo (€/mois). */
+  mensualitesImmoTotal:      number
+  /** Rendement net moyen pondéré du parc immo (%). */
+  rendementNetImmoMoyen:     number
 
   positions:        EnrichedPosition[]
   biens:            BienImmo[]

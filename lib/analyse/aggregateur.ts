@@ -22,6 +22,10 @@ import {
   benchmarkGeoOf, benchmarkSectorOf, classifyDeviation, trackingErrorScore,
   BENCHMARK_GEO_MSCI_ACWI, BENCHMARK_SECTOR_MSCI_WORLD,
 } from './benchmarks'
+import {
+  calculerKPIsBien, calculerRisqueImmoGlobal, calculerRevenuPassifImmo,
+  rendementNetMoyenPondere,
+} from './immoCalculs'
 import type {
   PatrimoineComplet, BienImmo, CompteCash,
   ClasseAlloc, SecteurAlloc, GeoAlloc, EnrichedPosition, AnalyseAssetType,
@@ -48,17 +52,34 @@ interface ImmoRow {
   works_amount:       number | string | null
   fiscal_regime:      string | null
   assumed_total_rent: number | string | null
+  /** % loyer net pour GLI (garantie loyers impayés). */
+  gli_pct:            number | string | null
+  /** % loyer net pour frais de gestion. */
+  management_pct:     number | string | null
   asset?: { id: string; name: string | null; status: string | null } | null
 }
 
 interface DebtRow {
   asset_id:           string | null
   capital_remaining:  number | string | null
+  monthly_payment:    number | string | null
 }
 
 interface LotRow {
   property_id: string
   rent_amount: number | string | null
+}
+
+/** Ligne `property_charges` (1 par property par année). */
+interface PropertyChargeRow {
+  property_id:     string
+  taxe_fonciere:   number | string | null
+  insurance:       number | string | null   // PNO
+  condo_fees:      number | string | null
+  maintenance:     number | string | null
+  accountant:      number | string | null
+  cfe:             number | string | null
+  other:           number | string | null
 }
 
 const FISCAL_TO_TYPE: Record<string, string> = {
@@ -71,7 +92,19 @@ const FISCAL_TO_TYPE: Record<string, string> = {
   scpi:         'SCPI',
 }
 
-async function loadImmo(userId: string): Promise<{ biens: BienImmo[]; totalImmo: number; totalDettes: number; loyersMensuels: number }> {
+interface ImmoLoadResult {
+  biens:                BienImmo[]
+  totalImmo:            number   // valeur brute
+  totalDettes:          number   // capital restant dû
+  loyersMensuels:       number   // loyers bruts mensuels (info)
+  totalImmoEquity:      number
+  risqueImmoGlobal:     number
+  revenuPassifImmo:     number   // somme cashflows locatifs (peut être négatif)
+  mensualitesImmoTotal: number
+  rendementNetImmoMoyen: number
+}
+
+async function loadImmo(userId: string): Promise<ImmoLoadResult> {
   const supabase = await createServerClient()
 
   const { data: props } = await supabase
@@ -79,22 +112,28 @@ async function loadImmo(userId: string): Promise<{ biens: BienImmo[]; totalImmo:
     .select(`
       id, asset_id, address_city, address_country, purchase_price,
       works_amount, fiscal_regime, assumed_total_rent,
+      gli_pct, management_pct,
       asset:assets!asset_id ( id, name, status )
     `)
     .eq('user_id', userId)
 
   if (!props || props.length === 0) {
-    return { biens: [], totalImmo: 0, totalDettes: 0, loyersMensuels: 0 }
+    return {
+      biens: [], totalImmo: 0, totalDettes: 0, loyersMensuels: 0,
+      totalImmoEquity: 0, risqueImmoGlobal: 30, revenuPassifImmo: 0,
+      mensualitesImmoTotal: 0, rendementNetImmoMoyen: 0,
+    }
   }
 
-  const rows = props as unknown as ImmoRow[]
+  const rows     = props as unknown as ImmoRow[]
   const assetIds = rows.map((r) => r.asset_id).filter(Boolean)
+  const propIds  = rows.map((r) => r.id)
 
   // Loyers : somme des rent_amount des lots actifs par property
   const { data: lotsRaw } = await supabase
     .from('real_estate_lots')
     .select('property_id, rent_amount, status')
-    .in('property_id', rows.map((r) => r.id))
+    .in('property_id', propIds)
   const lots = (lotsRaw ?? []) as Array<LotRow & { status: string | null }>
   const rentByProperty = new Map<string, number>()
   for (const l of lots) {
@@ -103,48 +142,104 @@ async function loadImmo(userId: string): Promise<{ biens: BienImmo[]; totalImmo:
     }
   }
 
-  // Dettes : capital_remaining par asset_id
+  // Dettes : capital_remaining ET monthly_payment par asset_id
   const { data: debtsRaw } = await supabase
     .from('debts')
-    .select('asset_id, capital_remaining')
+    .select('asset_id, capital_remaining, monthly_payment')
     .in('asset_id', assetIds)
-  const debtByAsset = new Map<string, number>()
+  const debtByAsset       = new Map<string, number>()
+  const mensualiteByAsset = new Map<string, number>()
   for (const d of (debtsRaw ?? []) as DebtRow[]) {
     if (d.asset_id) {
       debtByAsset.set(d.asset_id, (debtByAsset.get(d.asset_id) ?? 0) + num(d.capital_remaining))
+      mensualiteByAsset.set(d.asset_id, (mensualiteByAsset.get(d.asset_id) ?? 0) + num(d.monthly_payment))
     }
   }
 
-  let totalImmo = 0, totalDettes = 0, loyersMensuels = 0
-  const biens: BienImmo[] = rows.map((r) => {
-    const asset = Array.isArray(r.asset) ? r.asset[0] : r.asset
-    const valeur = num(r.purchase_price) + num(r.works_amount)
-    const creditRestant = debtByAsset.get(r.asset_id) ?? 0
-    // Loyer mensuel : priorité aux lots (réel), fallback assumed_total_rent (simulation)
-    const loyerLots = rentByProperty.get(r.id) ?? 0
-    const loyerMensuel = loyerLots > 0 ? loyerLots : num(r.assumed_total_rent) / 12
-    const rendementBrut = valeur > 0 ? (loyerMensuel * 12 / valeur) * 100 : 0
+  // Charges annuelles : property_charges (on prend la ligne la plus récente
+  // par property). Si plusieurs années stockées, on garde la dernière.
+  const { data: chargesRaw } = await supabase
+    .from('property_charges')
+    .select('property_id, taxe_fonciere, insurance, condo_fees, maintenance, accountant, cfe, other, year')
+    .in('property_id', propIds)
+    .order('year', { ascending: false })
+  const chargesByProperty = new Map<string, number>()
+  for (const c of (chargesRaw ?? []) as Array<PropertyChargeRow & { year: number }>) {
+    if (chargesByProperty.has(c.property_id)) continue  // déjà l'année la plus récente
+    const totalAnnuel =
+      num(c.taxe_fonciere) + num(c.insurance) + num(c.condo_fees) +
+      num(c.maintenance)   + num(c.accountant) + num(c.cfe) + num(c.other)
+    chargesByProperty.set(c.property_id, totalAnnuel)
+  }
 
-    totalImmo      += valeur
-    totalDettes    += creditRestant
-    loyersMensuels += loyerMensuel
+  let totalImmo = 0, totalDettes = 0, loyersMensuels = 0, mensualitesTotal = 0
+
+  const biens: BienImmo[] = rows.map((r) => {
+    const asset         = Array.isArray(r.asset) ? r.asset[0] : r.asset
+    const valeur        = num(r.purchase_price) + num(r.works_amount)
+    const creditRestant = debtByAsset.get(r.asset_id) ?? 0
+    const mensualite    = mensualiteByAsset.get(r.asset_id) ?? 0
+    const loyerLots     = rentByProperty.get(r.id) ?? 0
+    const loyerMensuel  = loyerLots > 0 ? loyerLots : num(r.assumed_total_rent) / 12
+
+    // Charges annuelles : property_charges + frais gestion calculés à
+    // partir des % loyer (GLI + gestion).
+    const chargesReelles = chargesByProperty.get(r.id) ?? 0
+    const loyersAnnuels  = loyerMensuel * 12
+    const fraisGestion   = loyersAnnuels * (num(r.gli_pct) + num(r.management_pct)) / 100
+    const chargesAnnuelles = chargesReelles + fraisGestion
+
+    const kpis = calculerKPIsBien({
+      valeur,
+      credit_restant:    creditRestant,
+      mensualite_credit: mensualite,
+      loyer_mensuel:     loyerMensuel,
+      charges_annuelles: chargesAnnuelles,
+    })
+
+    totalImmo        += valeur
+    totalDettes      += creditRestant
+    loyersMensuels   += loyerMensuel
+    mensualitesTotal += mensualite
 
     const type = FISCAL_TO_TYPE[(r.fiscal_regime ?? '').toLowerCase()] ?? 'Immobilier'
     return {
-      id:             r.id,
-      nom:            asset?.name ?? r.address_city ?? 'Bien',
-      ville:          r.address_city ?? null,
-      pays:           r.address_country ?? null,
+      id:                  r.id,
+      nom:                 asset?.name ?? r.address_city ?? 'Bien',
+      ville:               r.address_city ?? null,
+      pays:                r.address_country ?? null,
       type,
       valeur,
-      loyer_mensuel:  loyerMensuel,
-      credit_restant: creditRestant,
-      equity:         valeur - creditRestant,
-      rendement_brut: rendementBrut,
+      loyer_mensuel:       loyerMensuel,
+      credit_restant:      creditRestant,
+      mensualite_credit:   mensualite,
+      charges_annuelles:   chargesAnnuelles,
+      equity:              kpis.equity,
+      rendement_brut:      kpis.rendement_brut,
+      rendement_net:       kpis.rendement_net,
+      cashflow_mensuel:    kpis.cashflow_mensuel,
+      ltv:                 kpis.ltv,
+      niveau_levier:       kpis.niveau_levier,
+      risque_immo:         kpis.risque_immo,
+      donnees_completes:   kpis.donnees_completes,
     }
   })
 
-  return { biens, totalImmo, totalDettes, loyersMensuels }
+  const risqueGlobal     = calculerRisqueImmoGlobal(biens)
+  const revenuPassifNet  = calculerRevenuPassifImmo(biens)
+  const rendementMoyen   = rendementNetMoyenPondere(biens)
+
+  return {
+    biens,
+    totalImmo,
+    totalDettes,
+    loyersMensuels,
+    totalImmoEquity:        totalImmo - totalDettes,
+    risqueImmoGlobal:       risqueGlobal,
+    revenuPassifImmo:       revenuPassifNet,
+    mensualitesImmoTotal:   mensualitesTotal,
+    rendementNetImmoMoyen:  rendementMoyen,
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -481,7 +576,7 @@ export async function getPatrimoineComplet(userId: string): Promise<PatrimoineCo
   const t0 = Date.now()
   const [
     { positions, totalValue: totalPortefeuille },
-    { biens, totalImmo, totalDettes, loyersMensuels },
+    immoData,
     { comptes, totalCash },
     profile,
   ] = await Promise.all([
@@ -490,6 +585,11 @@ export async function getPatrimoineComplet(userId: string): Promise<PatrimoineCo
     loadCash(userId),
     loadProfile(userId),
   ])
+  const {
+    biens, totalImmo, totalDettes, loyersMensuels,
+    totalImmoEquity, risqueImmoGlobal, revenuPassifImmo,
+    mensualitesImmoTotal, rendementNetImmoMoyen,
+  } = immoData
   const { prenom, profilType } = profile
 
   const totalBrut = totalPortefeuille + totalImmo + totalCash
@@ -503,11 +603,12 @@ export async function getPatrimoineComplet(userId: string): Promise<PatrimoineCo
   const repGeo     = allocs.geo
 
   const rendement      = rendementEstime(positions, biens, totalCash, totalBrut)
-  // Revenu passif : loyers immobiliers + estimation dividendes (2 % du portfolio
-  // hors crypto, proxy moyen du dividend yield européen).
+  // Revenu passif TOTAL : cashflow net immo (peut être négatif si bien en
+  // levier fort en début de remboursement) + estimation dividendes (2 %
+  // du portfolio hors crypto, proxy moyen du dividend yield européen).
   const dividendesProxy = positions.filter((p) => p.asset_type !== 'crypto')
     .reduce((s, p) => s + p.current_value, 0) * 0.02 / 12
-  const revenuPassif    = loyersMensuels + dividendesProxy
+  const revenuPassif    = revenuPassifImmo + dividendesProxy
 
   // Phase 3 — fireInputs : ce dont les composants client ont besoin pour
   // les sliders + ce que les scores/recos consomment.
@@ -534,6 +635,8 @@ export async function getPatrimoineComplet(userId: string): Promise<PatrimoineCo
   const partial: PatrimoineComplet = {
     totalBrut, totalNet,
     totalPortefeuille, totalImmo, totalCash, totalDettes,
+    totalImmoEquity, risqueImmoGlobal, revenuPassifImmo,
+    mensualitesImmoTotal, rendementNetImmoMoyen,
     positions, biens, comptes,
     repartitionClasses:     repClasses,
     repartitionSectorielle: repSecteur,
