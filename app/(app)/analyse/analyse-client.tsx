@@ -1,34 +1,59 @@
 /**
- * Client orchestrant le dashboard /analyse.
+ * Page /analyse — structure en 6 onglets (style /portefeuille) :
+ *   1. Global               — KPIs + donut + score global
+ *   2. Portefeuille         — sous-onglets par classe d'actif
+ *   3. Immo physique        — synthèse biens + KPIs
+ *   4. Cash                 — répartition + rendement + couverture
+ *   5. Scores & Projection  — 5 scores + projection FIRE + simulateur
+ *   6. Recommandations      — liste priorisée + disclaimer AMF
  *
- * Chaque section affiche son propre skeleton jusqu'à ce que les données
- * arrivent — pas de spinner global pour éviter le flash.
+ * Un onglet est masqué si l'utilisateur n'a aucun actif dans cette classe.
  */
 'use client'
 
-import { Briefcase, RefreshCw, Wallet, Building2, PiggyBank, TrendingUp, Sparkles } from 'lucide-react'
+import { useMemo } from 'react'
+import { Briefcase, RefreshCw } from 'lucide-react'
 import { PageHeader } from '@/components/shared/page-header'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/ui/empty-state'
-import { formatCurrency } from '@/lib/utils/format'
+import { Tabs, type TabItem } from '@/components/ui/tabs'
 import { usePatrimoineAnalyse } from '@/hooks/use-patrimoine-analyse'
-import { RepartitionChart }    from '@/components/analyse/RepartitionChart'
-import { SectorielleChart }    from '@/components/analyse/SectorielleChart'
-import { GeographiqueChart }   from '@/components/analyse/GeographiqueChart'
-import { PositionsTable }      from '@/components/analyse/PositionsTable'
-import { ImmoSummary }         from '@/components/analyse/ImmoSummary'
-import { CashSummary }         from '@/components/analyse/CashSummary'
-import { ScoresBand }          from '@/components/analyse/ScoresBand'
-import { ProjectionFIRE }      from '@/components/analyse/ProjectionFIRE'
-import { Recommandations }     from '@/components/analyse/Recommandations'
-import { FiabiliteBadge }      from '@/components/analyse/FiabiliteBadge'
-import { CryptoSummary }       from '@/components/analyse/CryptoSummary'
+
+import { GlobalAnalyse }            from '@/components/analyse/tabs/GlobalAnalyse'
+import { PortefeuilleAnalyse }      from '@/components/analyse/tabs/PortefeuilleAnalyse'
+import { ImmoPhysiqueAnalyse }      from '@/components/analyse/tabs/ImmoPhysiqueAnalyse'
+import { CashAnalyse }              from '@/components/analyse/tabs/CashAnalyse'
+import { ScoresProjectionAnalyse }  from '@/components/analyse/tabs/ScoresProjectionAnalyse'
+import { Recommandations }          from '@/components/analyse/Recommandations'
 
 export function AnalyseClient() {
   const { data, isLoading, error, refresh, refreshing } = usePatrimoineAnalyse()
 
-  // ── Chargement initial (pas de data) ───────────────────────────────
+  // Construit la liste des onglets visibles (sauf si data nulle)
+  const tabs: TabItem[] = useMemo(() => {
+    if (!data) return []
+    const out: TabItem[] = [
+      { id: 'global',       label: 'Global',       content: <GlobalAnalyse data={data} /> },
+    ]
+    // Portefeuille visible dès qu'il y a au moins une position (financier)
+    if (data.positions.length > 0 || data.cryptoTotal > 0) {
+      out.push({ id: 'portefeuille', label: 'Portefeuille', content: <PortefeuilleAnalyse data={data} /> })
+    }
+    if (data.biens.length > 0) {
+      out.push({ id: 'immo', label: 'Immo physique', content: <ImmoPhysiqueAnalyse data={data} /> })
+    }
+    if (data.comptes.length > 0) {
+      out.push({ id: 'cash', label: 'Cash', content: <CashAnalyse data={data} /> })
+    }
+    out.push({ id: 'scores', label: 'Scores & Projection', content: <ScoresProjectionAnalyse data={data} /> })
+    out.push({ id: 'recos',  label: 'Recommandations',
+               badge: data.recommandations.length > 0 ? <Badge variant="warning">{data.recommandations.length}</Badge> : undefined,
+               content: <Recommandations recos={data.recommandations} /> })
+    return out
+  }, [data])
+
+  // ── Chargement initial ────────────────────────────────────────────
   if (isLoading && !data) {
     return (
       <div>
@@ -38,7 +63,7 @@ export function AnalyseClient() {
     )
   }
 
-  // ── Erreur bloquante ───────────────────────────────────────────────
+  // ── Erreur bloquante ──────────────────────────────────────────────
   if (error && !data) {
     return (
       <div>
@@ -53,9 +78,8 @@ export function AnalyseClient() {
 
   if (!data) return null
 
-  // ── Patrimoine vide ────────────────────────────────────────────────
-  const isEmpty = data.totalBrut === 0
-  if (isEmpty) {
+  // ── Patrimoine vide ──────────────────────────────────────────────
+  if (data.totalBrut === 0) {
     return (
       <div>
         <PageHeader title="Analyse patrimoniale" />
@@ -68,22 +92,18 @@ export function AnalyseClient() {
     )
   }
 
-  // ── Vue normale ────────────────────────────────────────────────────
   const lastUpdatedFr = new Date(data.lastUpdated).toLocaleString('fr-FR', {
     dateStyle: 'short', timeStyle: 'short',
   })
 
   return (
     <div>
-      {/* 1. HEADER */}
       <PageHeader
         title="Analyse patrimoniale"
         subtitle={
           <span className="flex items-center gap-2 flex-wrap text-xs text-secondary">
             <span>Mis à jour {lastUpdatedFr}</span>
-            {data.profilType && (
-              <Badge variant="success">{data.profilType}</Badge>
-            )}
+            {data.profilType && <Badge variant="success">{data.profilType}</Badge>}
             {data.prenom && <span>· {data.prenom}</span>}
           </span>
         }
@@ -105,107 +125,7 @@ export function AnalyseClient() {
         </p>
       )}
 
-      {/* 2. KPIs (5 cartes) */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
-        <Kpi icon={Wallet}     label="Patrimoine net"      value={formatCurrency(data.totalNet, 'EUR', { compact: true })} accent />
-        <Kpi icon={TrendingUp} label="Portefeuille"        value={formatCurrency(data.totalPortefeuille, 'EUR', { compact: true })} />
-        <Kpi icon={Building2}  label="Immobilier"          value={formatCurrency(data.totalImmo, 'EUR', { compact: true })} />
-        <Kpi icon={PiggyBank}  label="Cash"                value={formatCurrency(data.totalCash, 'EUR', { compact: true })} />
-        <Kpi icon={Sparkles}   label="Revenu passif / mois" value={formatCurrency(data.revenuPassifActuel, 'EUR', { decimals: 0 })} accent />
-      </div>
-
-      {/* 3. RÉPARTITION PATRIMONIALE */}
-      <div className="mb-6">
-        <RepartitionChart classes={data.repartitionClasses} totalNet={data.totalNet} />
-      </div>
-
-      {/* 4 + 5. ANALYSE SECTORIELLE + GÉOGRAPHIQUE — uniquement si le
-          portefeuille financier est non vide (l'immo et le cash ont leurs
-          sections dédiées et ne polluent PAS ces graphiques). */}
-      {data.totalPortefeuille >= 1 ? (
-        <>
-          <FiabiliteBadge fiabilite={data.analyseFiabilite} unmappedAll={data.unmappedAll} />
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-6">
-            <SectorielleChart  buckets={data.repartitionSectorielle} score={data.scoreDiversificationSectorielle} />
-            <GeographiqueChart buckets={data.repartitionGeo}         score={data.scoreDiversificationGeo} />
-          </div>
-          {data.cryptoTotal > 0 && (
-            <div className="mb-6">
-              <CryptoSummary
-                cryptoTotal={data.cryptoTotal}
-                cryptoCostTotal={data.cryptoCostTotal}
-                cryptoBreakdown={data.cryptoBreakdown}
-                patrimoineNet={data.totalNet}
-              />
-            </div>
-          )}
-        </>
-      ) : (
-        <div className="card p-6 mb-6 text-center">
-          <p className="text-sm text-secondary">
-            Ajoutez des positions dans <a href="/portefeuille" className="text-accent underline">votre portefeuille financier</a> pour voir l&apos;analyse sectorielle et géographique.
-          </p>
-          <p className="text-xs text-muted mt-2">
-            (L&apos;immobilier physique et le cash ne sont volontairement pas inclus dans ces graphiques.)
-          </p>
-        </div>
-      )}
-
-      {/* 6. DÉTAIL DES POSITIONS */}
-      <div className="mb-6">
-        <PositionsTable positions={data.positions} />
-      </div>
-
-      {/* 7 + 8. IMMO + CASH */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-6">
-        <ImmoSummary
-          biens={data.biens}
-          totalImmo={data.totalImmo}
-          totalDettes={data.totalDettes}
-          totalImmoEquity={data.totalImmoEquity}
-          revenuPassifImmo={data.revenuPassifImmo}
-          rendementNetImmoMoyen={data.rendementNetImmoMoyen}
-          revenuPassifCible={data.fireInputs.revenu_passif_cible}
-        />
-        <CashSummary comptes={data.comptes} totalCash={data.totalCash} totalBrut={data.totalBrut} />
-      </div>
-
-      {/* ─── Phase 3 : Intelligence ────────────────────────────── */}
-
-      {/* 9. Bande des 5 scores */}
-      <div className="mb-6">
-        <p className="text-xs text-secondary uppercase tracking-widest mb-3">Scores d&apos;intelligence</p>
-        <ScoresBand scores={data.scores} />
-      </div>
-
-      {/* 10. Projection FIRE interactive */}
-      <div className="mb-6">
-        <ProjectionFIRE patrimoine={data} />
-      </div>
-
-      {/* 11. Recommandations personnalisées */}
-      <Recommandations recos={data.recommandations} />
-    </div>
-  )
-}
-
-interface KpiProps {
-  icon:    React.ComponentType<{ size?: number; className?: string }>
-  label:   string
-  value:   string
-  accent?: boolean
-}
-
-function Kpi({ icon: Icon, label, value, accent }: KpiProps) {
-  return (
-    <div className="card p-4">
-      <div className="flex items-center gap-1.5 text-xs text-secondary uppercase tracking-widest">
-        <Icon size={11} />
-        <span className="truncate">{label}</span>
-      </div>
-      <p className={`text-lg sm:text-xl font-semibold financial-value mt-2 ${accent ? 'text-accent' : 'text-primary'}`}>
-        {value}
-      </p>
+      <Tabs tabs={tabs} urlParam="tab" />
     </div>
   )
 }
