@@ -18,6 +18,7 @@ import type {
   PatrimoineComplet, Score, ScoresComplets, ScoreNiveau,
   AnalyseAssetType,
 } from '@/types/analyse'
+import { trackingErrorScore, BENCHMARK_CLASSES_PATRIMOINE } from './benchmarks'
 
 // ─────────────────────────────────────────────────────────────────
 // Helpers communs
@@ -61,17 +62,22 @@ export function calculerDiversification(p: PatrimoineComplet): Score {
     return insufficientData('Diversification')
   }
 
-  const maxSecteur = p.repartitionSectorielle[0]?.pourcentage ?? 0
-  const maxZone    = p.repartitionGeo[0]?.pourcentage ?? 0
-  const nbClasses  = p.repartitionClasses.length
+  // Refonte (Phase 10) : utilise les MEMES scores d'alignement marché
+  // que ceux affichés sur les graphiques sectoriel/géo (basés MSCI),
+  // au lieu de la formule legacy "100 − 2 × max_secteur".
+  //
+  // Ça résout l'incohérence "Diversification 57" vs "Sectoriel 89 /
+  // Géo 81" — désormais les 3 chiffres viennent de la même source.
+  const sSect = p.scoreDiversificationSectorielle      // déjà 0-100 (vs MSCI World)
+  const sGeo  = p.scoreDiversificationGeo              // déjà 0-100 (vs MSCI ACWI)
 
-  const sSect = clamp(100 - maxSecteur * 2)
-  const sGeo  = clamp(100 - maxZone * 1.5)
-  const sCls  =
-    nbClasses >= 4 ? 100 :
-    nbClasses === 3 ? 75 :
-    nbClasses === 2 ? 50 :
-    20
+  // Score classes : tracking error vs BENCHMARK_CLASSES_PATRIMOINE
+  // (allocation équilibrée 20 Actions / 20 ETF / 35 Immo / 10 Cash /
+  //  5 Crypto / 10 Obligataire).
+  const sCls = trackingErrorScore(
+    p.repartitionClasses.map((c) => ({ label: c.label, pct: c.pourcentage })),
+    BENCHMARK_CLASSES_PATRIMOINE,
+  )
 
   const value = Math.round(sSect * 0.35 + sGeo * 0.35 + sCls * 0.30)
   const niveau = niveauScore(value)
@@ -82,34 +88,43 @@ export function calculerDiversification(p: PatrimoineComplet): Score {
     value >= 40 ? 'Diversification insuffisante' :
     'Concentration dangereuse'
 
+  // Identifie la classe la plus surpondérée vs benchmark pour l'action
+  const ecartParClasse = p.repartitionClasses.map((c) => ({
+    label: c.label,
+    ecart: c.pourcentage - (BENCHMARK_CLASSES_PATRIMOINE[c.label] ?? 0),
+  })).sort((a, b) => b.ecart - a.ecart)
+  const surpondMax = ecartParClasse[0]
+
   return {
     value, niveau, label,
-    details: `${nbClasses} classe${nbClasses > 1 ? 's' : ''} · max secteur ${maxSecteur.toFixed(0)} % · max zone ${maxZone.toFixed(0)} %`,
+    details: `secteur ${sSect}/100 · géo ${sGeo}/100 · classes ${sCls}/100`,
     explanation: {
       formule:
-        'Score = (sect × 0.35) + (géo × 0.35) + (classes × 0.30)\n' +
-        '  • sect    = 100 − 2 × % du plus gros secteur\n' +
-        '  • géo     = 100 − 1.5 × % de la plus grosse zone\n' +
-        '  • classes = barème (1→20, 2→50, 3→75, 4+→100)',
+        'Score = (sectoriel × 0.35) + (géo × 0.35) + (classes × 0.30)\n' +
+        '  • sectoriel = tracking error inverse vs MSCI World (11 secteurs GICS)\n' +
+        '  • géo       = tracking error inverse vs MSCI ACWI (9 zones)\n' +
+        '  • classes   = tracking error inverse vs allocation équilibrée\n' +
+        '    (20 Actions / 20 ETF / 35 Immo / 10 Cash / 5 Crypto / 10 Oblig)',
       inputs: [
-        { label: 'Plus gros secteur',  value: `${(p.repartitionSectorielle[0]?.secteur ?? '—')} : ${maxSecteur.toFixed(1)} %` },
-        { label: 'Plus grosse zone',   value: `${(p.repartitionGeo[0]?.zone ?? '—')} : ${maxZone.toFixed(1)} %` },
-        { label: 'Nombre de classes',  value: `${nbClasses}` },
-        { label: 'Score sectoriel',    value: `${sSect.toFixed(0)} / 100` },
-        { label: 'Score géographique', value: `${sGeo.toFixed(0)} / 100` },
-        { label: 'Score classes',      value: `${sCls} / 100` },
-        { label: 'Score final',        value: `${value} / 100`, highlight: true },
+        { label: 'Alignement sectoriel (MSCI World)', value: `${sSect} / 100` },
+        { label: 'Alignement géographique (MSCI ACWI)', value: `${sGeo} / 100` },
+        { label: 'Alignement classes (benchmark patrimoine)', value: `${sCls} / 100` },
+        ...(surpondMax && surpondMax.ecart > 10 ? [
+          { label: 'Classe la plus surpondérée',
+            value: `${surpondMax.label} : +${surpondMax.ecart.toFixed(0)} pts vs benchmark` },
+        ] : []),
+        { label: 'Score final', value: `${value} / 100`, highlight: true },
       ],
       lecture:
         value >= 80
-          ? 'Excellent équilibre entre secteurs, zones et classes d\'actifs. Un choc localisé aurait peu d\'impact.'
+          ? 'Patrimoine bien équilibré entre secteurs, zones et classes d\'actifs. Un choc localisé aurait peu d\'impact.'
           : value >= 60
-          ? 'Diversification correcte mais perfectible. Vérifiez qu\'aucun secteur ne dépasse 30 % et aucune zone 50 %.'
+          ? `Diversification correcte. ${surpondMax && surpondMax.ecart > 10 ? `La classe "${surpondMax.label}" est surpondérée vs un benchmark patrimoine équilibré, mais reste compatible avec une stratégie active.` : 'Légères surpondérations sans impact majeur.'}`
           : value >= 40
-          ? 'Concentration excessive sur un secteur ou une zone. Risque d\'effondrement si choc localisé.'
-          : 'Très peu diversifié. Une crise sur un secteur ou un pays mettrait en péril une grande partie du patrimoine.',
-      action: value < 60
-        ? `Réduisez l'exposition à ${p.repartitionSectorielle[0]?.secteur ?? 'votre plus gros secteur'} (actuellement ${maxSecteur.toFixed(0)} %, cible < 30 %) en ajoutant des ETF sur d'autres secteurs.`
+          ? `Surpondération marquée sur ${surpondMax?.label ?? 'une classe'}. Le score sectoriel/géo restent ${sSect >= 70 ? 'bons' : 'à améliorer'}, le déséquilibre vient de l\'allocation par classe.`
+          : 'Très concentré. La répartition par classe d\'actif s\'écarte fortement d\'un patrimoine équilibré.',
+      action: value < 60 && surpondMax && surpondMax.ecart > 15
+        ? `Renforcez les classes sous-représentées pour rééquilibrer (cible : ${surpondMax.label} ≈ ${BENCHMARK_CLASSES_PATRIMOINE[surpondMax.label] ?? 0} % du patrimoine).`
         : undefined,
     },
   }
@@ -335,39 +350,59 @@ const ASSET_RISKY: AnalyseAssetType[] = ['stock', 'etf', 'crypto']
 export function calculerSolidite(p: PatrimoineComplet): Score {
   if (p.totalBrut <= 0) return insufficientData('Solidité')
 
-  // Charges TOTALES = dépenses courantes + mensualités de crédit immo
-  // (un user avec un crédit de 1500 €/mois doit garder du cash pour
-  // ces mensualités en cas de vacance locative).
-  const chargesProfile = p.fireInputs.charges_mensuelles
-  const chargesTotales = chargesProfile + p.mensualitesImmoTotal
+  // Phase 10 — Refonte : on évalue la CAPACITE de remboursement
+  // (pas le montant brut de dette). Un crédit immo locatif à LTV 82 %
+  // n'est PAS une fragilité — c'est une stratégie levier classique tant
+  // que les mensualités sont supportées.
+  //
+  // 4 facteurs :
+  //   a) Taux d'effort : mensualités / revenus
+  //   b) Couverture des mensualités par les loyers
+  //   c) Coussin de sécurité (cash / charges réelles)
+  //   d) Simulation krach −30 % sur actifs risqués
 
-  let pts        = 60   // base
+  const revenuMensuel = p.fireInputs.revenu_mensuel_total
+
+  // Loyers bruts mensuels (somme des loyers des biens) — diff. du
+  // revenuPassifImmo qui est NET (cashflow après charges et mensualité).
+  const loyersBrutsTotal = p.biens.reduce((s, b) => s + b.loyer_mensuel, 0)
+
+  let pts = 60
+
+  // a) Taux d'effort
+  const tauxEffort = revenuMensuel > 0 ? (p.mensualitesImmoTotal / revenuMensuel) * 100 : 0
+  let tauxEffortTxt = '—'
+  if (revenuMensuel > 0 && p.mensualitesImmoTotal > 0) {
+    if (tauxEffort < 33)      { pts += 20; tauxEffortTxt = `${tauxEffort.toFixed(0)} % (sain)` }
+    else if (tauxEffort < 40) { pts +=  5; tauxEffortTxt = `${tauxEffort.toFixed(0)} % (attention)` }
+    else                      { pts -= 20; tauxEffortTxt = `${tauxEffort.toFixed(0)} % (risqué)` }
+  }
+
+  // b) Couverture des mensualités par les loyers bruts
+  const tauxCouverture = p.mensualitesImmoTotal > 0
+    ? (loyersBrutsTotal / p.mensualitesImmoTotal) * 100
+    : 0
+  let couvTxt = '—'
+  if (p.mensualitesImmoTotal > 0) {
+    if (tauxCouverture > 110)       { pts += 25; couvTxt = `${tauxCouverture.toFixed(0)} % (autofinancé)` }
+    else if (tauxCouverture >= 90)  { pts += 10; couvTxt = `${tauxCouverture.toFixed(0)} % (quasi autofinancé)` }
+    else if (tauxCouverture >= 70)  {            couvTxt = `${tauxCouverture.toFixed(0)} % (effort modéré)` }
+    else                            { pts -= 10; couvTxt = `${tauxCouverture.toFixed(0)} % (effort important)` }
+  }
+
+  // c) Coussin de sécurité — uniquement les charges réelles
+  //    (charges perso + effort mensuel net immo s'il est négatif).
+  const effortImmoMensuelNet = p.revenuPassifImmo < 0 ? -p.revenuPassifImmo : 0
+  const chargesACouvrir = p.fireInputs.charges_mensuelles + effortImmoMensuelNet
+  const moisCouverts = chargesACouvrir > 0 ? p.totalCash / chargesACouvrir : 0
   let coussinTxt = 'coussin OK'
-
-  // a) Coussin de sécurité vs charges totales
-  if (chargesTotales > 0) {
-    const moisCouverts = p.totalCash / chargesTotales
+  if (chargesACouvrir > 0) {
     if (moisCouverts < 3)       { pts -= 20; coussinTxt = `${moisCouverts.toFixed(1)} mois (fragile)` }
     else if (moisCouverts < 6)  { pts +=  5; coussinTxt = `${moisCouverts.toFixed(1)} mois (correct)` }
-    else if (moisCouverts > 12) { pts += 20; coussinTxt = `${moisCouverts.toFixed(0)} mois (très bien)` }
-    else                        {            coussinTxt = `${moisCouverts.toFixed(1)} mois` }
+    else                        { pts += 20; coussinTxt = `${moisCouverts.toFixed(0)} mois (très bien)` }
   }
 
-  // b) Ratio endettement (crédits immo / valeur brute totale)
-  const ratioEndettement = p.totalDettes / p.totalBrut
-  if      (ratioEndettement < 0.30) pts += 20    // très sain
-  else if (ratioEndettement < 0.50) {}           // normal
-  else if (ratioEndettement < 0.70) pts -= 15    // attention
-  else                              pts -= 30    // risqué
-
-  // c) Couverture des charges par les loyers (autofinancement)
-  if (p.revenuPassifImmo > 0 && chargesTotales > 0) {
-    const couverture = (p.revenuPassifImmo / chargesTotales) * 100
-    if      (couverture >= 100) pts += 25
-    else if (couverture >= 50)  pts += 15
-  }
-
-  // d) Simulation krach -30 % sur les actifs risqués
+  // d) Krach −30 % sur actifs risqués (inchangé)
   let valeurRisquee = 0
   for (const pos of p.positions) {
     if (ASSET_RISKY.includes(pos.asset_type)) valeurRisquee += pos.current_value
@@ -377,6 +412,10 @@ export function calculerSolidite(p: PatrimoineComplet): Score {
   if (partImpact > 30)      pts -= 10
   else if (partImpact < 10) pts += 10
 
+  // NOTE : on NE pénalise PLUS le ratio dettes/brut. La dette immo est
+  // adossée à un actif réel et n'est PAS comparable à une dette sans
+  // garantie (crédit conso, découvert). Seul le taux d'effort compte.
+
   const value = clamp(Math.round(pts))
   const niveau = niveauScore(value)
   const label =
@@ -385,47 +424,49 @@ export function calculerSolidite(p: PatrimoineComplet): Score {
     value >= 40 ? 'Résistance limitée' :
     'Portefeuille fragile'
 
-  const moisCouverts = chargesTotales > 0 ? p.totalCash / chargesTotales : 0
-  const couvertureLoyers = (p.revenuPassifImmo > 0 && chargesTotales > 0)
-    ? (p.revenuPassifImmo / chargesTotales) * 100 : 0
-
   return {
     value, niveau, label,
-    details: `${coussinTxt} · dettes ${(ratioEndettement * 100).toFixed(0)} % · loyers couvrent ${couvertureLoyers.toFixed(0)} %`,
+    details: `${coussinTxt} · effort ${tauxEffortTxt} · loyers couvrent ${couvTxt}`,
     explanation: {
       formule:
-        'Score base 60, ajusté par 4 facteurs :\n' +
-        '  a) Coussin cash vs charges TOTALES (dépenses + mensualités immo)\n' +
-        '     < 3 mois → −20 / 3-6 mois → +5 / > 12 mois → +20\n' +
-        '  b) Ratio endettement (crédits immo / valeur brute) :\n' +
-        '     < 30 % → +20 sain / 30-50 % normal / 50-70 % attention −15 / > 70 % risqué −30\n' +
-        '  c) Couverture charges par loyers nets :\n' +
-        '     ≥ 50 % → +15 / ≥ 100 % autofinancé → +25\n' +
+        'Score base 60, ajusté par 4 facteurs de CAPACITÉ DE REMBOURSEMENT\n' +
+        '(la dette immo adossée à un actif n\'est PAS pénalisée en soi) :\n' +
+        '  a) Taux d\'effort (mensualités / revenus) :\n' +
+        '     < 33 % → +20 sain / 33-40 % → +5 / > 40 % → −20\n' +
+        '  b) Couverture loyers/mensualités :\n' +
+        '     > 110 % → +25 / 90-110 % → +10 / 70-90 % → 0 / < 70 % → −10\n' +
+        '  c) Coussin cash vs charges réelles (perso + effort immo net) :\n' +
+        '     < 3 mois → −20 / 3-6 mois → +5 / ≥ 6 mois → +20\n' +
         '  d) Krach −30 % sur actifs risqués : impact > 30 % du net → −10, < 10 % → +10',
       inputs: [
-        { label: 'Cash disponible',                value: `${p.totalCash.toFixed(0)} €` },
-        { label: 'Charges totales / mois',         value: chargesTotales > 0 ? `${chargesTotales.toFixed(0)} € (dépenses ${chargesProfile.toFixed(0)} + immo ${p.mensualitesImmoTotal.toFixed(0)})` : '—' },
-        { label: 'Coussin de sécurité',            value: chargesTotales > 0 ? `${moisCouverts.toFixed(1)} mois couverts` : '—' },
-        { label: 'Ratio endettement',              value: `${(ratioEndettement * 100).toFixed(0)} % (dettes / brut)` },
-        { label: 'Revenu passif immo / mois',      value: `${p.revenuPassifImmo.toFixed(0)} € (cashflow net)` },
-        { label: 'Couverture charges par loyers',  value: chargesTotales > 0 ? `${couvertureLoyers.toFixed(0)} %` : '—' },
-        { label: 'Impact krach −30 %',             value: `${impactKrach.toFixed(0)} € (soit ${partImpact.toFixed(0)} % du net)` },
-        { label: 'Score final',                    value: `${value} / 100`, highlight: true },
+        { label: 'Revenu mensuel total',          value: revenuMensuel > 0 ? `${revenuMensuel.toFixed(0)} €` : 'Non renseigné' },
+        { label: 'Mensualités immo / mois',       value: `${p.mensualitesImmoTotal.toFixed(0)} €` },
+        { label: 'Taux d\'effort',                value: revenuMensuel > 0 && p.mensualitesImmoTotal > 0 ? tauxEffortTxt : '—' },
+        { label: 'Loyers bruts / mois',           value: `${loyersBrutsTotal.toFixed(0)} €` },
+        { label: 'Couverture mensualités',        value: p.mensualitesImmoTotal > 0 ? couvTxt : '—' },
+        { label: 'Cash disponible',               value: `${p.totalCash.toFixed(0)} €` },
+        { label: 'Coussin de sécurité',           value: chargesACouvrir > 0 ? `${moisCouverts.toFixed(1)} mois (sur ${chargesACouvrir.toFixed(0)} €/mois de charges)` : '—' },
+        { label: 'Impact krach −30 %',            value: `${impactKrach.toFixed(0)} € (${partImpact.toFixed(0)} % du net)` },
+        { label: 'Score final',                   value: `${value} / 100`, highlight: true },
       ],
       lecture:
         value >= 80
-          ? 'Patrimoine très résilient. Vous traverserez un krach ou un coup dur sans difficulté.'
+          ? 'Patrimoine très résilient. Capacité de remboursement saine, coussin solide.'
           : value >= 60
-          ? 'Solide. Quelques ajustements (coussin cash, désendettement) renforceraient encore la résistance.'
+          ? 'Solide. Le levier immo (s\'il existe) est correctement supporté par les revenus et/ou loyers.'
           : value >= 40
-          ? 'Résistance limitée. Un krach prolongé OU une vacance locative pourraient mettre le patrimoine en tension.'
-          : 'Patrimoine fragile. Risque d\'avoir à vendre des actifs ou prendre des arbitrages douloureux en cas d\'imprévu.',
+          ? 'Résistance limitée. Vérifiez votre taux d\'effort et constituez un coussin > 6 mois de charges.'
+          : tauxEffort > 40
+          ? 'Taux d\'effort très élevé. Une vacance locative ou perte de revenus pourrait basculer en défaut.'
+          : 'Coussin de sécurité insuffisant — priorité absolue à constituer du cash avant de continuer à investir.',
       action: value < 60
-        ? moisCouverts < 6
-          ? 'Priorité : constituer 6 mois de charges TOTALES (incluant mensualités immo) sur Livret A.'
-          : ratioEndettement > 0.6
-          ? 'Désendettement progressif (remboursements anticipés) pour ramener le ratio dettes/brut sous 50 %.'
-          : 'Renforcez la part de cash et SCPI pour ajouter de la stabilité non corrélée aux marchés actions.'
+        ? moisCouverts < 3
+          ? 'Priorité absolue : constituer 3-6 mois de charges sur Livret A avant tout nouvel investissement.'
+          : tauxEffort > 40
+          ? 'Taux d\'effort > 40 % — envisagez un rachat de crédit ou la vente d\'un bien si vous voulez investir davantage.'
+          : tauxCouverture < 70 && p.mensualitesImmoTotal > 0
+          ? 'Renégociez vos loyers (IRL) ou cherchez des biens mieux rentables — vos loyers ne couvrent que ' + tauxCouverture.toFixed(0) + ' % des mensualités.'
+          : 'Ajoutez de la diversification non corrélée (oblig, SCPI) pour réduire la dépendance aux marchés actions.'
         : undefined,
     },
   }

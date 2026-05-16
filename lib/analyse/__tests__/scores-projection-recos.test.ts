@@ -63,6 +63,7 @@ function patrimoine(over: Partial<PatrimoineComplet> = {}): PatrimoineComplet {
       age: 35, age_cible: 50,
       epargne_mensuelle: 1000,
       revenu_passif_cible: 3000,
+      revenu_mensuel_total: 5000,
       charges_mensuelles: 2000,
       risk_score: 50,
       enveloppes: ['PEA', 'Assurance-vie'],
@@ -98,24 +99,24 @@ describe('calculerDiversification', () => {
     expect(s.niveau).toBe('gris')
   })
 
-  it('haut quand parfaitement diversifié (max sect 15 %, max zone 30 %, 4 classes)', () => {
-    // Formule : (100 - 2×15)×0.35 + (100 - 1.5×30)×0.35 + 100×0.30
-    //        = 70×0.35 + 55×0.35 + 100×0.30 = 24.5 + 19.25 + 30 = 73.75 → 74
+  it('Phase 10 : utilise les scores tracking error MSCI sectoriel/géo + benchmark classes', () => {
+    // Formule = sect × 0.35 + géo × 0.35 + classes × 0.30
+    // Avec sect=89, géo=81, classes=70 → 89×0.35 + 81×0.35 + 70×0.30 = 31.15 + 28.35 + 21 = 80.5 → 81
     const s = calculerDiversification(patrimoine({
-      repartitionSectorielle: [
-        { secteur: 'A', valeur: 15, pourcentage: 15, benchmark: 23, deviation: -8, status: 'aligned', positions: [], alerte: false },
-      ],
-      repartitionGeo: [
-        { zone: 'Europe', valeur: 30, pourcentage: 30, benchmark: 15, deviation: 15, status: 'overweight', pays: [], alerte: true },
-      ],
+      scoreDiversificationSectorielle: 89,
+      scoreDiversificationGeo:         81,
       repartitionClasses: [
-        { label: 'A', valeur: 25, pourcentage: 25, color: '#000' },
-        { label: 'B', valeur: 25, pourcentage: 25, color: '#000' },
-        { label: 'C', valeur: 25, pourcentage: 25, color: '#000' },
-        { label: 'D', valeur: 25, pourcentage: 25, color: '#000' },
+        // Allocation proche du benchmark BENCHMARK_CLASSES_PATRIMOINE
+        // (20 Actions / 20 ETF / 35 Immo / 10 Cash / 5 Crypto / 10 Oblig)
+        { label: 'Actions',     valeur: 20, pourcentage: 20, color: '#000' },
+        { label: 'ETF / Fonds', valeur: 20, pourcentage: 20, color: '#000' },
+        { label: 'Immobilier',  valeur: 35, pourcentage: 35, color: '#000' },
+        { label: 'Cash',        valeur: 10, pourcentage: 10, color: '#000' },
+        { label: 'Crypto',      valeur:  5, pourcentage:  5, color: '#000' },
+        { label: 'Obligataire', valeur: 10, pourcentage: 10, color: '#000' },
       ],
     }))
-    expect(s.value!).toBeGreaterThanOrEqual(70)
+    expect(s.value!).toBeGreaterThanOrEqual(75)
   })
 })
 

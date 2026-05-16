@@ -34,7 +34,7 @@ export interface BienImmoKPIs {
   rendement_net:      number   // % annuel, (loyers × 12 − charges) / valeur × 100
   cashflow_mensuel:   number   // loyer − mensualité − charges/12 (peut être négatif)
   niveau_levier:      'Sans crédit' | 'Faible' | 'Modéré' | 'Fort'
-  risque_immo:        number   // 30-75 (modulé par LTV + cashflow)
+  risque_immo:        number   // 15-85 (LTV + bonus cashflow négatif)
   /** True si données suffisantes (au moins valeur > 0). */
   donnees_completes:  boolean
 }
@@ -79,19 +79,29 @@ export function calculerKPIsBien(bien: BienImmoInput): BienImmoKPIs {
   // Niveau de levier (libellé humain)
   const niveau: BienImmoKPIs['niveau_levier'] =
     creditRestant === 0 ? 'Sans crédit' :
-    ltv >= 80           ? 'Fort'        :
-    ltv >= 50           ? 'Modéré'      :
+    ltv >= 75           ? 'Fort'        :
+    ltv >= 60           ? 'Modéré'      :
                           'Faible'
 
-  // Score de risque
-  let risque = 30
-  if      (ltv > 80)  risque += 25
-  else if (ltv >= 60) risque += 15
-  else if (ltv >= 40) risque +=  8
-  // < 40 : 0
-  if      (cashflow < 0) risque += 10
-  else if (cashflow > 0) risque -=  5
-  risque = clamp(risque, 0, 75)
+  // Score de risque — Phase 10 : recalibré pour refléter le levier réel.
+  // L'immobilier à fort levier (LTV > 75 %) est une stratégie OFFENSIVE,
+  // pas prudente. L'ancien plafond 75 sous-estimait cet effet.
+  //
+  // Table directe (remplace base 30 + ajustements) :
+  //   LTV = 0   → 15   (immo cash = stable défensif)
+  //   LTV < 40  → 20
+  //   LTV 40-60 → 35
+  //   LTV 60-75 → 50
+  //   LTV ≥ 75  → 65
+  //   + 10 si cashflow < 0 (effort mensuel assumé = prise de risque)
+  let risque: number
+  if      (creditRestant === 0) risque = 15
+  else if (ltv < 40)            risque = 20
+  else if (ltv < 60)            risque = 35
+  else if (ltv < 75)            risque = 50
+  else                          risque = 65
+  if (cashflow < 0)             risque += 10
+  risque = clamp(risque, 0, 85)
 
   return {
     equity,

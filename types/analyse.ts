@@ -268,6 +268,9 @@ export interface PatrimoineComplet {
     epargne_mensuelle:   number   // €/mois
     revenu_passif_cible: number   // €/mois
     charges_mensuelles:  number   // pour le scoring solidité (loyer + crédits + fixes + courantes)
+    /** Revenu mensuel total (vous + conjoint + autres revenus) — utilisé
+     *  par le score Solidité pour calculer le taux d'effort. */
+    revenu_mensuel_total: number  // €/mois (depuis profile)
     risk_score:          number   // recalculé depuis profile.risk_1..4 (0-100)
     enveloppes:          string[]
     tmi_rate:            number | null

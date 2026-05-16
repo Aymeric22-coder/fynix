@@ -336,6 +336,7 @@ interface ProfileRow {
   age_cible: number | null
   epargne_mensuelle: number | null
   revenu_passif_cible: number | null
+  revenu_mensuel: number | null; revenu_conjoint: number | null; autres_revenus: number | null
   loyer: number | null; autres_credits: number | null
   charges_fixes: number | null; depenses_courantes: number | null
   enveloppes: string[] | null
@@ -351,6 +352,7 @@ interface ProfileLoaded {
   age_cible:            number | null
   epargne_mensuelle:    number
   revenu_passif_cible:  number
+  revenu_mensuel_total: number    // vous + conjoint + autres
   charges_mensuelles:   number
   risk_score:           number
   enveloppes:           string[]
@@ -363,6 +365,7 @@ async function loadProfile(userId: string): Promise<ProfileLoaded> {
     .from('profiles')
     .select(`
       prenom, age, age_cible, epargne_mensuelle, revenu_passif_cible,
+      revenu_mensuel, revenu_conjoint, autres_revenus,
       loyer, autres_credits, charges_fixes, depenses_courantes,
       enveloppes, tmi_rate,
       risk_1, risk_2, risk_3, risk_4,
@@ -374,7 +377,7 @@ async function loadProfile(userId: string): Promise<ProfileLoaded> {
     return {
       prenom: null, profilType: null,
       age: null, age_cible: null,
-      epargne_mensuelle: 0, revenu_passif_cible: 0,
+      epargne_mensuelle: 0, revenu_passif_cible: 0, revenu_mensuel_total: 0,
       charges_mensuelles: 0, risk_score: 50, enveloppes: [], tmi_rate: null,
     }
   }
@@ -389,7 +392,8 @@ async function loadProfile(userId: string): Promise<ProfileLoaded> {
     crypto: { correct: countCorrect(p.quiz_crypto), total: 4 },
     immo:   { correct: countCorrect(p.quiz_immo),   total: 3 },
   })
-  const charges = num(p.loyer) + num(p.autres_credits) + num(p.charges_fixes) + num(p.depenses_courantes)
+  const charges       = num(p.loyer) + num(p.autres_credits) + num(p.charges_fixes) + num(p.depenses_courantes)
+  const revenuMensuel = num(p.revenu_mensuel) + num(p.revenu_conjoint) + num(p.autres_revenus)
 
   return {
     prenom:              p.prenom,
@@ -398,6 +402,7 @@ async function loadProfile(userId: string): Promise<ProfileLoaded> {
     age_cible:           p.age_cible,
     epargne_mensuelle:   num(p.epargne_mensuelle),
     revenu_passif_cible: num(p.revenu_passif_cible),
+    revenu_mensuel_total: revenuMensuel,
     charges_mensuelles:  charges,
     risk_score:          risk,
     enveloppes:          p.enveloppes ?? [],
@@ -651,15 +656,16 @@ export async function getPatrimoineComplet(userId: string): Promise<PatrimoineCo
     .reduce((s, p) => s + p.current_value, 0)
 
   const fireInputs = {
-    age:                 profile.age,
-    age_cible:           profile.age_cible,
-    epargne_mensuelle:   profile.epargne_mensuelle,
-    revenu_passif_cible: profile.revenu_passif_cible,
-    charges_mensuelles:  profile.charges_mensuelles,
-    risk_score:          profile.risk_score,
-    enveloppes:          profile.enveloppes,
-    tmi_rate:            profile.tmi_rate,
-    actions_eu_value:    actionsEuValue,
+    age:                  profile.age,
+    age_cible:            profile.age_cible,
+    epargne_mensuelle:    profile.epargne_mensuelle,
+    revenu_passif_cible:  profile.revenu_passif_cible,
+    revenu_mensuel_total: profile.revenu_mensuel_total,
+    charges_mensuelles:   profile.charges_mensuelles,
+    risk_score:           profile.risk_score,
+    enveloppes:           profile.enveloppes,
+    tmi_rate:             profile.tmi_rate,
+    actions_eu_value:     actionsEuValue,
   }
 
   // Construction temporaire pour calculer scores + recos (besoin de l'objet
@@ -700,7 +706,9 @@ export async function getPatrimoineComplet(userId: string): Promise<PatrimoineCo
   const scores          = calculerTousLesScores(partial)
   const recommandations = genererRecommandations({ ...partial, scores }, scores)
 
-  console.log(`[aggregateur] patrimoine complet en ${Date.now() - t0}ms — ${positions.length} pos, ${biens.length} biens, ${comptes.length} comptes, total ${totalBrut.toFixed(0)}€, fiabilité ${allocs.fiabilite.pct}%, ${recommandations.length} reco(s)`)
+  console.log(`[aggregateur] patrimoine complet en ${Date.now() - t0}ms — ${positions.length} pos, ${biens.length} biens, ${comptes.length} comptes, fiabilité ${allocs.fiabilite.pct}%, ${recommandations.length} reco(s)`)
+  // Log breakdown patrimoine net (utile pour debug discordance UI)
+  console.log(`[aggregateur] patrimoine = financier ${totalPortefeuille.toFixed(0)}€ + immo brut ${totalImmo.toFixed(0)}€ + cash ${totalCash.toFixed(0)}€ = brut ${totalBrut.toFixed(0)}€ — dettes ${totalDettes.toFixed(0)}€ = NET ${totalNet.toFixed(0)}€ (equity immo ${totalImmoEquity.toFixed(0)}€)`)
   if (allocs.unmappedEtfs.length > 0) {
     console.warn(`[aggregateur] ⚠ ${allocs.unmappedEtfs.length} ETF non mappé(s) — secteurs estimés uniquement :`)
     for (const u of allocs.unmappedEtfs) {

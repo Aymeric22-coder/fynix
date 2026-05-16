@@ -30,6 +30,24 @@ export const BENCHMARK_GEO_MSCI_ACWI: Record<string, number> = {
   'Autres':             0.5,
 }
 
+/**
+ * Allocation patrimoniale "équilibrée" de référence — utilisée pour
+ * juger si la répartition par classe d'actif est saine.
+ *
+ * Les labels correspondent à ceux produits par
+ * `aggregateur.repartitionClasses()` (ASSET_TO_LABEL + Immobilier/Cash).
+ * Total = 100.
+ */
+export const BENCHMARK_CLASSES_PATRIMOINE: Record<string, number> = {
+  'Actions':      20,   // actions individuelles
+  'ETF / Fonds':  20,   // trackers diversifiés
+  'Immobilier':   35,   // SCPI + biens physiques (equity)
+  'Cash':         10,   // liquidité de précaution
+  'Crypto':        5,   // asymétrique optionnel
+  'Obligataire':  10,   // défensif
+  'Métaux':        0,   // pas dans le benchmark canonique (peut être 0-5 %)
+}
+
 /** Pondérations sectorielles selon MSCI World (Sep 2024 approx, GICS). */
 export const BENCHMARK_SECTOR_MSCI_WORLD: Record<string, number> = {
   'Technologie':              23,
