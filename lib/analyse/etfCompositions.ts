@@ -165,7 +165,11 @@ export const ETF_COMPOSITIONS: Record<string, ETFComposition> = {
       'Industrie': 6, 'Santé': 4, 'Consommation de base': 4,
       'Immobilier': 3, 'Services publics': 1,
     },
-    zones: { 'Asie émergente': 60, 'Amérique latine': 10, 'Europe émergente': 8, 'Autres': 22 },
+    // Compo réelle MSCI EM (Sep 2024) : 80 % Asie ém (Chine+Inde+Taiwan+
+    // Corée+SEA), 8 % Am. latine (Brésil+Mexique), 5 % Moyen-Orient (Saudi+
+    // UAE+Qatar), 3 % Afrique (Afrique du Sud), 4 % Europe émergente
+    // (Pologne+Hongrie+Grèce).
+    zones: { 'Asie émergente': 80, 'Amérique latine': 8, 'Moyen-Orient': 5, 'Afrique': 3, 'Europe émergente': 4 },
   },
 
   // ── OBLIGATAIRE ────────────────────────────────────────────────
@@ -285,7 +289,11 @@ export const ETF_COMPOSITIONS: Record<string, ETFComposition> = {
       'Industrie': 6, 'Santé': 4, 'Consommation de base': 4,
       'Immobilier': 3, 'Services publics': 1,
     },
-    zones: { 'Asie émergente': 60, 'Amérique latine': 10, 'Europe émergente': 8, 'Autres': 22 },
+    // Compo réelle MSCI EM (Sep 2024) : 80 % Asie ém (Chine+Inde+Taiwan+
+    // Corée+SEA), 8 % Am. latine (Brésil+Mexique), 5 % Moyen-Orient (Saudi+
+    // UAE+Qatar), 3 % Afrique (Afrique du Sud), 4 % Europe émergente
+    // (Pologne+Hongrie+Grèce).
+    zones: { 'Asie émergente': 80, 'Amérique latine': 8, 'Moyen-Orient': 5, 'Afrique': 3, 'Europe émergente': 4 },
   },
   // Amundi PEA MSCI Emerging Markets ESG
   'FR0011440478': {
@@ -296,7 +304,11 @@ export const ETF_COMPOSITIONS: Record<string, ETFComposition> = {
       'Industrie': 6, 'Santé': 4, 'Consommation de base': 4,
       'Immobilier': 3, 'Services publics': 1,
     },
-    zones: { 'Asie émergente': 60, 'Amérique latine': 10, 'Europe émergente': 8, 'Autres': 22 },
+    // Compo réelle MSCI EM (Sep 2024) : 80 % Asie ém (Chine+Inde+Taiwan+
+    // Corée+SEA), 8 % Am. latine (Brésil+Mexique), 5 % Moyen-Orient (Saudi+
+    // UAE+Qatar), 3 % Afrique (Afrique du Sud), 4 % Europe émergente
+    // (Pologne+Hongrie+Grèce).
+    zones: { 'Asie émergente': 80, 'Amérique latine': 8, 'Moyen-Orient': 5, 'Afrique': 3, 'Europe émergente': 4 },
   },
 }
 

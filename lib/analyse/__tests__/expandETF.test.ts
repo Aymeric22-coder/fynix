@@ -103,13 +103,13 @@ describe('expandPositions — actions individuelles', () => {
 })
 
 describe('expandPositions — métaux précieux (or, argent…)', () => {
-  it('asset_type=metal → secteur "Matières premières", zone "Autres"', () => {
+  it('asset_type=metal → secteur "Matières premières", zone "Global"', () => {
     const r = expandPositions([
       pos({ asset_type: 'metal', name: 'WisdomTree Physical Gold', current_value: 2000 }),
     ])
     expect(r.identifiedValue).toBe(2000)
     expect(r.sectorExposures[0]).toMatchObject({ secteur: 'Matières premières', value: 2000 })
-    expect(r.geoExposures[0]).toMatchObject({ zone: 'Autres', value: 2000 })
+    expect(r.geoExposures[0]).toMatchObject({ zone: 'Global', value: 2000 })
   })
 
   it('ETF "Physical Gold" mal classé en etf → reroute vers metal par nom', () => {

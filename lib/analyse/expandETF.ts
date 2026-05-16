@@ -123,7 +123,8 @@ export function expandPositions(
     if (pos.asset_type === 'metal' || isMetalByName) {
       identifiedValue += v
       sectorExposures.push({ secteur: 'Matières premières', value: v, source: pos.name })
-      geoExposures.push({ zone: 'Autres', value: v, source: pos.name, pays: null })
+      // Zone 'Global' : l'or est stocké worldwide, pas un pays spécifique.
+      geoExposures.push({ zone: 'Global', value: v, source: pos.name, pays: null })
       continue
     }
 
@@ -202,7 +203,8 @@ export function expandPositions(
     if (pos.asset_type === 'crypto') {
       identifiedValue += v
       sectorExposures.push({ secteur: 'Crypto', value: v, source: pos.name })
-      geoExposures.push({ zone: 'Autres', value: v, source: pos.name, pays: null })
+      // Crypto = actif décentralisé sans pays → zone 'Global'
+      geoExposures.push({ zone: 'Global', value: v, source: pos.name, pays: null })
       continue
     }
     if (pos.asset_type === 'bond') {

@@ -20,7 +20,8 @@ export type GeoZone =
   | 'Amérique latine'
   | 'Moyen-Orient'
   | 'Afrique'
-  | 'Autres'
+  | 'Global'        // actifs sans pays (crypto, métaux précieux physiques)
+  | 'Autres'        // pays inconnus (catch-all véritable)
 
 /**
  * Normalisation libellé Yahoo → code ISO 2 lettres.
@@ -158,5 +159,6 @@ export const ALL_ZONES: GeoZone[] = [
   'Amérique latine',
   'Moyen-Orient',
   'Afrique',
+  'Global',
   'Autres',
 ]
