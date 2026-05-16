@@ -122,6 +122,16 @@ export function expandPositions(
   // Physical Gold/Silver/Platinum et leurs variantes françaises.
   const METAL_NAME_RE = /\b(gold|silver|platinum|palladium)\b|physical\s*gold|physical\s*silver|physical\s*precious|or\s*physique|gold\s*etc/i
 
+  // Pattern de détection par ISIN — les SPV (BNP Paribas Issuance, Société
+  // Générale, Citi…) utilisent des codes mnémotechniques GLD/XAU/SLV/XAG
+  // /PLT/PLD dans leurs ISIN de certificats matières premières.
+  // Exemple : FRBNPP07GLD4 = BNP Paribas certificat or 7.
+  const METAL_ISIN_RE = /(GLD|XAU|GOLD|SLV|XAG|SILVER|PLT|XPT|PLATINUM|PAL|XPD|PALLADIUM)\d?/i
+
+  // Pattern SCPI — détecte les ISIN custom commençant par "SCPI" (cas où
+  // l'utilisateur a saisi à la main son code AMF) ou nom contenant "SCPI".
+  const SCPI_PATTERN_RE = /^SCPI/i
+
   for (const pos of positions) {
     const v = pos.current_value
     if (v <= 0) continue
@@ -138,19 +148,37 @@ export function expandPositions(
 
     totalValue += v
 
-    // ── Cas 0 : reroute métaux précieux mal classés ───────────────
-    // Un ETF "Physical Gold" stocké asset_type='etf' n'a aucune compo
-    // sectorielle d'entreprises — on le bascule en 'metal' avant la
-    // cascade ETF pour ne pas tomber en "Non mappé".
+    // ── Cas 0a : reroute métaux précieux mal classés ──────────────
+    // Détection multi-source : asset_type='metal' (DB) OU nom contenant
+    // gold/silver/etc OU ISIN contenant GLD/XAU/SLV (certificats SPV).
+    // Le 3e canal attrape les certificats BNP Paribas Issuance / SG /
+    // Citi qui n'ont pas "gold" dans le nom officiel.
     //
     // Métaux IN sectoriel ('Matières premières') mais OUT géo (l'or n'est
-    // pas une exposition pays, il est stocké globalement). On comptabilise
-    // dans identifiedValue (côté sect) mais on n'ajoute pas de geoExposure.
+    // pas une exposition pays, il est stocké globalement).
     const isMetalByName = pos.asset_type !== 'metal' && METAL_NAME_RE.test(pos.name)
-    if (pos.asset_type === 'metal' || isMetalByName) {
+    const isMetalByIsin = pos.asset_type !== 'metal' && pos.isin && METAL_ISIN_RE.test(pos.isin)
+    if (pos.asset_type === 'metal' || isMetalByName || isMetalByIsin) {
       identifiedValue += v
       sectorExposures.push({ secteur: 'Matières premières', value: v, source: pos.name })
-      // Pas de geoExposures.push() — les métaux sont exclus de la géo.
+      continue
+    }
+
+    // ── Cas 0b : SCPI par pattern ISIN/nom ────────────────────────
+    // Détecte les SCPI saisies manuellement avec un ISIN custom non
+    // standard (SCPI00xxxxx) que le pipeline OpenFIGI/Yahoo a marqué
+    // 'unknown' faute de pouvoir les résoudre.
+    const isScpiByPattern = pos.asset_type !== 'scpi' && (
+      (pos.isin && SCPI_PATTERN_RE.test(pos.isin)) || /\bSCPI\b/i.test(pos.name)
+    )
+    if (pos.asset_type === 'scpi' || isScpiByPattern) {
+      identifiedValue += v
+      sectorExposures.push({ secteur: 'Immobilier', value: v, source: pos.name })
+      // Par défaut Europe / France (les SCPI françaises dominent ;
+      // pour les SCPI européennes le user peut renseigner country dans
+      // l'instrument).
+      const z = pos.country ? (geoZone(pos.country) as string) : 'Europe'
+      geoExposures.push({ zone: z, value: v, source: pos.name, pays: pos.country ?? 'France' })
       continue
     }
 
@@ -196,17 +224,9 @@ export function expandPositions(
       continue
     }
 
-    // ── Cas 5 : SCPI / immo papier ────────────────────────────────
-    if (pos.asset_type === 'scpi') {
-      identifiedValue += v
-      sectorExposures.push({ secteur: 'Immobilier', value: v, source: pos.name })
-      const z = pos.country ? (geoZone(pos.country) as string) : 'Europe'
-      geoExposures.push({ zone: z, value: v, source: pos.name, pays: pos.country })
-      continue
-    }
-
-    // Note : les métaux précieux sont gérés en Cas 0 (tout en haut), pas
-    // ici, pour intercepter aussi les ETFs "Physical Gold" mal classés.
+    // Note : SCPI et métaux précieux sont gérés en Cas 0a/0b (tout en
+    // haut), pour intercepter aussi les certificats SPV ("BNP PARIBAS
+    // ISSUANCE BV" type GLD) et les SCPI à ISIN custom.
 
     // ── Cas 3/4 : action avec / sans données exploitables ─────────
     if (pos.asset_type === 'stock') {

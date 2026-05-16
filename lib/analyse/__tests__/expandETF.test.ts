@@ -147,6 +147,33 @@ describe('expandPositions — métaux précieux (or, argent…)', () => {
     expect(r.sectorExposures.every((e) => e.secteur === 'Matières premières')).toBe(true)
   })
 
+  it('détecte les certificats SPV par ISIN (FRBNPP07GLD4 → gold)', () => {
+    // BNP Paribas Issuance, Société Générale, Citi… utilisent GLD/SLV/PLT
+    // dans leurs ISIN de certificats — le NOM ne contient pas "gold".
+    const r = expandPositions([
+      pos({
+        isin: 'FRBNPP07GLD4', asset_type: 'unknown',
+        name: 'BNP PARIBAS ISSUANCE BV', current_value: 2000,
+      }),
+    ])
+    expect(r.identifiedValue).toBe(2000)
+    expect(r.unmappedAll).toHaveLength(0)
+    expect(r.sectorExposures[0]?.secteur).toBe('Matières premières')
+  })
+
+  it('détecte une SCPI à ISIN custom (SCPI00xxxxx)', () => {
+    const r = expandPositions([
+      pos({
+        isin: 'SCPI00004669', asset_type: 'unknown',
+        name: 'SCPI00004669', current_value: 3000,
+      }),
+    ])
+    expect(r.identifiedValue).toBe(3000)
+    expect(r.unmappedAll).toHaveLength(0)
+    expect(r.sectorExposures[0]?.secteur).toBe('Immobilier')
+    expect(r.geoExposures[0]?.zone).toBe('Europe')
+  })
+
   it('ne matche PAS les noms qui contiennent "gold" hors contexte métal', () => {
     // "Goldman Sachs" ne doit PAS être confondu avec un tracker or.
     // Le pattern utilise \b autour de "gold" → "Goldman" matche... à corriger ?

@@ -184,6 +184,16 @@ function makeEnriched(
   currentValueLocal: number,
   estimated: boolean,
 ): EnrichedPosition {
+  // Détermination de l'asset_type : priorité à isin_cache MAIS uniquement
+  // si la valeur est utile (≠ 'unknown'). Sinon on retombe sur l'asset_class
+  // déclarée par l'utilisateur (DB) — sans ça une SCPI manuelle ou un
+  // certificat structuré dont Yahoo n'a pas reconnu le ticker reste bloqué
+  // en 'unknown' alors que la DB sait que c'est une SCPI.
+  const cachedType = isinData?.asset_type
+  const finalAssetType: AnalyseAssetType =
+    cachedType && cachedType !== 'unknown'
+      ? cachedType
+      : assetClassToAnalyseType(p.assetClass)
   // Le PRU est dans la devise locale, pareil que current_price.
   // P&L est calculé EN EUR : on convertit linéairement avec le même ratio
   // (currentValueEur / currentValueLocal) — approximation acceptable pour
@@ -204,7 +214,7 @@ function makeEnriched(
     current_value_local: currentValueLocal,
     gain_loss:     gainLoss,
     gain_loss_pct: gainLossPct,
-    asset_type:    isinData?.asset_type ?? assetClassToAnalyseType(p.assetClass),
+    asset_type:    finalAssetType,
     sector:        isinData?.sector ?? null,
     country:       isinData?.country ?? null,
     currency:      isinData?.currency ?? p.currency,
