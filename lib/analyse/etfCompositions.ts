@@ -191,6 +191,113 @@ export const ETF_COMPOSITIONS: Record<string, ETFComposition> = {
     sectors: { 'Technologie': 55, 'Industrie': 35, 'Autres': 10 },
     zones:   { 'Amérique du Nord': 40, 'Europe': 25, 'Asie développée': 30, 'Autres': 5 },
   },
+  'IE0007Y8Y157': {
+    name: 'VanEck Quantum Computing UCITS ETF',
+    sectors: { 'Technologie': 70, 'Communication': 15, 'Industrie': 10, 'Autres': 5 },
+    zones:   { 'Amérique du Nord': 70, 'Asie développée': 15, 'Europe': 10, 'Autres': 5 },
+  },
+
+  // ── NASDAQ 100 — variantes additionnelles ──────────────────────
+  // Amundi PEA Nasdaq 100 (réplication synthétique pour PEA)
+  'FR0011871110': {
+    name: 'Amundi PEA Nasdaq-100 UCITS ETF',
+    sectors: {
+      'Technologie': 58, 'Communication': 18, 'Consommation cyclique': 14,
+      'Santé': 6, 'Industrie': 2, 'Finance': 2,
+    },
+    zones: { 'Amérique du Nord': 97, 'Autres': 3 },
+  },
+  // Amundi Nasdaq-100 USD ACC
+  'LU1681038326': {
+    name: 'Amundi Nasdaq-100 UCITS ETF USD Acc',
+    sectors: {
+      'Technologie': 58, 'Communication': 18, 'Consommation cyclique': 14,
+      'Santé': 6, 'Industrie': 2, 'Finance': 2,
+    },
+    zones: { 'Amérique du Nord': 97, 'Autres': 3 },
+  },
+
+  // ── MSCI WORLD — variantes additionnelles ──────────────────────
+  // Amundi Core MSCI World (nouveau ticker remplaçant LU1681043599)
+  'IE000BI8OT95': {
+    name: 'Amundi Core MSCI World UCITS ETF Acc',
+    sectors: {
+      'Technologie': 23, 'Finance': 15, 'Santé': 12, 'Industrie': 11,
+      'Consommation cyclique': 10, 'Consommation de base': 7, 'Énergie': 5,
+      'Immobilier': 3, 'Matières premières': 4, 'Communication': 10,
+    },
+    zones: { 'Amérique du Nord': 69, 'Europe': 16, 'Asie développée': 11, 'Autres': 4 },
+  },
+  // iShares MSCI World Swap PEA (réplication synthétique pour PEA)
+  'IE0002XZSH01': {
+    name: 'iShares MSCI World Swap PEA UCITS ETF',
+    sectors: {
+      'Technologie': 23, 'Finance': 15, 'Santé': 12, 'Industrie': 11,
+      'Consommation cyclique': 10, 'Consommation de base': 7, 'Énergie': 5,
+      'Immobilier': 3, 'Matières premières': 4, 'Communication': 10,
+    },
+    zones: { 'Amérique du Nord': 69, 'Europe': 16, 'Asie développée': 11, 'Autres': 4 },
+  },
+
+  // ── EUROPE LARGE / MID CAP ─────────────────────────────────────
+  // BNP Easy STOXX Europe 600 (sectoriel large) — apparaît 2× chez l'user
+  'FR0011550193': {
+    name: 'BNP Paribas Easy STOXX Europe 600',
+    sectors: {
+      'Finance': 18, 'Industrie': 15, 'Santé': 14, 'Consommation de base': 12,
+      'Consommation cyclique': 11, 'Technologie': 8, 'Matières premières': 7,
+      'Énergie': 5, 'Communication': 5, 'Services publics': 4, 'Immobilier': 1,
+    },
+    zones: { 'Europe': 100 },
+  },
+  // iShares MSCI Europe Mid Cap (mid caps européennes)
+  'IE00BF20LF40': {
+    name: 'iShares MSCI Europe Mid Cap UCITS ETF',
+    sectors: {
+      'Industrie': 22, 'Consommation cyclique': 16, 'Finance': 14,
+      'Matières premières': 11, 'Technologie': 10, 'Santé': 9,
+      'Consommation de base': 7, 'Immobilier': 5, 'Énergie': 3,
+      'Services publics': 2, 'Communication': 1,
+    },
+    zones: { 'Europe': 100 },
+  },
+
+  // ── US SMALL CAPS ─────────────────────────────────────────────
+  // Amundi Russell 2000
+  'LU1681038672': {
+    name: 'Amundi Russell 2000 UCITS ETF',
+    sectors: {
+      'Industrie': 18, 'Finance': 17, 'Santé': 15, 'Technologie': 13,
+      'Consommation cyclique': 12, 'Immobilier': 7, 'Énergie': 5,
+      'Matières premières': 5, 'Consommation de base': 4,
+      'Services publics': 3, 'Communication': 1,
+    },
+    zones: { 'Amérique du Nord': 100 },
+  },
+
+  // ── ÉMERGENTS — variantes ESG / supplémentaires ────────────────
+  // BNP Easy MSCI Emerging Markets ESG
+  'LU1291097779': {
+    name: 'BNP Paribas Easy MSCI EM SRI S-Series PAB 5% Capped',
+    sectors: {
+      'Technologie': 22, 'Finance': 22, 'Consommation cyclique': 14,
+      'Communication': 10, 'Matières premières': 8, 'Énergie': 6,
+      'Industrie': 6, 'Santé': 4, 'Consommation de base': 4,
+      'Immobilier': 3, 'Services publics': 1,
+    },
+    zones: { 'Asie émergente': 60, 'Amérique latine': 10, 'Europe émergente': 8, 'Autres': 22 },
+  },
+  // Amundi PEA MSCI Emerging Markets ESG
+  'FR0011440478': {
+    name: 'Amundi PEA MSCI Emerging Markets ESG',
+    sectors: {
+      'Technologie': 22, 'Finance': 22, 'Consommation cyclique': 14,
+      'Communication': 10, 'Matières premières': 8, 'Énergie': 6,
+      'Industrie': 6, 'Santé': 4, 'Consommation de base': 4,
+      'Immobilier': 3, 'Services publics': 1,
+    },
+    zones: { 'Asie émergente': 60, 'Amérique latine': 10, 'Europe émergente': 8, 'Autres': 22 },
+  },
 }
 
 /**
