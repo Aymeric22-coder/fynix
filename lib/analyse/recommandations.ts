@@ -31,36 +31,45 @@ export function genererRecommandations(
   const realSecteurs = p.repartitionSectorielle.filter((s) => isInsightful(s.secteur))
   const realZones    = p.repartitionGeo.filter((z) => isInsightful(z.zone))
 
-  // 1. Surexposition sectorielle (>30 %)
-  const secteurMax = realSecteurs[0]
-  if (secteurMax && secteurMax.pourcentage > 30) {
-    // Cite les sources contributrices (ETFs/actions) si disponibles.
-    const sourcesTxt = secteurMax.positions.length > 0
-      ? ` (principalement via ${secteurMax.positions.slice(0, 3).join(', ')})`
+  // 1. Surexposition sectorielle vs MSCI World (déviation > +15pts)
+  // On cible le secteur le PLUS surexposé en valeur absolue de déviation,
+  // pas le plus gros en % (ex: Tech 35 % avec benchmark 23 = +12pts → pas
+  // une alerte, alors qu'Industrie 25 % avec benchmark 11 = +14pts l'est).
+  const secteursOver = realSecteurs
+    .filter((s) => s.status === 'overweight' || s.status === 'overweight_strong')
+    .sort((a, b) => b.deviation - a.deviation)
+  const sectMax = secteursOver[0]
+  if (sectMax) {
+    const sourcesTxt = sectMax.positions.length > 0
+      ? ` (principalement via ${sectMax.positions.slice(0, 3).join(', ')})`
       : ''
     out.push({
       id:           'surexpo-secteur',
-      priorite:     'haute',
+      priorite:     sectMax.status === 'overweight_strong' ? 'haute' : 'moyenne',
       categorie:    'diversification',
-      titre:        `Surexposition ${secteurMax.secteur} détectée`,
-      description:  `${secteurMax.pourcentage.toFixed(0)} % de votre patrimoine analysable est exposé au secteur ${secteurMax.secteur}${sourcesTxt}. Un choc sur ce secteur impacterait fortement votre patrimoine.`,
+      titre:        `Surpondération ${sectMax.secteur} vs marché mondial`,
+      description:  `Votre exposition ${sectMax.secteur} atteint ${sectMax.pourcentage.toFixed(0)} %${sourcesTxt}, soit +${sectMax.deviation.toFixed(0)} points au-delà du benchmark MSCI World (${sectMax.benchmark.toFixed(0)} % attendu). Un choc sur ce secteur amplifierait l'impact sur votre portefeuille.`,
       impact_estime: null,
-      action:       'Envisagez de diversifier vers des secteurs sous-représentés (Santé, Industrie, Énergie, Matières premières…) pour réduire votre concentration.',
+      action:       'Diversifiez vers les secteurs sous-représentés du MSCI World pour vous rapprocher d\'une allocation neutre marché.',
     })
   }
 
-  // 2. Surexposition géographique (>50 %)
-  const zoneMax = realZones[0]
-  if (zoneMax && zoneMax.pourcentage > 50) {
+  // 2. Surpondération géographique vs MSCI ACWI (déviation > +15pts)
+  const zonesOver = realZones
+    .filter((z) => z.status === 'overweight' || z.status === 'overweight_strong')
+    .sort((a, b) => b.deviation - a.deviation)
+  const zoneMax = zonesOver[0]
+  if (zoneMax) {
     const paysExtra = zoneMax.pays.length > 0 ? ` (${zoneMax.pays.slice(0, 3).join(', ')})` : ''
+    const isHomeBias = zoneMax.zone === 'Europe' || zoneMax.zone === 'Amérique du Nord'
     out.push({
       id:           'surexpo-geo',
-      priorite:     'haute',
+      priorite:     zoneMax.status === 'overweight_strong' ? 'haute' : 'moyenne',
       categorie:    'diversification',
-      titre:        `Concentration géographique ${zoneMax.zone}`,
-      description:  `${zoneMax.pourcentage.toFixed(0)} % de votre patrimoine est exposé à la zone ${zoneMax.zone}${paysExtra}. Un choc sur cette zone affecterait fortement votre patrimoine.`,
+      titre:        `Surpondération ${zoneMax.zone} vs marché mondial`,
+      description:  `Vous êtes exposé à ${zoneMax.pourcentage.toFixed(0)} % sur ${zoneMax.zone}${paysExtra}, soit +${zoneMax.deviation.toFixed(0)} points au-delà du benchmark MSCI ACWI (${zoneMax.benchmark.toFixed(0)} % attendu). ${isHomeBias ? 'Cela reflète un biais home country classique.' : ''}`.trim(),
       impact_estime: null,
-      action:       'Rééquilibrez vers les zones sous-représentées (Europe, Asie développée, marchés émergents) pour réduire votre dépendance à une seule économie.',
+      action:       'Rééquilibrez vers les zones sous-représentées (Amérique du Nord, Asie développée) pour vous aligner sur la capitalisation boursière mondiale.',
     })
   }
 

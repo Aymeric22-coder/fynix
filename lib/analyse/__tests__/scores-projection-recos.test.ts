@@ -45,12 +45,12 @@ function patrimoine(over: Partial<PatrimoineComplet> = {}): PatrimoineComplet {
       { label: 'Cash', valeur: 20000, pourcentage: 20, color: '#71717a' },
     ],
     repartitionSectorielle: [
-      { secteur: 'Technologie', valeur: 50000, pourcentage: 62.5, positions: [], alerte: true },
-      { secteur: 'Santé',       valeur: 30000, pourcentage: 37.5, positions: [], alerte: true },
+      { secteur: 'Technologie', valeur: 50000, pourcentage: 62.5, benchmark: 23, deviation: 39.5, status: 'overweight_strong', positions: [], alerte: true },
+      { secteur: 'Santé',       valeur: 30000, pourcentage: 37.5, benchmark: 12, deviation: 25.5, status: 'overweight_strong', positions: [], alerte: true },
     ],
     repartitionGeo: [
-      { zone: 'Amérique du Nord', valeur: 50000, pourcentage: 62.5, pays: ['United States'], alerte: true },
-      { zone: 'Europe',           valeur: 30000, pourcentage: 37.5, pays: ['France'], alerte: false },
+      { zone: 'Amérique du Nord', valeur: 50000, pourcentage: 62.5, benchmark: 65, deviation: -2.5, status: 'aligned', pays: ['United States'], alerte: false },
+      { zone: 'Europe',           valeur: 30000, pourcentage: 37.5, benchmark: 15, deviation: 22.5, status: 'overweight', pays: ['France'], alerte: true },
     ],
     scoreDiversificationSectorielle: 50,
     scoreDiversificationGeo: 50,
@@ -101,10 +101,10 @@ describe('calculerDiversification', () => {
     //        = 70×0.35 + 55×0.35 + 100×0.30 = 24.5 + 19.25 + 30 = 73.75 → 74
     const s = calculerDiversification(patrimoine({
       repartitionSectorielle: [
-        { secteur: 'A', valeur: 15, pourcentage: 15, positions: [], alerte: false },
+        { secteur: 'A', valeur: 15, pourcentage: 15, benchmark: 23, deviation: -8, status: 'aligned', positions: [], alerte: false },
       ],
       repartitionGeo: [
-        { zone: 'Europe', valeur: 30, pourcentage: 30, pays: [], alerte: false },
+        { zone: 'Europe', valeur: 30, pourcentage: 30, benchmark: 15, deviation: 15, status: 'overweight', pays: [], alerte: true },
       ],
       repartitionClasses: [
         { label: 'A', valeur: 25, pourcentage: 25, color: '#000' },

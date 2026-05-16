@@ -92,13 +92,21 @@ export interface ClasseAlloc {
   color:       string          // hex stable par classe
 }
 
-/** Allocation sectorielle (avec alerte de surexposition). */
+/** Statut visuel d'une déviation vs benchmark (cf. lib/analyse/benchmarks.ts). */
+export type DeviationStatus = 'aligned' | 'overweight' | 'overweight_strong' | 'underweight'
+
+/** Allocation sectorielle avec comparaison au benchmark MSCI World. */
 export interface SecteurAlloc {
-  secteur:     string          // libellé FR (ex: 'Technologie')
-  valeur:      number
-  pourcentage: number
-  positions:   string[]        // noms des actifs sources (max 10 affichés)
-  alerte:      boolean         // true si > 30 %
+  secteur:       string          // libellé FR (ex: 'Technologie')
+  valeur:        number
+  pourcentage:   number          // % du portefeuille
+  benchmark:     number          // % de référence MSCI World
+  deviation:     number          // pourcentage − benchmark (en points)
+  /** 'aligned' / 'overweight' (>+15) / 'overweight_strong' (>+30) / 'underweight' (<−20) */
+  status:        DeviationStatus
+  positions:     string[]        // noms des actifs sources (max 10 affichés)
+  /** True quand status='overweight' ou 'overweight_strong' (surpondération réelle). */
+  alerte:        boolean
 }
 
 /** Indicateur de fiabilité de l'analyse sectorielle / géographique. */
@@ -111,13 +119,17 @@ export interface AnalyseFiabilite {
   label:      string          // ex: "Analyse fiable" / "Données insuffisantes"
 }
 
-/** Allocation géographique (avec alerte de surexposition zone). */
+/** Allocation géographique avec comparaison au benchmark MSCI ACWI. */
 export interface GeoAlloc {
   zone:        string
   valeur:      number
-  pourcentage: number
+  pourcentage: number          // % du portefeuille
+  benchmark:   number          // % de référence MSCI ACWI
+  deviation:   number          // pourcentage − benchmark (en points)
+  status:      DeviationStatus
   pays:        string[]        // libellés bruts ou codes ISO
-  alerte:      boolean         // true si > 50 %
+  /** True quand status='overweight' ou 'overweight_strong'. */
+  alerte:      boolean
 }
 
 /** Snapshot complet du patrimoine d'un utilisateur, prêt à être affiché. */

@@ -13,12 +13,15 @@
 import { createServerClient } from '@/lib/supabase/server'
 import { toEur } from '@/lib/providers/fx'
 import { getEnrichedPositions } from './enrichPositions'
-import { diversificationScore } from './diversification'
 import { geoZone } from './geoMapping'
 import { calculerTousLesScores } from './scores'
 import { genererRecommandations } from './recommandations'
 import { expandPositions, bucketsBySector, bucketsByZone, type ExpansionResult } from './expandETF'
 import { getEtfComposition } from './etfCompositions'
+import {
+  benchmarkGeoOf, benchmarkSectorOf, classifyDeviation, trackingErrorScore,
+  BENCHMARK_GEO_MSCI_ACWI, BENCHMARK_SECTOR_MSCI_WORLD,
+} from './benchmarks'
 import type {
   PatrimoineComplet, BienImmo, CompteCash,
   ClasseAlloc, SecteurAlloc, GeoAlloc, EnrichedPosition, AnalyseAssetType,
@@ -320,8 +323,8 @@ function repartitionClasses(positions: EnrichedPosition[], totalImmo: number, to
 // immo physique exclus)
 // ─────────────────────────────────────────────────────────────────
 
-const SECTOR_ALERT_PCT = 30
-const GEO_ALERT_PCT    = 50
+// Anciens seuils absolus (legacy, non utilisés depuis la refonte benchmark).
+// La surexposition est désormais évaluée vs MSCI ACWI/World — cf. benchmarks.ts.
 
 /**
  * Debug : trace dans les logs serveur le détail de l'expansion. Aide à
@@ -379,25 +382,35 @@ function buildAllocations(positions: EnrichedPosition[]): {
   const exp = expandPositions(positions)
   logExpansionDebug(positions, exp)
 
-  // Buckets sectoriels (excluant "Non mappé" du graphique principal)
+  // Buckets sectoriels avec déviation vs MSCI World
   const secB = bucketsBySector(exp.sectorExposures, exp.totalValue, { excludeUnmapped: true })
-  const secteur: SecteurAlloc[] = secB.map((b) => ({
-    secteur:     b.secteur,
-    valeur:      b.value,
-    pourcentage: b.pct,
-    positions:   b.sources,
-    alerte:      b.pct > SECTOR_ALERT_PCT,
-  }))
+  const secteur: SecteurAlloc[] = secB.map((b) => {
+    const benchmark = benchmarkSectorOf(b.secteur)
+    const { deviation, status } = classifyDeviation(b.pct, benchmark, 'sector')
+    return {
+      secteur:     b.secteur,
+      valeur:      b.value,
+      pourcentage: b.pct,
+      benchmark, deviation, status,
+      positions:   b.sources,
+      alerte:      status === 'overweight' || status === 'overweight_strong',
+    }
+  })
 
-  // Buckets géo (excluant "Non mappé")
+  // Buckets géo avec déviation vs MSCI ACWI
   const geoB = bucketsByZone(exp.geoExposures, exp.totalValue, { excludeUnmapped: true })
-  const geo: GeoAlloc[] = geoB.map((b) => ({
-    zone:        b.zone,
-    valeur:      b.value,
-    pourcentage: b.pct,
-    pays:        b.pays,
-    alerte:      b.pct > GEO_ALERT_PCT,
-  }))
+  const geo: GeoAlloc[] = geoB.map((b) => {
+    const benchmark = benchmarkGeoOf(b.zone)
+    const { deviation, status } = classifyDeviation(b.pct, benchmark, 'geo')
+    return {
+      zone:        b.zone,
+      valeur:      b.value,
+      pourcentage: b.pct,
+      benchmark, deviation, status,
+      pays:        b.pays,
+      alerte:      status === 'overweight' || status === 'overweight_strong',
+    }
+  })
 
   // Fiabilité de l'analyse
   const pct = exp.totalValue > 0 ? Math.round((exp.identifiedValue / exp.totalValue) * 100) : 0
@@ -525,8 +538,16 @@ export async function getPatrimoineComplet(userId: string): Promise<PatrimoineCo
     repartitionClasses:     repClasses,
     repartitionSectorielle: repSecteur,
     repartitionGeo:         repGeo,
-    scoreDiversificationSectorielle: diversificationScore(repSecteur.map((s) => ({ pourcentage: s.pourcentage }))),
-    scoreDiversificationGeo:         diversificationScore(repGeo.map((g) => ({ pourcentage: g.pourcentage }))),
+    // Scores de diversification = 100 − tracking error vs benchmark mondial
+    // (MSCI ACWI / MSCI World). Un portefeuille aligné sur le marché = 100.
+    scoreDiversificationSectorielle: trackingErrorScore(
+      repSecteur.map((s) => ({ label: s.secteur, pct: s.pourcentage })),
+      BENCHMARK_SECTOR_MSCI_WORLD,
+    ),
+    scoreDiversificationGeo: trackingErrorScore(
+      repGeo.map((g) => ({ label: g.zone, pct: g.pourcentage })),
+      BENCHMARK_GEO_MSCI_ACWI,
+    ),
     rendementEstime:        rendement,
     revenuPassifActuel:     revenuPassif,
     profilType,

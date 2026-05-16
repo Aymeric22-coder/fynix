@@ -1,15 +1,20 @@
 /**
- * Section "Analyse géographique" : liste de barres horizontales HTML/CSS
- * (même approche que SectorielleChart). Réutilise le composant BarList.
+ * Section "Analyse géographique" : comparée au benchmark MSCI ACWI.
+ * Réutilise BenchmarkBarList de SectorielleChart.
  *
- * Bande orange si zone > 50 % (concentration géographique).
+ * Couleurs par statut de déviation :
+ *   - aligned          → bleu (proche du marché mondial)
+ *   - overweight       → orange (surpondération > +15pts)
+ *   - overweight_strong→ danger (surpondération > +30pts)
+ *   - underweight      → violet (sous-pondération < −20pts)
  */
 'use client'
 
 import { AlertTriangle } from 'lucide-react'
-import { formatPercent } from '@/lib/utils/format'
+import { cn } from '@/lib/utils/format'
 import { MiniRing } from './MiniRing'
-import { BarList } from './SectorielleChart'
+import { BenchmarkBarList } from './SectorielleChart'
+import { BenchmarkNote } from './BenchmarkNote'
 import type { GeoAlloc } from '@/types/analyse'
 
 interface Props {
@@ -17,49 +22,54 @@ interface Props {
   score:   number
 }
 
-const GEO_ALERT_PCT = 50
-
 export function GeographiqueChart({ buckets, score }: Props) {
-  const alertes = buckets.filter((b) => b.alerte)
+  const alertes = buckets.filter((b) => b.status === 'overweight' || b.status === 'overweight_strong')
 
   return (
     <div className="card p-5">
       <div className="flex items-start justify-between gap-4 flex-wrap mb-4">
         <div>
           <p className="text-xs text-secondary uppercase tracking-widest">Analyse géographique</p>
-          <p className="text-xs text-muted mt-0.5">Barres oranges au-delà de {GEO_ALERT_PCT} %</p>
+          <p className="text-xs text-muted mt-0.5">Benchmark : MSCI ACWI (9 zones)</p>
         </div>
-        <MiniRing score={score} caption="Diversification" />
+        <MiniRing score={score} caption="Alignement marché" />
       </div>
 
       {buckets.length === 0 ? (
         <p className="text-sm text-secondary text-center py-8">Aucune position à analyser.</p>
       ) : (
         <>
-          <BarList
+          <BenchmarkBarList
             rows={buckets.map((b) => ({
-              key:    b.zone,
-              label:  b.zone,
-              pct:    b.pourcentage,
-              alerte: b.alerte,
-              tooltip: b.pays.length > 0 ? b.pays.slice(0, 8).join(', ') : undefined,
+              key:       b.zone,
+              label:     b.zone,
+              pct:       b.pourcentage,
+              benchmark: b.benchmark,
+              deviation: b.deviation,
+              status:    b.status,
+              tooltip:   b.pays.length > 0 ? b.pays.slice(0, 8).join(', ') : undefined,
             }))}
-            colorAlerte="bg-warning"
-            colorNormal="bg-blue-400"
           />
 
           {alertes.length > 0 && (
             <div className="mt-4 space-y-2">
               {alertes.map((a) => (
-                <div key={a.zone} className="flex items-start gap-2 bg-warning-muted border border-warning/30 rounded-lg px-3 py-2 text-xs">
-                  <AlertTriangle size={13} className="text-warning flex-shrink-0 mt-0.5" />
+                <div key={a.zone} className={cn(
+                  'flex items-start gap-2 border rounded-lg px-3 py-2 text-xs',
+                  a.status === 'overweight_strong' ? 'bg-danger-muted border-danger/30' : 'bg-warning-muted border-warning/30',
+                )}>
+                  <AlertTriangle size={13} className={cn('flex-shrink-0 mt-0.5', a.status === 'overweight_strong' ? 'text-danger' : 'text-warning')} />
                   <span className="text-primary">
-                    Concentration <span className="text-warning font-medium">{a.zone}</span> ({formatPercent(a.pourcentage, { decimals: 1 })}) — seuil recommandé : {GEO_ALERT_PCT} %
+                    Surpondération <span className={cn('font-medium', a.status === 'overweight_strong' ? 'text-danger' : 'text-warning')}>{a.zone}</span> de <span className="financial-value">{a.deviation > 0 ? '+' : ''}{a.deviation.toFixed(1)} pts</span> vs MSCI ACWI ({a.benchmark.toFixed(0)} % attendu) — possible biais home country.
                   </span>
                 </div>
               ))}
             </div>
           )}
+
+          <div className="mt-4">
+            <BenchmarkNote />
+          </div>
         </>
       )}
     </div>
