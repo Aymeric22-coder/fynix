@@ -294,8 +294,21 @@ export interface PatrimoineComplet {
 
   /** Valeur totale crypto du portefeuille (exclue de sect/geo). */
   cryptoTotal:      number
-  /** Détail crypto pour la section dédiée — chaque ligne avec sa part. */
-  cryptoBreakdown:  Array<{ isin: string; name: string; value: number; pct: number }>
+  /** Coût total des cryptos (somme des quantités × PRU). Sert au calcul fiscal. */
+  cryptoCostTotal:  number
+  /**
+   * Détail crypto AGRÉGÉ par symbole/nom (doublons fusionnés via moyenne
+   * pondérée du PRU). Inclut quantity et pru pour le calcul fiscal.
+   */
+  cryptoBreakdown:  Array<{
+    isin:     string
+    name:     string
+    value:    number    // valeur courante EUR
+    pct:      number    // % du total crypto
+    pru:      number    // PRU pondéré (post-fusion doublons)
+    quantity: number    // quantité totale (post-fusion doublons)
+    cost:     number    // pru × quantity
+  }>
 
   lastUpdated:   string         // ISO timestamp
 }

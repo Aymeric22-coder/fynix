@@ -508,8 +508,9 @@ function buildAllocations(positions: EnrichedPosition[]): {
   fiabilite: AnalyseFiabilite
   unmappedEtfs: Array<{ isin: string; name: string; value: number }>
   unmappedAll:  Array<{ isin: string; name: string; value: number; reason: string }>
-  cryptoTotal:  number
-  cryptoBreakdown: Array<{ isin: string; name: string; value: number; pct: number }>
+  cryptoTotal:     number
+  cryptoCostTotal: number
+  cryptoBreakdown: PatrimoineComplet['cryptoBreakdown']
 } {
   const exp = expandPositions(positions)
   logExpansionDebug(positions, exp)
@@ -551,8 +552,31 @@ function buildAllocations(positions: EnrichedPosition[]): {
     pct >= 70 ? { pct, niveau: 'orange', label: 'Analyse partiellement fiable' } :
                 { pct, niveau: 'rouge',  label: 'Données insuffisantes — certains actifs non identifiés' }
 
-  // Crypto breakdown (% interne)
-  const cryptoBreakdown = exp.cryptoPositions
+  // Crypto breakdown : fusion des doublons (Bitcoin acheté en 3 fois →
+  // 1 seule ligne avec PRU pondéré + quantité cumulée) puis tri par valeur.
+  const cryptoMerged = new Map<string, {
+    isin: string; name: string; value: number; pru: number; quantity: number; cost: number
+  }>()
+  for (const c of exp.cryptoPositions) {
+    // Clé de fusion : symbole / nom normalisé (BTC = BTC quel que soit le wallet/exchange)
+    const key = (c.isin || c.name).trim().toUpperCase()
+    const ex = cryptoMerged.get(key)
+    if (ex) {
+      // Moyenne pondérée du PRU par les quantités
+      const totalQty = ex.quantity + c.quantity
+      ex.pru = totalQty > 0 ? ((ex.pru * ex.quantity) + (c.pru * c.quantity)) / totalQty : 0
+      ex.quantity = totalQty
+      ex.value   += c.value
+      ex.cost     = ex.pru * ex.quantity
+    } else {
+      cryptoMerged.set(key, {
+        isin: c.isin, name: c.name, value: c.value,
+        pru: c.pru, quantity: c.quantity, cost: c.pru * c.quantity,
+      })
+    }
+  }
+  const cryptoCostTotal = Array.from(cryptoMerged.values()).reduce((s, c) => s + c.cost, 0)
+  const cryptoBreakdown = Array.from(cryptoMerged.values())
     .map((c) => ({
       ...c,
       pct: exp.cryptoTotal > 0 ? (c.value / exp.cryptoTotal) * 100 : 0,
@@ -563,7 +587,8 @@ function buildAllocations(positions: EnrichedPosition[]): {
     secteur, geo, fiabilite,
     unmappedEtfs: exp.unmappedEtfs,
     unmappedAll:  exp.unmappedAll,
-    cryptoTotal:  exp.cryptoTotal,
+    cryptoTotal:     exp.cryptoTotal,
+    cryptoCostTotal,
     cryptoBreakdown,
   }
 }
@@ -700,6 +725,7 @@ export async function getPatrimoineComplet(userId: string): Promise<PatrimoineCo
     unmappedEtfs:           allocs.unmappedEtfs,
     unmappedAll:            allocs.unmappedAll,
     cryptoTotal:            allocs.cryptoTotal,
+    cryptoCostTotal:        allocs.cryptoCostTotal,
     cryptoBreakdown:        allocs.cryptoBreakdown,
     lastUpdated:            new Date().toISOString(),
   }

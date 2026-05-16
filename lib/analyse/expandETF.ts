@@ -74,7 +74,7 @@ export interface ExpansionResult {
   /** Valeur totale crypto du portefeuille (exclue des sect/geo). */
   cryptoTotal:     number
   /** Positions crypto avec leur valeur (pour la section dédiée). */
-  cryptoPositions: Array<{ isin: string; name: string; value: number }>
+  cryptoPositions: Array<{ isin: string; name: string; value: number; pru: number; quantity: number }>
 }
 
 const SECTOR_FALLBACK_LABELS = new Set([
@@ -112,7 +112,7 @@ export function expandPositions(
   const geoExposures:    GeoExposure[]    = []
   const unmappedEtfs: Array<{ isin: string; name: string; value: number }> = []
   const unmappedAll:  Array<{ isin: string; name: string; value: number; reason: string }> = []
-  const cryptoPositions: Array<{ isin: string; name: string; value: number }> = []
+  const cryptoPositions: Array<{ isin: string; name: string; value: number; pru: number; quantity: number }> = []
   let totalValue      = 0
   let identifiedValue = 0
   let cryptoTotal     = 0
@@ -142,7 +142,10 @@ export function expandPositions(
     // Trackée dans cryptoPositions pour la section dédiée /analyse.
     if (pos.asset_type === 'crypto') {
       cryptoTotal += v
-      cryptoPositions.push({ isin: pos.isin, name: pos.name, value: v })
+      cryptoPositions.push({
+        isin: pos.isin, name: pos.name, value: v,
+        pru: pos.pru, quantity: pos.quantity,
+      })
       continue   // pas de totalValue, pas d'expositions
     }
 

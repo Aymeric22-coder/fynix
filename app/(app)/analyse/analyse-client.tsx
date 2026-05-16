@@ -131,7 +131,12 @@ export function AnalyseClient() {
           </div>
           {data.cryptoTotal > 0 && (
             <div className="mb-6">
-              <CryptoSummary cryptoTotal={data.cryptoTotal} cryptoBreakdown={data.cryptoBreakdown} />
+              <CryptoSummary
+                cryptoTotal={data.cryptoTotal}
+                cryptoCostTotal={data.cryptoCostTotal}
+                cryptoBreakdown={data.cryptoBreakdown}
+                patrimoineNet={data.totalNet}
+              />
             </div>
           )}
         </>

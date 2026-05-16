@@ -124,6 +124,9 @@ describe('expandPositions — métaux précieux (or, argent…)', () => {
     expect(r.cryptoTotal).toBe(5000)
     expect(r.cryptoPositions).toHaveLength(1)
     expect(r.cryptoPositions[0]?.name).toBe('Bitcoin')
+    // PRU et quantity sont propagés pour le calcul fiscal
+    expect(r.cryptoPositions[0]?.pru).toBe(100)
+    expect(r.cryptoPositions[0]?.quantity).toBe(1)
     // Aucun bucket "Crypto" dans les expositions sectorielles
     expect(r.sectorExposures.some((e) => e.secteur === 'Crypto')).toBe(false)
   })
