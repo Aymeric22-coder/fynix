@@ -372,6 +372,9 @@ function buildAllocations(positions: EnrichedPosition[]): {
   geo:     GeoAlloc[]
   fiabilite: AnalyseFiabilite
   unmappedEtfs: Array<{ isin: string; name: string; value: number }>
+  unmappedAll:  Array<{ isin: string; name: string; value: number; reason: string }>
+  cryptoTotal:  number
+  cryptoBreakdown: Array<{ isin: string; name: string; value: number; pct: number }>
 } {
   const exp = expandPositions(positions)
   logExpansionDebug(positions, exp)
@@ -403,7 +406,21 @@ function buildAllocations(positions: EnrichedPosition[]): {
     pct >= 70 ? { pct, niveau: 'orange', label: 'Analyse partiellement fiable' } :
                 { pct, niveau: 'rouge',  label: 'Données insuffisantes — certains actifs non identifiés' }
 
-  return { secteur, geo, fiabilite, unmappedEtfs: exp.unmappedEtfs }
+  // Crypto breakdown (% interne)
+  const cryptoBreakdown = exp.cryptoPositions
+    .map((c) => ({
+      ...c,
+      pct: exp.cryptoTotal > 0 ? (c.value / exp.cryptoTotal) * 100 : 0,
+    }))
+    .sort((a, b) => b.value - a.value)
+
+  return {
+    secteur, geo, fiabilite,
+    unmappedEtfs: exp.unmappedEtfs,
+    unmappedAll:  exp.unmappedAll,
+    cryptoTotal:  exp.cryptoTotal,
+    cryptoBreakdown,
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -519,6 +536,9 @@ export async function getPatrimoineComplet(userId: string): Promise<PatrimoineCo
     recommandations:        [],
     analyseFiabilite:       allocs.fiabilite,
     unmappedEtfs:           allocs.unmappedEtfs,
+    unmappedAll:            allocs.unmappedAll,
+    cryptoTotal:            allocs.cryptoTotal,
+    cryptoBreakdown:        allocs.cryptoBreakdown,
     lastUpdated:            new Date().toISOString(),
   }
   const scores          = calculerTousLesScores(partial)

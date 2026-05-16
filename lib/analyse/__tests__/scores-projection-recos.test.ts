@@ -70,6 +70,9 @@ function patrimoine(over: Partial<PatrimoineComplet> = {}): PatrimoineComplet {
     scores: {} as never, recommandations: [],
     analyseFiabilite: { pct: 100, niveau: 'vert', label: 'Analyse fiable' },
     unmappedEtfs: [],
+    unmappedAll:  [],
+    cryptoTotal:  0,
+    cryptoBreakdown: [],
     lastUpdated: new Date().toISOString(),
     ...over,
   }

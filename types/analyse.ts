@@ -171,11 +171,19 @@ export interface PatrimoineComplet {
   /** Recommandations priorisées (voir lib/analyse/recommandations.ts). */
   recommandations: Recommandation[]
 
-  // ── Phase 4 — Expansion ETF + fiabilité ──────────────────────────
-  /** Indicateur de fiabilité de l'analyse sectorielle/géo. */
+  // ── Phase 4-6 — Expansion ETF + fiabilité + crypto séparée ───────
+  /** Indicateur de fiabilité de l'analyse sectorielle/géo (denom = portef. hors crypto). */
   analyseFiabilite: AnalyseFiabilite
   /** ISIN d'ETF non référencés dans la table de compositions. */
   unmappedEtfs:     Array<{ isin: string; name: string; value: number }>
+  /** Toutes les positions non identifiées (ETFs + actions sans data) pour
+   *  que l'utilisateur puisse atteindre 100 % de fiabilité. */
+  unmappedAll:      Array<{ isin: string; name: string; value: number; reason: string }>
+
+  /** Valeur totale crypto du portefeuille (exclue de sect/geo). */
+  cryptoTotal:      number
+  /** Détail crypto pour la section dédiée — chaque ligne avec sa part. */
+  cryptoBreakdown:  Array<{ isin: string; name: string; value: number; pct: number }>
 
   lastUpdated:   string         // ISO timestamp
 }

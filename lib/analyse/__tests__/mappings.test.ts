@@ -87,12 +87,13 @@ describe('geoZone', () => {
   })
 
   it('expose toutes les zones', () => {
-    expect(ALL_ZONES).toHaveLength(10)  // +Europe ém +Moyen-Orient +Afrique +Global
+    // 9 zones : Am. du Nord, Europe, Europe ém, Asie dev, Asie ém,
+    // Am. latine, Moyen-Orient, Afrique, Autres. (Global retiré phase 6 :
+    // crypto/métaux ne contribuent plus à la géo.)
+    expect(ALL_ZONES).toHaveLength(9)
     expect(ALL_ZONES).toContain('Europe')
-    expect(ALL_ZONES).toContain('Autres')
-    expect(ALL_ZONES).toContain('Europe émergente')
     expect(ALL_ZONES).toContain('Moyen-Orient')
     expect(ALL_ZONES).toContain('Afrique')
-    expect(ALL_ZONES).toContain('Global')
+    expect(ALL_ZONES).toContain('Autres')
   })
 })

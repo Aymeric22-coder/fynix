@@ -103,13 +103,29 @@ describe('expandPositions — actions individuelles', () => {
 })
 
 describe('expandPositions — métaux précieux (or, argent…)', () => {
-  it('asset_type=metal → secteur "Matières premières", zone "Global"', () => {
+  it('asset_type=metal → secteur "Matières premières", exclu de la géo', () => {
     const r = expandPositions([
       pos({ asset_type: 'metal', name: 'WisdomTree Physical Gold', current_value: 2000 }),
     ])
     expect(r.identifiedValue).toBe(2000)
     expect(r.sectorExposures[0]).toMatchObject({ secteur: 'Matières premières', value: 2000 })
-    expect(r.geoExposures[0]).toMatchObject({ zone: 'Global', value: 2000 })
+    // Métaux exclus de la géo : pas d'exposition pays (or stocké worldwide)
+    expect(r.geoExposures).toHaveLength(0)
+  })
+
+  it('crypto → exclue des analyses sectorielle/géo, trackée séparément', () => {
+    const r = expandPositions([
+      pos({ asset_type: 'crypto', name: 'Bitcoin', current_value: 5000 }),
+      pos({ isin: 'IE00B4L5Y983', asset_type: 'etf', name: 'MSCI World', current_value: 5000 }),
+    ])
+    // Crypto ne contribue NI au sect/geo NI à identifiedValue/totalValue
+    expect(r.totalValue).toBe(5000)              // seul l'ETF compte
+    expect(r.identifiedValue).toBe(5000)
+    expect(r.cryptoTotal).toBe(5000)
+    expect(r.cryptoPositions).toHaveLength(1)
+    expect(r.cryptoPositions[0]?.name).toBe('Bitcoin')
+    // Aucun bucket "Crypto" dans les expositions sectorielles
+    expect(r.sectorExposures.some((e) => e.secteur === 'Crypto')).toBe(false)
   })
 
   it('ETF "Physical Gold" mal classé en etf → reroute vers metal par nom', () => {

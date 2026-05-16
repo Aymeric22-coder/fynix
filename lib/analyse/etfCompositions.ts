@@ -41,7 +41,9 @@ export const ETF_COMPOSITIONS: Record<string, ETFComposition> = {
       'Consommation cyclique': 10, 'Consommation de base': 7, 'Énergie': 5,
       'Immobilier': 3, 'Matières premières': 4, 'Communication': 10,
     },
-    zones: { 'Amérique du Nord': 69, 'Europe': 16, 'Asie développée': 11, 'Autres': 4 },
+    // 4 % résiduel MSCI World redistribués : Israel (~2 % Moyen-Orient)
+    // + Singapore/HK/NZ (~2 % Asie développée déjà comptés ailleurs).
+    zones: { 'Amérique du Nord': 69, 'Europe': 16, 'Asie développée': 13, 'Moyen-Orient': 2 },
   },
   'LU1681043599': {
     name: 'Amundi MSCI World',
@@ -50,7 +52,9 @@ export const ETF_COMPOSITIONS: Record<string, ETFComposition> = {
       'Consommation cyclique': 10, 'Consommation de base': 7, 'Énergie': 5,
       'Immobilier': 3, 'Matières premières': 4, 'Communication': 10,
     },
-    zones: { 'Amérique du Nord': 69, 'Europe': 16, 'Asie développée': 11, 'Autres': 4 },
+    // 4 % résiduel MSCI World redistribués : Israel (~2 % Moyen-Orient)
+    // + Singapore/HK/NZ (~2 % Asie développée déjà comptés ailleurs).
+    zones: { 'Amérique du Nord': 69, 'Europe': 16, 'Asie développée': 13, 'Moyen-Orient': 2 },
   },
   'FR0010315770': {
     name: 'Lyxor MSCI World',
@@ -59,7 +63,7 @@ export const ETF_COMPOSITIONS: Record<string, ETFComposition> = {
       'Consommation cyclique': 10, 'Consommation de base': 7, 'Énergie': 5,
       'Immobilier': 3, 'Matières premières': 4, 'Communication': 11,
     },
-    zones: { 'Amérique du Nord': 68, 'Europe': 16, 'Asie développée': 12, 'Autres': 4 },
+    zones: { 'Amérique du Nord': 68, 'Europe': 16, 'Asie développée': 14, 'Moyen-Orient': 2 },
   },
   'LU0290358497': {
     name: 'Xtrackers MSCI World Swap',
@@ -68,7 +72,9 @@ export const ETF_COMPOSITIONS: Record<string, ETFComposition> = {
       'Consommation cyclique': 10, 'Consommation de base': 7, 'Énergie': 5,
       'Immobilier': 3, 'Matières premières': 4, 'Communication': 10,
     },
-    zones: { 'Amérique du Nord': 69, 'Europe': 16, 'Asie développée': 11, 'Autres': 4 },
+    // 4 % résiduel MSCI World redistribués : Israel (~2 % Moyen-Orient)
+    // + Singapore/HK/NZ (~2 % Asie développée déjà comptés ailleurs).
+    zones: { 'Amérique du Nord': 69, 'Europe': 16, 'Asie développée': 13, 'Moyen-Orient': 2 },
   },
 
   // ── S&P 500 ─────────────────────────────────────────────────────
@@ -230,7 +236,9 @@ export const ETF_COMPOSITIONS: Record<string, ETFComposition> = {
       'Consommation cyclique': 10, 'Consommation de base': 7, 'Énergie': 5,
       'Immobilier': 3, 'Matières premières': 4, 'Communication': 10,
     },
-    zones: { 'Amérique du Nord': 69, 'Europe': 16, 'Asie développée': 11, 'Autres': 4 },
+    // 4 % résiduel MSCI World redistribués : Israel (~2 % Moyen-Orient)
+    // + Singapore/HK/NZ (~2 % Asie développée déjà comptés ailleurs).
+    zones: { 'Amérique du Nord': 69, 'Europe': 16, 'Asie développée': 13, 'Moyen-Orient': 2 },
   },
   // iShares MSCI World Swap PEA (réplication synthétique pour PEA)
   'IE0002XZSH01': {
@@ -240,7 +248,9 @@ export const ETF_COMPOSITIONS: Record<string, ETFComposition> = {
       'Consommation cyclique': 10, 'Consommation de base': 7, 'Énergie': 5,
       'Immobilier': 3, 'Matières premières': 4, 'Communication': 10,
     },
-    zones: { 'Amérique du Nord': 69, 'Europe': 16, 'Asie développée': 11, 'Autres': 4 },
+    // 4 % résiduel MSCI World redistribués : Israel (~2 % Moyen-Orient)
+    // + Singapore/HK/NZ (~2 % Asie développée déjà comptés ailleurs).
+    zones: { 'Amérique du Nord': 69, 'Europe': 16, 'Asie développée': 13, 'Moyen-Orient': 2 },
   },
 
   // ── EUROPE LARGE / MID CAP ─────────────────────────────────────

@@ -23,6 +23,7 @@ import { ScoresBand }          from '@/components/analyse/ScoresBand'
 import { ProjectionFIRE }      from '@/components/analyse/ProjectionFIRE'
 import { Recommandations }     from '@/components/analyse/Recommandations'
 import { FiabiliteBadge }      from '@/components/analyse/FiabiliteBadge'
+import { CryptoSummary }       from '@/components/analyse/CryptoSummary'
 
 export function AnalyseClient() {
   const { data, isLoading, error, refresh, refreshing } = usePatrimoineAnalyse()
@@ -123,11 +124,16 @@ export function AnalyseClient() {
           sections dédiées et ne polluent PAS ces graphiques). */}
       {data.totalPortefeuille >= 1 ? (
         <>
-          <FiabiliteBadge fiabilite={data.analyseFiabilite} unmappedEtfs={data.unmappedEtfs} />
+          <FiabiliteBadge fiabilite={data.analyseFiabilite} unmappedAll={data.unmappedAll} />
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-6">
             <SectorielleChart  buckets={data.repartitionSectorielle} score={data.scoreDiversificationSectorielle} />
             <GeographiqueChart buckets={data.repartitionGeo}         score={data.scoreDiversificationGeo} />
           </div>
+          {data.cryptoTotal > 0 && (
+            <div className="mb-6">
+              <CryptoSummary cryptoTotal={data.cryptoTotal} cryptoBreakdown={data.cryptoBreakdown} />
+            </div>
+          )}
         </>
       ) : (
         <div className="card p-6 mb-6 text-center">

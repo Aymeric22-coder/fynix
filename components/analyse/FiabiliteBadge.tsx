@@ -16,7 +16,7 @@ import type { AnalyseFiabilite } from '@/types/analyse'
 
 interface Props {
   fiabilite:    AnalyseFiabilite
-  unmappedEtfs: Array<{ isin: string; name: string; value: number }>
+  unmappedAll:  Array<{ isin: string; name: string; value: number; reason: string }>
 }
 
 const META: Record<AnalyseFiabilite['niveau'], {
@@ -27,7 +27,7 @@ const META: Record<AnalyseFiabilite['niveau'], {
   rouge:  { bg: 'bg-danger-muted', text: 'text-danger', border: 'border-danger/30', Icon: XCircle },
 }
 
-export function FiabiliteBadge({ fiabilite, unmappedEtfs }: Props) {
+export function FiabiliteBadge({ fiabilite, unmappedAll }: Props) {
   const { bg, text, border, Icon } = META[fiabilite.niveau]
 
   return (
@@ -36,7 +36,7 @@ export function FiabiliteBadge({ fiabilite, unmappedEtfs }: Props) {
         <div className="flex items-center gap-2">
           <Icon size={15} className={text} />
           <span className="text-sm text-primary">
-            Analyse basée sur <span className={`font-semibold ${text}`}>{fiabilite.pct} %</span> de votre portefeuille identifié
+            Analyse basée sur <span className={`font-semibold ${text}`}>{fiabilite.pct} %</span> de votre portefeuille financier (hors crypto)
           </span>
         </div>
         <span className={`text-xs ${text} font-medium uppercase tracking-widest`}>
@@ -44,16 +44,18 @@ export function FiabiliteBadge({ fiabilite, unmappedEtfs }: Props) {
         </span>
       </div>
 
-      {unmappedEtfs.length > 0 && (
+      {unmappedAll.length > 0 && (
         <details className="mt-3 pt-3 border-t border-border">
           <summary className="text-xs text-secondary cursor-pointer hover:text-primary">
-            ⚠ {unmappedEtfs.length} ETF non mappé{unmappedEtfs.length > 1 ? 's' : ''} — secteur estimé uniquement (cliquer pour détail)
+            ⚠ {unmappedAll.length} position{unmappedAll.length > 1 ? 's' : ''} non identifiée{unmappedAll.length > 1 ? 's' : ''} (cliquer pour détail)
           </summary>
           <ul className="mt-2 space-y-1 text-xs text-muted">
-            {unmappedEtfs.map((u) => (
-              <li key={u.isin} className="flex items-center justify-between gap-3">
-                <span className="text-secondary truncate">
-                  <code className="text-muted">{u.isin}</code> · {u.name}
+            {unmappedAll.map((u, i) => (
+              <li key={`${u.isin || u.name}-${i}`} className="flex items-center justify-between gap-3">
+                <span className="text-secondary truncate flex-1">
+                  {u.isin && <code className="text-muted mr-1.5">{u.isin}</code>}
+                  {u.name}
+                  <span className="text-muted ml-1.5">— {u.reason}</span>
                 </span>
                 <span className="financial-value text-secondary flex-shrink-0">
                   {formatCurrency(u.value, 'EUR', { decimals: 0 })}
@@ -62,7 +64,8 @@ export function FiabiliteBadge({ fiabilite, unmappedEtfs }: Props) {
             ))}
           </ul>
           <p className="mt-2 text-[10px] text-muted leading-relaxed">
-            Pour améliorer la précision : ajoute la composition de ces ETF dans <code>lib/analyse/etfCompositions.ts</code>.
+            Pour atteindre 100 % : (a) ajouter les ISIN d&apos;ETF manquants dans <code>lib/analyse/etfCompositions.ts</code> ;
+            (b) cliquer « Actualiser les prix » pour relancer la résolution Yahoo des actions sans secteur/pays.
           </p>
         </details>
       )}

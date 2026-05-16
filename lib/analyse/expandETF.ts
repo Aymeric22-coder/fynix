@@ -60,12 +60,21 @@ export interface GeoExposure {
 export interface ExpansionResult {
   sectorExposures: SectorExposure[]
   geoExposures:    GeoExposure[]
-  /** Valeur totale passée en revue. */
+  /** Valeur totale analysable (portefeuille hors crypto). Sert de
+   *  dénominateur pour la fiabilité ET les pourcentages. */
   totalValue:      number
-  /** Valeur identifiée précisément (ETF mappé OU action avec sector/country). */
+  /** Valeur identifiée précisément (ETF mappé OU action avec sector/country
+   *  OU SCPI/metal). Dénominateur pour la fiabilité. */
   identifiedValue: number
   /** ISIN d'ETF non présents dans ETF_COMPOSITIONS. */
   unmappedEtfs:    Array<{ isin: string; name: string; value: number }>
+  /** Positions non identifiées (actions + ETFs + autres) — utile à
+   *  l'utilisateur pour atteindre 100 % de fiabilité. */
+  unmappedAll:     Array<{ isin: string; name: string; value: number; reason: string }>
+  /** Valeur totale crypto du portefeuille (exclue des sect/geo). */
+  cryptoTotal:     number
+  /** Positions crypto avec leur valeur (pour la section dédiée). */
+  cryptoPositions: Array<{ isin: string; name: string; value: number }>
 }
 
 const SECTOR_FALLBACK_LABELS = new Set([
@@ -102,8 +111,11 @@ export function expandPositions(
   const sectorExposures: SectorExposure[] = []
   const geoExposures:    GeoExposure[]    = []
   const unmappedEtfs: Array<{ isin: string; name: string; value: number }> = []
+  const unmappedAll:  Array<{ isin: string; name: string; value: number; reason: string }> = []
+  const cryptoPositions: Array<{ isin: string; name: string; value: number }> = []
   let totalValue      = 0
   let identifiedValue = 0
+  let cryptoTotal     = 0
 
   // Pattern de détection des trackers métaux précieux par nom — couvre
   // les WisdomTree / iShares / Invesco / Amundi / Lyxor / Xtrackers
@@ -113,18 +125,32 @@ export function expandPositions(
   for (const pos of positions) {
     const v = pos.current_value
     if (v <= 0) continue
+
+    // ── Cas spécial : CRYPTO ─────────────────────────────────────
+    // Volontairement EXCLUE des analyses sectorielle et géographique
+    // (la crypto fausse l'analyse — pas de "secteur" ni de "pays").
+    // Trackée dans cryptoPositions pour la section dédiée /analyse.
+    if (pos.asset_type === 'crypto') {
+      cryptoTotal += v
+      cryptoPositions.push({ isin: pos.isin, name: pos.name, value: v })
+      continue   // pas de totalValue, pas d'expositions
+    }
+
     totalValue += v
 
     // ── Cas 0 : reroute métaux précieux mal classés ───────────────
     // Un ETF "Physical Gold" stocké asset_type='etf' n'a aucune compo
     // sectorielle d'entreprises — on le bascule en 'metal' avant la
     // cascade ETF pour ne pas tomber en "Non mappé".
+    //
+    // Métaux IN sectoriel ('Matières premières') mais OUT géo (l'or n'est
+    // pas une exposition pays, il est stocké globalement). On comptabilise
+    // dans identifiedValue (côté sect) mais on n'ajoute pas de geoExposure.
     const isMetalByName = pos.asset_type !== 'metal' && METAL_NAME_RE.test(pos.name)
     if (pos.asset_type === 'metal' || isMetalByName) {
       identifiedValue += v
       sectorExposures.push({ secteur: 'Matières premières', value: v, source: pos.name })
-      // Zone 'Global' : l'or est stocké worldwide, pas un pays spécifique.
-      geoExposures.push({ zone: 'Global', value: v, source: pos.name, pays: null })
+      // Pas de geoExposures.push() — les métaux sont exclus de la géo.
       continue
     }
 
@@ -164,6 +190,7 @@ export function expandPositions(
     // ── Cas 2 : ETF NON référencé (ni par ISIN ni par nom) ────────
     if (pos.asset_type === 'etf') {
       unmappedEtfs.push({ isin: pos.isin, name: pos.name, value: v })
+      unmappedAll.push({ isin: pos.isin, name: pos.name, value: v, reason: 'ETF non référencé' })
       sectorExposures.push({ secteur: 'Non mappé', value: v, source: pos.name })
       geoExposures.push({ zone: 'Non mappé', value: v, source: pos.name, pays: null })
       continue
@@ -193,20 +220,17 @@ export function expandPositions(
         })
         geoExposures.push({ zone: geoZone(paysRaw) as string, value: v, source: pos.name, pays: paysRaw })
       } else {
+        const reason = !secteurRaw && !paysRaw ? 'Action sans secteur ni pays'
+          : !secteurRaw ? 'Action sans secteur' : 'Action sans pays'
+        unmappedAll.push({ isin: pos.isin, name: pos.name, value: v, reason })
         sectorExposures.push({ secteur: 'Non mappé', value: v, source: pos.name })
         geoExposures.push({ zone: 'Non mappé', value: v, source: pos.name, pays: null })
       }
       continue
     }
 
-    // ── Cas 6 : crypto / obligataire / unknown ────────────────────
-    if (pos.asset_type === 'crypto') {
-      identifiedValue += v
-      sectorExposures.push({ secteur: 'Crypto', value: v, source: pos.name })
-      // Crypto = actif décentralisé sans pays → zone 'Global'
-      geoExposures.push({ zone: 'Global', value: v, source: pos.name, pays: null })
-      continue
-    }
+    // ── Cas 6 : obligataire / unknown ─────────────────────────────
+    // (crypto déjà traitée en haut de la boucle et exclue du flux)
     if (pos.asset_type === 'bond') {
       identifiedValue += v
       sectorExposures.push({ secteur: 'Obligations souveraines', value: v, source: pos.name })
@@ -215,6 +239,7 @@ export function expandPositions(
     }
 
     // Catch-all : non identifié
+    unmappedAll.push({ isin: pos.isin, name: pos.name, value: v, reason: `Type "${pos.asset_type}" non géré` })
     sectorExposures.push({ secteur: 'Non mappé', value: v, source: pos.name })
     geoExposures.push({ zone: 'Non mappé', value: v, source: pos.name, pays: null })
   }
@@ -222,7 +247,10 @@ export function expandPositions(
   // L'immobilier physique (paramètre `_biens`) est volontairement IGNORÉ
   // ici : c'est une classe d'actif distincte avec sa propre vue.
 
-  return { sectorExposures, geoExposures, totalValue, identifiedValue, unmappedEtfs }
+  return {
+    sectorExposures, geoExposures, totalValue, identifiedValue,
+    unmappedEtfs, unmappedAll, cryptoTotal, cryptoPositions,
+  }
 }
 
 /**
