@@ -79,10 +79,12 @@ function assetClassToAnalyseType(ac: string | null | undefined): AnalyseAssetTyp
   switch (ac) {
     case 'equity':      return 'stock'
     case 'etf':         return 'etf'
+    case 'fund':        return 'etf'    // fonds traditionnel = même traitement qu'un ETF
     case 'crypto':
     case 'defi':        return 'crypto'
     case 'bond':
     case 'private_debt': return 'bond'
+    case 'metal':       return 'metal'  // or / argent / métaux précieux physiques
     case 'scpi':
     case 'opci':
     case 'siic':

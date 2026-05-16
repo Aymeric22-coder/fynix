@@ -85,6 +85,7 @@ const ASSET_LABEL: Record<AnalyseAssetType, string> = {
   crypto:  'Crypto',
   bond:    'Obligataire',
   scpi:    'Immobilier papier',
+  metal:   'Métaux précieux',
   unknown: 'Non classé',
 }
 

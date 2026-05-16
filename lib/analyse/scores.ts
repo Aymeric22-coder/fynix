@@ -102,6 +102,7 @@ const RISQUE_PAR_CLASSE: Record<AnalyseAssetType, number> = {
   crypto:  95,
   bond:    10,
   scpi:    25,    // SCPI/REIT/SIIC ≈ immobilier financier
+  metal:   30,    // or = volatilité modérée, valeur refuge mais peut chuter
   unknown:  0,
 }
 

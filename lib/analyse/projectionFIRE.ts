@@ -30,7 +30,8 @@ const RENDEMENT_PAR_CLASSE: Record<AnalyseAssetType, number> = {
   etf:     7,
   bond:    3,
   scpi:    5,    // SCPI/REIT/SIIC
-  crypto:  0,    // exclu : ne contribue pas au rendement central
+  metal:   2,   // or & métaux précieux : protection inflation, rendement modeste
+  crypto:  0,   // exclu : ne contribue pas au rendement central
   unknown: 0,
 }
 const RENDEMENT_IMMO_DIRECT = 6

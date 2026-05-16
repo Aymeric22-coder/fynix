@@ -11,6 +11,7 @@ export type AnalyseAssetType =
   | 'crypto'
   | 'bond'
   | 'scpi'
+  | 'metal'      // or, argent, platine, palladium et trackers de matières premières
   | 'unknown'
 
 /**
@@ -244,7 +245,8 @@ export const CLASSE_COLOR: Record<string, string> = {
   Actions:      '#38BDF8',     // bleu ciel
   'ETF / Fonds':'#10B981',     // emerald (cohérent avec accent app)
   Crypto:       '#A78BFA',     // violet
-  Immobilier:   '#E8B84B',     // or (seul écart visuel — utile pour distinguer immo)
+  Immobilier:   '#E8B84B',     // or
   Cash:         '#71717a',     // muted
   Obligataire:  '#F97316',     // orange
+  Métaux:       '#facc15',     // jaune doré (or, argent, platine)
 }

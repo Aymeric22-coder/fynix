@@ -295,6 +295,7 @@ function repartitionClasses(positions: EnrichedPosition[], totalImmo: number, to
     crypto:  'Crypto',
     bond:    'Obligataire',
     scpi:    'Immobilier',   // SCPI / OPCI / REIT en positions → bucket Immobilier
+    metal:   'Métaux',       // or, argent, platine, palladium
     unknown: 'Cash',         // sous-catégorisé pour éviter une bucket fantôme
   }
   for (const p of positions) {

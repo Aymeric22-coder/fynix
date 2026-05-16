@@ -102,6 +102,51 @@ describe('expandPositions — actions individuelles', () => {
   })
 })
 
+describe('expandPositions — métaux précieux (or, argent…)', () => {
+  it('asset_type=metal → secteur "Matières premières", zone "Autres"', () => {
+    const r = expandPositions([
+      pos({ asset_type: 'metal', name: 'WisdomTree Physical Gold', current_value: 2000 }),
+    ])
+    expect(r.identifiedValue).toBe(2000)
+    expect(r.sectorExposures[0]).toMatchObject({ secteur: 'Matières premières', value: 2000 })
+    expect(r.geoExposures[0]).toMatchObject({ zone: 'Autres', value: 2000 })
+  })
+
+  it('ETF "Physical Gold" mal classé en etf → reroute vers metal par nom', () => {
+    const r = expandPositions([
+      pos({ asset_type: 'etf', name: 'iShares Physical Gold ETC', current_value: 5000 }),
+    ])
+    expect(r.identifiedValue).toBe(5000)
+    expect(r.unmappedEtfs).toHaveLength(0)
+    expect(r.sectorExposures[0]?.secteur).toBe('Matières premières')
+  })
+
+  it('matche aussi Silver / Platinum / "Or Physique"', () => {
+    const r = expandPositions([
+      pos({ asset_type: 'etf', name: 'Invesco Physical Silver', current_value: 1000 }),
+      pos({ asset_type: 'etf', name: 'WisdomTree Physical Platinum', current_value: 500 }),
+      pos({ asset_type: 'etf', name: 'Or Physique Amundi', current_value: 800 }),
+    ])
+    expect(r.identifiedValue).toBe(2300)
+    expect(r.sectorExposures.every((e) => e.secteur === 'Matières premières')).toBe(true)
+  })
+
+  it('ne matche PAS les noms qui contiennent "gold" hors contexte métal', () => {
+    // "Goldman Sachs" ne doit PAS être confondu avec un tracker or.
+    // Le pattern utilise \b autour de "gold" → "Goldman" matche... à corriger ?
+    // Test sentinelle : si Goldman matche, c'est un faux positif à régler.
+    const r = expandPositions([
+      pos({ asset_type: 'stock', name: 'Goldman Sachs', sector: 'Financial Services', country: 'United States', current_value: 1000 }),
+    ])
+    // Actuellement le pattern \bgold\b matche "Goldman" car \b est entre 'd' et 'm'
+    // (deux alphanumériques) → non, \b matche entre word-char et non-word-char.
+    // "Goldman" → g-o-l-d-m-a-n : \bgold\b cherche un word-boundary après 'd',
+    // mais 'd' et 'm' sont tous les deux alphanumériques donc PAS de boundary.
+    // Donc Goldman ne matche pas. Cette ligne reste en action.
+    expect(r.sectorExposures[0]?.secteur).toBe('Finance')
+  })
+})
+
 describe('expandPositions — SCPI / immo papier', () => {
   it('classe en Immobilier + zone du pays', () => {
     const r = expandPositions([

@@ -105,10 +105,27 @@ export function expandPositions(
   let totalValue      = 0
   let identifiedValue = 0
 
+  // Pattern de détection des trackers métaux précieux par nom — couvre
+  // les WisdomTree / iShares / Invesco / Amundi / Lyxor / Xtrackers
+  // Physical Gold/Silver/Platinum et leurs variantes françaises.
+  const METAL_NAME_RE = /\b(gold|silver|platinum|palladium)\b|physical\s*gold|physical\s*silver|physical\s*precious|or\s*physique|gold\s*etc/i
+
   for (const pos of positions) {
     const v = pos.current_value
     if (v <= 0) continue
     totalValue += v
+
+    // ── Cas 0 : reroute métaux précieux mal classés ───────────────
+    // Un ETF "Physical Gold" stocké asset_type='etf' n'a aucune compo
+    // sectorielle d'entreprises — on le bascule en 'metal' avant la
+    // cascade ETF pour ne pas tomber en "Non mappé".
+    const isMetalByName = pos.asset_type !== 'metal' && METAL_NAME_RE.test(pos.name)
+    if (pos.asset_type === 'metal' || isMetalByName) {
+      identifiedValue += v
+      sectorExposures.push({ secteur: 'Matières premières', value: v, source: pos.name })
+      geoExposures.push({ zone: 'Autres', value: v, source: pos.name, pays: null })
+      continue
+    }
 
     // ── Cas 1a : ETF référencé par ISIN → expansion par % ─────────
     let compo = pos.isin ? getEtfComposition(pos.isin) : null
@@ -159,6 +176,9 @@ export function expandPositions(
       geoExposures.push({ zone: z, value: v, source: pos.name, pays: pos.country })
       continue
     }
+
+    // Note : les métaux précieux sont gérés en Cas 0 (tout en haut), pas
+    // ici, pour intercepter aussi les ETFs "Physical Gold" mal classés.
 
     // ── Cas 3/4 : action avec / sans données exploitables ─────────
     if (pos.asset_type === 'stock') {
