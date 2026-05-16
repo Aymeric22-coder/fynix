@@ -1,16 +1,15 @@
 /**
- * Section "Analyse sectorielle" : barres horizontales + alertes de
- * surexposition (> 30 %).
+ * Section "Analyse sectorielle" : liste de barres horizontales HTML/CSS
+ * (pas Recharts pour éviter le wrap des labels SVG quand la barre est
+ * trop courte). Layout 3 colonnes : nom | barre | %.
  *
- * Recharts BarChart layout="vertical" pour des barres horizontales.
+ * Bande rouge si secteur > 30 % (alerte de surexposition).
  */
 'use client'
 
-import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, Cell, ResponsiveContainer, LabelList,
-} from 'recharts'
 import { AlertTriangle } from 'lucide-react'
-import { formatCurrency, formatPercent } from '@/lib/utils/format'
+import { cn } from '@/lib/utils/format'
+import { formatPercent } from '@/lib/utils/format'
 import { MiniRing } from './MiniRing'
 import type { SecteurAlloc } from '@/types/analyse'
 
@@ -20,24 +19,6 @@ interface Props {
 }
 
 const SECTOR_ALERT_PCT = 30
-
-function CustomTooltip({ active, payload }: { active?: boolean; payload?: Array<{ payload: SecteurAlloc }> }) {
-  if (!active || !payload?.[0]) return null
-  const d = payload[0].payload
-  return (
-    <div className="bg-surface border border-border rounded-lg px-3 py-2 shadow-card text-xs space-y-1 max-w-xs">
-      <p className="text-primary font-medium">{d.secteur}</p>
-      <p className="text-accent financial-value">
-        {formatCurrency(d.valeur, 'EUR', { compact: true })} · {formatPercent(d.pourcentage, { decimals: 1 })}
-      </p>
-      {d.positions.length > 0 && (
-        <p className="text-muted leading-relaxed">
-          {d.positions.slice(0, 5).join(', ')}{d.positions.length > 5 ? ' …' : ''}
-        </p>
-      )}
-    </div>
-  )
-}
 
 export function SectorielleChart({ buckets, score }: Props) {
   const alertes = buckets.filter((b) => b.alerte)
@@ -56,32 +37,17 @@ export function SectorielleChart({ buckets, score }: Props) {
         <p className="text-sm text-secondary text-center py-8">Aucune position à analyser.</p>
       ) : (
         <>
-          <div style={{ width: '100%', height: Math.max(180, buckets.length * 30) }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={buckets} layout="vertical" margin={{ left: 0, right: 50, top: 4, bottom: 4 }}>
-                {/* Axe X visible en % pour donner une échelle de référence (0-100). */}
-                <XAxis
-                  type="number" domain={[0, 100]}
-                  tickFormatter={(v) => `${v}%`}
-                  tick={{ fill: '#71717a', fontSize: 10 }}
-                />
-                <YAxis dataKey="secteur" type="category" width={140} tick={{ fill: '#71717a', fontSize: 11 }} />
-                <Tooltip cursor={{ fill: '#181818' }} content={<CustomTooltip />} />
-                {/* Bar dimensionnée par % (et plus par valeur €) — directement comparable. */}
-                <Bar dataKey="pourcentage" radius={[0, 4, 4, 0]}>
-                  {buckets.map((b, i) => (
-                    <Cell key={i} fill={b.alerte ? '#ef4444' : '#10b981'} />
-                  ))}
-                  <LabelList
-                    dataKey="pourcentage"
-                    position="right"
-                    formatter={(v: number) => `${v.toFixed(1)} %`}
-                    style={{ fill: '#f4f4f5', fontSize: 11, fontWeight: 500 }}
-                  />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          <BarList
+            rows={buckets.map((b) => ({
+              key:    b.secteur,
+              label:  b.secteur,
+              pct:    b.pourcentage,
+              alerte: b.alerte,
+              tooltip: b.positions.length > 0 ? b.positions.slice(0, 5).join(', ') : undefined,
+            }))}
+            colorAlerte="bg-danger"
+            colorNormal="bg-accent"
+          />
 
           {alertes.length > 0 && (
             <div className="mt-4 space-y-2">
@@ -97,6 +63,55 @@ export function SectorielleChart({ buckets, score }: Props) {
           )}
         </>
       )}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Composant interne : liste de barres horizontales en HTML/CSS
+// (réutilisé aussi par GeographiqueChart)
+// ─────────────────────────────────────────────────────────────────
+
+export interface BarListRow {
+  key:      string
+  label:    string
+  pct:      number
+  alerte?:  boolean
+  tooltip?: string
+}
+
+export function BarList({
+  rows, colorNormal, colorAlerte,
+}: {
+  rows:        BarListRow[]
+  colorNormal: string    // ex: 'bg-accent'
+  colorAlerte: string    // ex: 'bg-danger'
+}) {
+  return (
+    <div className="space-y-2">
+      {rows.map((r) => (
+        <div
+          key={r.key}
+          className="flex items-center gap-3 text-sm"
+          title={r.tooltip}
+        >
+          {/* Label : 35-40 % du composant, tronqué si très long */}
+          <span className="w-32 sm:w-36 text-right text-secondary truncate flex-shrink-0">
+            {r.label}
+          </span>
+          {/* Track + fill */}
+          <div className="flex-1 h-2.5 bg-border rounded-full overflow-hidden min-w-0">
+            <div
+              className={cn('h-full rounded-full transition-all duration-1000', r.alerte ? colorAlerte : colorNormal)}
+              style={{ width: `${Math.max(0, Math.min(100, r.pct))}%` }}
+            />
+          </div>
+          {/* % à droite, jamais wrappé (whitespace-nowrap + width fixe) */}
+          <span className="w-16 text-right financial-value text-primary text-xs whitespace-nowrap flex-shrink-0">
+            {r.pct.toFixed(1)} %
+          </span>
+        </div>
+      ))}
     </div>
   )
 }

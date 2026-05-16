@@ -1,15 +1,15 @@
 /**
- * Section "Analyse géographique" : barres horizontales par zone
- * (Amérique du Nord / Europe / Asie / …) + alertes > 50 %.
+ * Section "Analyse géographique" : liste de barres horizontales HTML/CSS
+ * (même approche que SectorielleChart). Réutilise le composant BarList.
+ *
+ * Bande orange si zone > 50 % (concentration géographique).
  */
 'use client'
 
-import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, Cell, ResponsiveContainer, LabelList,
-} from 'recharts'
 import { AlertTriangle } from 'lucide-react'
-import { formatCurrency, formatPercent } from '@/lib/utils/format'
+import { formatPercent } from '@/lib/utils/format'
 import { MiniRing } from './MiniRing'
+import { BarList } from './SectorielleChart'
 import type { GeoAlloc } from '@/types/analyse'
 
 interface Props {
@@ -18,22 +18,6 @@ interface Props {
 }
 
 const GEO_ALERT_PCT = 50
-
-function CustomTooltip({ active, payload }: { active?: boolean; payload?: Array<{ payload: GeoAlloc }> }) {
-  if (!active || !payload?.[0]) return null
-  const d = payload[0].payload
-  return (
-    <div className="bg-surface border border-border rounded-lg px-3 py-2 shadow-card text-xs space-y-1 max-w-xs">
-      <p className="text-primary font-medium">{d.zone}</p>
-      <p className="text-accent financial-value">
-        {formatCurrency(d.valeur, 'EUR', { compact: true })} · {formatPercent(d.pourcentage, { decimals: 1 })}
-      </p>
-      {d.pays.length > 0 && (
-        <p className="text-muted leading-relaxed">{d.pays.slice(0, 8).join(', ')}</p>
-      )}
-    </div>
-  )
-}
 
 export function GeographiqueChart({ buckets, score }: Props) {
   const alertes = buckets.filter((b) => b.alerte)
@@ -52,30 +36,17 @@ export function GeographiqueChart({ buckets, score }: Props) {
         <p className="text-sm text-secondary text-center py-8">Aucune position à analyser.</p>
       ) : (
         <>
-          <div style={{ width: '100%', height: Math.max(180, buckets.length * 30) }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={buckets} layout="vertical" margin={{ left: 0, right: 50, top: 4, bottom: 4 }}>
-                <XAxis
-                  type="number" domain={[0, 100]}
-                  tickFormatter={(v) => `${v}%`}
-                  tick={{ fill: '#71717a', fontSize: 10 }}
-                />
-                <YAxis dataKey="zone" type="category" width={140} tick={{ fill: '#71717a', fontSize: 11 }} />
-                <Tooltip cursor={{ fill: '#181818' }} content={<CustomTooltip />} />
-                <Bar dataKey="pourcentage" radius={[0, 4, 4, 0]}>
-                  {buckets.map((b, i) => (
-                    <Cell key={i} fill={b.alerte ? '#f97316' : '#3b82f6'} />
-                  ))}
-                  <LabelList
-                    dataKey="pourcentage"
-                    position="right"
-                    formatter={(v: number) => `${v.toFixed(1)} %`}
-                    style={{ fill: '#f4f4f5', fontSize: 11, fontWeight: 500 }}
-                  />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          <BarList
+            rows={buckets.map((b) => ({
+              key:    b.zone,
+              label:  b.zone,
+              pct:    b.pourcentage,
+              alerte: b.alerte,
+              tooltip: b.pays.length > 0 ? b.pays.slice(0, 8).join(', ') : undefined,
+            }))}
+            colorAlerte="bg-warning"
+            colorNormal="bg-blue-400"
+          />
 
           {alertes.length > 0 && (
             <div className="mt-4 space-y-2">
