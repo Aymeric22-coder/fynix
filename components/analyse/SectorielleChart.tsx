@@ -7,7 +7,7 @@
 'use client'
 
 import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, Cell, ResponsiveContainer,
+  BarChart, Bar, XAxis, YAxis, Tooltip, Cell, ResponsiveContainer, LabelList,
 } from 'recharts'
 import { AlertTriangle } from 'lucide-react'
 import { formatCurrency, formatPercent } from '@/lib/utils/format'
@@ -58,14 +58,26 @@ export function SectorielleChart({ buckets, score }: Props) {
         <>
           <div style={{ width: '100%', height: Math.max(180, buckets.length * 30) }}>
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={buckets} layout="vertical" margin={{ left: 0, right: 30, top: 4, bottom: 4 }}>
-                <XAxis type="number" hide domain={[0, 'dataMax']} />
+              <BarChart data={buckets} layout="vertical" margin={{ left: 0, right: 50, top: 4, bottom: 4 }}>
+                {/* Axe X visible en % pour donner une échelle de référence (0-100). */}
+                <XAxis
+                  type="number" domain={[0, 100]}
+                  tickFormatter={(v) => `${v}%`}
+                  tick={{ fill: '#71717a', fontSize: 10 }}
+                />
                 <YAxis dataKey="secteur" type="category" width={140} tick={{ fill: '#71717a', fontSize: 11 }} />
                 <Tooltip cursor={{ fill: '#181818' }} content={<CustomTooltip />} />
-                <Bar dataKey="valeur" radius={[0, 4, 4, 0]}>
+                {/* Bar dimensionnée par % (et plus par valeur €) — directement comparable. */}
+                <Bar dataKey="pourcentage" radius={[0, 4, 4, 0]}>
                   {buckets.map((b, i) => (
                     <Cell key={i} fill={b.alerte ? '#ef4444' : '#10b981'} />
                   ))}
+                  <LabelList
+                    dataKey="pourcentage"
+                    position="right"
+                    formatter={(v: number) => `${v.toFixed(1)} %`}
+                    style={{ fill: '#f4f4f5', fontSize: 11, fontWeight: 500 }}
+                  />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
