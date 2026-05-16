@@ -203,6 +203,20 @@ export interface Score {
   label:   string                     // ex: "Bien diversifié"
   /** Texte court qui explique pourquoi ce score (affiché en sous-titre). */
   details?: string
+  /** Explication détaillée pour la modal de détail (cliquer sur le score). */
+  explanation?: ScoreExplanation
+}
+
+/** Détail d'un score affiché dans la modal au clic. */
+export interface ScoreExplanation {
+  /** Formule utilisée (texte humain, pas du code). */
+  formule:    string
+  /** Inputs concrets qui ont alimenté la formule (label → valeur affichable). */
+  inputs:     Array<{ label: string; value: string; highlight?: boolean }>
+  /** Lecture / interprétation : pourquoi ce niveau, quoi en faire. */
+  lecture:    string
+  /** Action concrète suggérée (optionnel — déjà couvert par les recos). */
+  action?:    string
 }
 
 /** Snapshot des 5 scores d'intelligence. */

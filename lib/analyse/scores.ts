@@ -85,6 +85,33 @@ export function calculerDiversification(p: PatrimoineComplet): Score {
   return {
     value, niveau, label,
     details: `${nbClasses} classe${nbClasses > 1 ? 's' : ''} · max secteur ${maxSecteur.toFixed(0)} % · max zone ${maxZone.toFixed(0)} %`,
+    explanation: {
+      formule:
+        'Score = (sect × 0.35) + (géo × 0.35) + (classes × 0.30)\n' +
+        '  • sect    = 100 − 2 × % du plus gros secteur\n' +
+        '  • géo     = 100 − 1.5 × % de la plus grosse zone\n' +
+        '  • classes = barème (1→20, 2→50, 3→75, 4+→100)',
+      inputs: [
+        { label: 'Plus gros secteur',  value: `${(p.repartitionSectorielle[0]?.secteur ?? '—')} : ${maxSecteur.toFixed(1)} %` },
+        { label: 'Plus grosse zone',   value: `${(p.repartitionGeo[0]?.zone ?? '—')} : ${maxZone.toFixed(1)} %` },
+        { label: 'Nombre de classes',  value: `${nbClasses}` },
+        { label: 'Score sectoriel',    value: `${sSect.toFixed(0)} / 100` },
+        { label: 'Score géographique', value: `${sGeo.toFixed(0)} / 100` },
+        { label: 'Score classes',      value: `${sCls} / 100` },
+        { label: 'Score final',        value: `${value} / 100`, highlight: true },
+      ],
+      lecture:
+        value >= 80
+          ? 'Excellent équilibre entre secteurs, zones et classes d\'actifs. Un choc localisé aurait peu d\'impact.'
+          : value >= 60
+          ? 'Diversification correcte mais perfectible. Vérifiez qu\'aucun secteur ne dépasse 30 % et aucune zone 50 %.'
+          : value >= 40
+          ? 'Concentration excessive sur un secteur ou une zone. Risque d\'effondrement si choc localisé.'
+          : 'Très peu diversifié. Une crise sur un secteur ou un pays mettrait en péril une grande partie du patrimoine.',
+      action: value < 60
+        ? `Réduisez l'exposition à ${p.repartitionSectorielle[0]?.secteur ?? 'votre plus gros secteur'} (actuellement ${maxSecteur.toFixed(0)} %, cible < 30 %) en ajoutant des ETF sur d'autres secteurs.`
+        : undefined,
+    },
   }
 }
 
@@ -144,7 +171,29 @@ export function calculerCoherenceProfil(p: PatrimoineComplet): Score {
     details = `Risque réel ${risqueReel}/100 vs profil ${p.fireInputs.risk_score}/100`
   }
 
-  return { value, niveau, label, details }
+  return {
+    value, niveau, label, details,
+    explanation: {
+      formule: 'Score = 100 − |risque déclaré (profil) − risque réel (portefeuille)|\nRisque réel = moyenne pondérée par classe : crypto 95, stock 60, etf 45, metal 30, scpi 25, bond 10, cash 0',
+      inputs: [
+        { label: 'Risque déclaré (profil)', value: `${p.fireInputs.risk_score} / 100` },
+        { label: 'Risque réel (portefeuille)', value: `${risqueReel} / 100` },
+        { label: 'Écart', value: `${ecart > 0 ? '+' : ''}${ecart}` },
+        { label: 'Score final', value: `${value} / 100`, highlight: true },
+      ],
+      lecture:
+        value >= 70
+          ? 'Votre portefeuille reflète bien votre tolérance au risque déclarée. Pas de rééquilibrage nécessaire.'
+          : ecart > 0
+          ? `Votre portefeuille prend ${Math.abs(ecart)} points de risque DE PLUS que votre profil. Un krach pourrait être psychologiquement difficile à supporter et vous pousser à vendre au pire moment.`
+          : `Votre portefeuille prend ${Math.abs(ecart)} points de risque DE MOINS que votre profil. Vous laissez du rendement sur la table par rapport à vos objectifs.`,
+      action: value < 70
+        ? ecart > 0
+          ? 'Réduisez les actifs risqués (crypto, actions individuelles) au profit d\'ETF diversifiés et d\'obligations.'
+          : 'Augmentez la part d\'ETF actions monde / Nasdaq, ou ajoutez de la crypto modérément pour matcher votre tolérance déclarée.'
+        : undefined,
+    },
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -202,9 +251,38 @@ export function calculerProgressionFIRE(p: PatrimoineComplet): Score {
   const ecartTexte = anneesNec >= 99
     ? 'objectif inatteignable au rythme actuel'
     : `${anneesNec.toFixed(1)} ans nécessaires vs ${anneesObjectif} d\'objectif`
+  const manque = Math.max(0, cible - actuel)
   return {
     value, niveau, label,
     details: `${cheminPct} % du chemin · ${ecartTexte}`,
+    explanation: {
+      formule:
+        'Cible FIRE = revenu passif × 12 × 25 (règle des 4 %)\n' +
+        'Années nécessaires = simulation intérêts composés à 7 %/an avec votre épargne mensuelle\n' +
+        'Score = 100 si arrivé, 80+ si dans les temps, dégradé selon le retard',
+      inputs: [
+        { label: 'Patrimoine net actuel', value: `${actuel.toFixed(0)} €` },
+        { label: 'Cible FIRE',            value: `${cible.toFixed(0)} €` },
+        { label: 'Reste à constituer',    value: `${manque.toFixed(0)} €` },
+        { label: 'Épargne mensuelle',     value: `${epargne_mensuelle.toFixed(0)} € / mois` },
+        { label: 'Âge actuel',            value: `${age} ans` },
+        { label: 'Âge cible FIRE',        value: `${age_cible} ans (${anneesObjectif} ans pour y arriver)` },
+        { label: 'Années nécessaires',    value: anneesNec >= 99 ? '∞ (inatteignable)' : `${anneesNec.toFixed(1)} ans` },
+        { label: 'Chemin parcouru',       value: `${cheminPct} %` },
+        { label: 'Score final',           value: `${value} / 100`, highlight: true },
+      ],
+      lecture:
+        value >= 80
+          ? `Sur la bonne trajectoire. À ce rythme vous atteindrez l'indépendance vers ${Math.round(age + anneesNec)} ans (${anneesObjectif - Math.round(anneesNec)} ans d'avance sur votre objectif).`
+          : value >= 60
+          ? 'Trajectoire serrée — vous êtes sur le fil. Une petite augmentation de l\'épargne sécuriserait l\'objectif.'
+          : value >= 40
+          ? `Objectif décalé de ${Math.round(anneesNec - anneesObjectif)} ans. Sans changement, vous atteindrez l'indépendance vers ${Math.round(age + anneesNec)} ans au lieu de ${age_cible}.`
+          : 'Très en retard. Sans augmenter significativement votre épargne (ou réduire la cible), l\'objectif FIRE est inatteignable.',
+      action: value < 80 && anneesNec < 99
+        ? 'Utilisez les sliders de la projection FIRE (ci-dessous) pour voir l\'impact d\'une augmentation de votre épargne mensuelle sur l\'âge d\'indépendance.'
+        : undefined,
+    },
   }
 }
 
@@ -255,9 +333,40 @@ export function calculerSolidite(p: PatrimoineComplet): Score {
     value >= 40 ? 'Résistance limitée' :
     'Portefeuille fragile'
 
+  const moisCouverts = charges > 0 ? p.totalCash / charges : 0
   return {
     value, niveau, label,
     details: `${coussinTxt} · refuge ${partRefuge.toFixed(0)} % · krach -${partImpact.toFixed(0)} % du net`,
+    explanation: {
+      formule:
+        'Score base 60, ajusté par 4 facteurs :\n' +
+        '  a) Coussin cash : < 6 mois charges → −20, > 12 mois → +10\n' +
+        '  b) Actifs refuge (immo + cash) : > 40 % → +20, < 15 % → −20\n' +
+        '  c) Dettes : > 60 % du brut → −30\n' +
+        '  d) Simulation krach −30 % sur actions/ETF/crypto : impact > 30 % du net → −10, < 10 % → +10',
+      inputs: [
+        { label: 'Cash disponible',     value: `${p.totalCash.toFixed(0)} €` },
+        { label: 'Charges mensuelles',  value: charges > 0 ? `${charges.toFixed(0)} € / mois` : 'Non renseigné' },
+        { label: 'Coussin de sécurité', value: charges > 0 ? `${moisCouverts.toFixed(1)} mois couverts (cible 6-12)` : '—' },
+        { label: 'Actifs refuge',       value: `${partRefuge.toFixed(0)} % (immo + cash)` },
+        { label: 'Ratio dettes',        value: `${(ratioDettes * 100).toFixed(0)} % du brut` },
+        { label: 'Impact krach −30 %',  value: `${impactKrach.toFixed(0)} € (soit ${partImpact.toFixed(0)} % du net)` },
+        { label: 'Score final',         value: `${value} / 100`, highlight: true },
+      ],
+      lecture:
+        value >= 80
+          ? 'Portefeuille très résilient. Vous traverserez un krach sans devoir vendre dans la panique.'
+          : value >= 60
+          ? 'Solide. Quelques ajustements (coussin, refuge) renforceraient la résistance.'
+          : value >= 40
+          ? 'Résistance limitée. Un krach prolongé ou un coup dur personnel mettrait le patrimoine en tension.'
+          : 'Portefeuille fragile. Risque d\'avoir à vendre au pire moment ou de basculer dans la précarité en cas d\'imprévu.',
+      action: value < 60
+        ? moisCouverts < 6
+          ? 'Priorité : constituer 6 mois de charges sur Livret A/LDDS avant tout nouvel investissement risqué.'
+          : 'Ajoutez de la diversification non corrélée (SCPI, oblig, immo) pour réduire la dépendance aux marchés actions.'
+        : undefined,
+    },
   }
 }
 
@@ -321,6 +430,42 @@ export function calculerEfficienceFiscale(p: PatrimoineComplet): Score {
   return {
     value, niveau, label,
     details: (detailsParts.join(' · ') || 'Aucune enveloppe déclarée') + ' · simulation, pas un conseil fiscal',
+    explanation: {
+      formule:
+        'Score base 50, ajusté par 6 règles (cf. /profil pour les enveloppes) :\n' +
+        '  a) PEA ouvert + actions EU → +25 (sinon malus −25 si actions EU > 10 k€)\n' +
+        '  b) Assurance-vie ouverte → +20 (exonération après 8 ans)\n' +
+        '  c) Actions/ETF EU hors PEA = manque à gagner fiscal (couvert par a)\n' +
+        '  d) PER ouvert si TMI > 30 % → +15 (sinon −10)\n' +
+        '  e) Cash > 5 000 € en compte courant → −15 (argent qui dort)',
+      inputs: [
+        { label: 'PEA',                  value: peaOuvert ? '✓ Ouvert' : '✗ Non ouvert' },
+        { label: 'Assurance-vie',        value: avOuverte ? '✓ Ouverte' : '✗ Non ouverte' },
+        { label: 'PER',                  value: perOuvert ? '✓ Ouvert' : '✗ Non ouvert' },
+        { label: 'Actions EU détenues',  value: `${actionsEU.toFixed(0)} €` },
+        { label: 'TMI',                  value: tmi > 0 ? `${tmi} %` : 'Non renseignée' },
+        { label: 'Cash en compte courant', value: `${compteCourant.toFixed(0)} €` },
+        { label: 'Score final',          value: `${value} / 100`, highlight: true },
+      ],
+      lecture:
+        value >= 80
+          ? 'Excellente utilisation des enveloppes fiscales. Vous optimisez votre fiscalité au maximum de ce que la loi française permet.'
+          : value >= 60
+          ? 'Bonne base. Quelques optimisations supplémentaires (PER si TMI haute, transfert PEA) pourraient encore améliorer le rendement net.'
+          : value >= 40
+          ? 'Marges d\'amélioration importantes. Certaines enveloppes manquent ou ne sont pas exploitées.'
+          : 'Enveloppes fiscales sous-exploitées. Vous payez plus d\'impôt que nécessaire sur vos plus-values et dividendes.',
+      action:
+        !peaOuvert && actionsEU > 5000
+          ? 'Ouvrez un PEA dès maintenant pour faire courir le délai d\'exonération de 5 ans (Boursorama, Fortuneo, BforBank).'
+          : !avOuverte
+          ? 'Ouvrez une assurance-vie même avec 100 € pour prendre date — l\'avantage fiscal débute après 8 ans.'
+          : tmi > 30 && !perOuvert
+          ? 'Avec une TMI > 30 %, un PER vous fait économiser ~30 % d\'impôt sur les versements.'
+          : compteCourant > 5000
+          ? 'Transférez l\'excédent au-delà de 3-5 k€ sur un Livret A (3 %) puis investissez progressivement.'
+          : undefined,
+    },
   }
 }
 

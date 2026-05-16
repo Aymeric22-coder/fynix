@@ -11,13 +11,17 @@
  */
 'use client'
 
-import { Shield, Target, Sparkles, Compass, Receipt } from 'lucide-react'
+import { useState } from 'react'
+import { Shield, Target, Sparkles, Compass, Receipt, ChevronRight } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
+import { ScoreDetailModal } from './ScoreDetailModal'
 import type { ScoresComplets, ScoreNiveau, Score } from '@/types/analyse'
 
 interface Props {
   scores: ScoresComplets
 }
+
+interface OpenScore { key: keyof ScoresComplets; title: string; score: Score }
 
 const NIVEAU_COLOR: Record<ScoreNiveau, string> = {
   vert:   'var(--color-accent)',
@@ -36,24 +40,47 @@ const SCORES_META: Array<{ key: keyof ScoresComplets; title: string; icon: Lucid
 ]
 
 export function ScoresBand({ scores }: Props) {
+  const [open, setOpen] = useState<OpenScore | null>(null)
+
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-      {SCORES_META.map(({ key, title, icon }) => (
-        <ScoreCard key={key} title={title} icon={icon} score={scores[key]} />
-      ))}
-    </div>
+    <>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        {SCORES_META.map(({ key, title, icon }) => (
+          <ScoreCard
+            key={key} title={title} icon={icon} score={scores[key]}
+            onClick={() => setOpen({ key, title, score: scores[key] })}
+          />
+        ))}
+      </div>
+      <ScoreDetailModal
+        open={open !== null}
+        onClose={() => setOpen(null)}
+        title={open?.title ?? ''}
+        score={open?.score ?? { value: null, niveau: 'gris', label: '' }}
+      />
+    </>
   )
 }
 
-function ScoreCard({ title, icon: Icon, score }: { title: string; icon: LucideIcon; score: Score }) {
+function ScoreCard({
+  title, icon: Icon, score, onClick,
+}: {
+  title: string; icon: LucideIcon; score: Score; onClick: () => void
+}) {
   const color = NIVEAU_COLOR[score.niveau]
   const value = score.value
 
   return (
-    <div className="card p-4">
+    <button
+      type="button"
+      onClick={onClick}
+      className="card p-4 text-left hover:border-border-2 hover:bg-surface-2/30 transition-colors cursor-pointer group relative w-full"
+      title="Cliquer pour voir le détail du calcul"
+    >
       <div className="flex items-center gap-1.5 text-xs text-secondary uppercase tracking-widest mb-3">
         <Icon size={11} />
-        <span className="truncate">{title}</span>
+        <span className="truncate flex-1">{title}</span>
+        <ChevronRight size={11} className="text-muted group-hover:text-secondary transition-colors" />
       </div>
       <div className="flex items-center gap-3">
         <ScoreRingMini value={value} color={color} />
@@ -66,7 +93,7 @@ function ScoreCard({ title, icon: Icon, score }: { title: string; icon: LucideIc
           )}
         </div>
       </div>
-    </div>
+    </button>
   )
 }
 
