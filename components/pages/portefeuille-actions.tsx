@@ -1,9 +1,10 @@
 'use client'
 
 import { useState } from 'react'
-import { Plus } from 'lucide-react'
+import { Plus, FileUp } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { AddPositionForm } from '@/components/forms/add-position-form'
+import { PortfolioImportCSVModal } from '@/components/portfolio/import-csv-modal'
 import type { FinancialEnvelope } from '@/types/database.types'
 
 interface Props {
@@ -11,14 +12,24 @@ interface Props {
 }
 
 export function PortefeuilleActions({ envelopes }: Props) {
-  const [open, setOpen] = useState(false)
+  const [openAdd, setOpenAdd] = useState(false)
+  const [openImport, setOpenImport] = useState(false)
   return (
     <>
-      <Button icon={Plus} onClick={() => setOpen(true)}>Ajouter une position</Button>
+      <div className="flex items-center gap-2">
+        <Button variant="secondary" icon={FileUp} onClick={() => setOpenImport(true)}>
+          Importer CSV
+        </Button>
+        <Button icon={Plus} onClick={() => setOpenAdd(true)}>Ajouter une position</Button>
+      </div>
       <AddPositionForm
-        open={open}
-        onClose={() => setOpen(false)}
+        open={openAdd}
+        onClose={() => setOpenAdd(false)}
         envelopes={envelopes}
+      />
+      <PortfolioImportCSVModal
+        open={openImport}
+        onClose={() => setOpenImport(false)}
       />
     </>
   )

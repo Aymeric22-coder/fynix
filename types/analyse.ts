@@ -72,10 +72,21 @@ export interface BienImmo {
   credit_restant:      number                  // capital restant dû (EUR)
   mensualite_credit:   number                  // mensualité (capital+intérêts+assurance) EUR/mois
   charges_annuelles:   number                  // somme charges réelles (taxe + copro + PNO + gestion)
+  /** True quand aucune ligne `property_charges` n'existe pour ce bien :
+   *  on a utilisé les valeurs par défaut (cf. lib/real-estate/defaultCharges.ts)
+   *  et le rendement est à ±10 %. L'UI affiche un bandeau d'avertissement. */
+  charges_are_estimated: boolean
   equity:              number                  // valeur - credit_restant
   rendement_brut:      number                  // % annuel brut (loyers × 12 / valeur × 100)
   rendement_net:       number                  // % annuel net (après charges)
   cashflow_mensuel:    number                  // loyer - mensualité - charges/12 (peut être négatif)
+  /** Cashflow mensuel APRÈS impôt foncier estimé. Plus pertinent que le brut
+   *  pour évaluer ce qu'on touche réellement chaque mois. */
+  cashflow_net_fiscal: number
+  /** Impôt foncier mensuel estimé (€) selon le régime et la TMI. */
+  impot_mensuel_estime: number
+  /** Taux d'effort fiscal = impôt annuel / loyer annuel × 100 (%). */
+  taux_effort_fiscal:  number
   ltv:                 number                  // 0-100, leverage ratio
   niveau_levier:       'Sans crédit' | 'Faible' | 'Modéré' | 'Fort'
   risque_immo:         number                  // 30-75
@@ -153,6 +164,10 @@ export interface ProjectionInputs {
   rendementCentral:         number      // % annuel financier
   appreciationImmoPct:      number      // %, applied to biens existants
   inflationLoyersPct:       number      // %, applied to all loyers
+  /** Inflation générale (% annuel) — indexe la cible FIRE à l'horizon.
+   *  Défaut 2 % (cible BCE). Indépendant de l'inflation des loyers
+   *  (IRL ≈ 1,5 %), qui suit son propre paramètre. */
+  inflationPct?:            number
   patrimoineFinancierActuel: number     // totalPortefeuille
   cashActuel:               number      // totalCash
   biensExistants:           BienImmo[]
@@ -255,6 +270,12 @@ export interface PatrimoineComplet {
   rendementEstime:    number
   /** Loyers + dividendes mensuels estimés. */
   revenuPassifActuel: number
+
+  /** Snapshot de projection FIRE pré-calculé côté serveur (Sprint 1).
+   *  Permet aux composants serveur (Dashboard Hero) d'afficher la
+   *  trajectoire sans rejouer la projection eux-mêmes. Null si profil
+   *  incomplet (age / age_cible / revenu_passif_cible manquants). */
+  projectionFIRESnapshot: ProjectionFIRESnapshot | null
 
   /** Sentinel : 'Conservateur' | 'Équilibré' | 'Dynamique' | 'Offensif' | 'Stratège' | null */
   profilType:    string | null
@@ -365,6 +386,30 @@ export interface Recommandation {
   impact_estime:  string | null
   /** Action concrète à mener. */
   action:         string
+}
+
+/** Snapshot léger de la projection FIRE — utilisé par le Dashboard Hero
+ *  pour afficher la trajectoire sans recalculer côté serveur ou client. */
+export interface ProjectionFIRESnapshot {
+  /** Âge auquel la projection atteint la cible — scénario MÉDIAN (rendement
+   *  central). Null si hors horizon. Conservé pour rétro-compat. */
+  age_fire_projete:           number | null
+  /** Intervalle de confiance : âge FIRE selon 3 scénarios de rendement
+   *  (central ±1,5 %). Le scénario optimiste est plus jeune (atteint plus tôt). */
+  age_fire_optimiste:         number | null
+  age_fire_median:            number | null
+  age_fire_pessimiste:        number | null
+  /** Rendement central appliqué (%) — info-bulle UI. */
+  rendement_central_pct:      number
+  /** Patrimoine projeté à l'âge cible déclaré (€, scénario médian). */
+  patrimoine_age_cible:       number
+  /** Cible FIRE = revenu_passif_cible × 12 × 25 (règle des 4 %, €).
+   *  Indexée sur l'inflation à l'horizon de l'âge cible. */
+  patrimoine_fire_cible:      number
+  /** Épargne mensuelle requise pour atteindre la cible à l'âge cible
+   *  (en supposant le rendement central). Null si déjà sur la trajectoire
+   *  ou si profil incomplet. */
+  epargne_mensuelle_necessaire: number | null
 }
 
 /** Un point de la courbe de projection FIRE (1 par année). */

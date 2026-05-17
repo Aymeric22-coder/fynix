@@ -371,7 +371,12 @@ export function projectionGlobale(inputs: ProjectionInputs): ProjectionGlobaleRe
   }
 
   // 8. Construction des points + détection âge indépendance
-  const cibleAnnuelle = inputs.revenuPassifCible * 12     // €/an
+  // La cible est indexée sur l'inflation : à l'année y, la cible mensuelle
+  // doit être revenu_passif_cible × (1 + inflation)^y pour préserver le
+  // pouvoir d'achat. Le patrimoine FIRE requis suit la règle des 25× sur
+  // cette cible indexée.
+  const inflationAnnuelle = (inputs.inflationPct ?? 2) / 100
+  const cibleAnnuelleBase = inputs.revenuPassifCible * 12  // €/an, base aujourd'hui
   let ageInd: number | null = null
   let patrimoineAgeCible    = 0
   let detailsAgeCible       = {
@@ -424,7 +429,8 @@ export function projectionGlobale(inputs: ProjectionInputs): ProjectionGlobaleRe
     })
 
     // Indépendance : on considère 4 % de retrait sur le patrimoine
-    // total + loyers nets directs ≥ cible annuelle.
+    // total + loyers nets directs ≥ cible annuelle indexée à l'année y.
+    const cibleAnnuelle = cibleAnnuelleBase * Math.pow(1 + inflationAnnuelle, y)
     const revenuPotentielAnnuel = total * 0.04 + Math.max(0, cfTotal)
     if (ageInd === null && revenuPotentielAnnuel >= cibleAnnuelle) ageInd = age
 
@@ -454,6 +460,39 @@ export function projectionGlobale(inputs: ProjectionInputs): ProjectionGlobaleRe
     rendementUtilise:       inputs.rendementCentral,
     detailsAgeCible,
     warnings,
+  }
+}
+
+/** Écart de rendement appliqué aux scénarios pessimiste / optimiste vs central. */
+export const FIRE_SCENARIO_DELTA_PCT = 1.5
+
+/**
+ * Calcule l'âge d'indépendance financière selon 3 scénarios de rendement :
+ *   - pessimiste : rendementCentral − 1,5 %
+ *   - médian    : rendementCentral (cas de base)
+ *   - optimiste : rendementCentral + 1,5 %
+ *
+ * Retourne aussi le patrimoine projeté à l'âge cible dans le scénario médian.
+ * Utile pour afficher un intervalle de confiance ("entre X et Y ans") plutôt
+ * qu'un chiffre fixe trompeur.
+ */
+export function projectionFIREIntervalle(base: ProjectionInputs): {
+  age_fire_pessimiste: number | null
+  age_fire_median:     number | null
+  age_fire_optimiste:  number | null
+  patrimoine_age_cible_median: number
+  rendement_central_pct: number
+} {
+  const central = base.rendementCentral
+  const pessimist = projectionGlobale({ ...base, rendementCentral: Math.max(0, central - FIRE_SCENARIO_DELTA_PCT) })
+  const median    = projectionGlobale({ ...base, rendementCentral: central })
+  const optimist  = projectionGlobale({ ...base, rendementCentral: central + FIRE_SCENARIO_DELTA_PCT })
+  return {
+    age_fire_pessimiste: pessimist.ageIndependanceCentral,
+    age_fire_median:     median.ageIndependanceCentral,
+    age_fire_optimiste:  optimist.ageIndependanceCentral,
+    patrimoine_age_cible_median: median.patrimoineAgeCible,
+    rendement_central_pct: central,
   }
 }
 

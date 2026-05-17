@@ -211,7 +211,10 @@ describe('expandPositions — biens immobiliers physiques', () => {
       type: 'Locatif', valeur: 200000, loyer_mensuel: 800,
       credit_restant: 100000, mensualite_credit: 600, charges_annuelles: 1800,
       equity: 100000, rendement_brut: 4.8, rendement_net: 3.9,
-      cashflow_mensuel: 50, ltv: 50, niveau_levier: 'Modéré', risque_immo: 45,
+      cashflow_mensuel: 50,
+      cashflow_net_fiscal: 50, impot_mensuel_estime: 0, taux_effort_fiscal: 0,
+      charges_are_estimated: false,
+      ltv: 50, niveau_levier: 'Modéré', risque_immo: 45,
       donnees_completes: true,
       taux_interet_estime: 3, duree_restante_mois: 180,
     }]

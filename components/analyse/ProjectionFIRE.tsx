@@ -19,7 +19,7 @@ import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ReferenceLine, ResponsiveContainer, CartesianGrid, Legend,
 } from 'recharts'
 import { Plus, Sparkles, Target, TrendingUp, Wallet, Building2, Check, Loader2, Radio } from 'lucide-react'
-import { projectionGlobale, calculerImpactAcquisition, calculerRendementPortefeuille } from '@/lib/analyse/projectionFIRE'
+import { projectionGlobale, projectionFIREIntervalle, calculerImpactAcquisition, calculerRendementPortefeuille } from '@/lib/analyse/projectionFIRE'
 import { formatCurrency } from '@/lib/utils/format'
 import { Button } from '@/components/ui/button'
 import { AcquisitionFutureForm } from './AcquisitionFutureForm'
@@ -89,7 +89,7 @@ export function ProjectionFIRE({ patrimoine, lastUpdatedAt }: Props) {
   } = useFutureAcquisitions()
 
   // ── Projection globale ─────────────────────────────────────────
-  const result = useMemo(() => projectionGlobale({
+  const baseInputs = useMemo(() => ({
     ageActuel:                 fi.age!,
     ageCible:                  fi.age_cible!,
     revenuPassifCible:         revenuCible,
@@ -97,6 +97,7 @@ export function ProjectionFIRE({ patrimoine, lastUpdatedAt }: Props) {
     rendementCentral:          rendement,
     appreciationImmoPct:       appreciationImmo,
     inflationLoyersPct:        inflationLoyers,
+    inflationPct:              2,
     patrimoineFinancierActuel: patrimoine.totalPortefeuille,
     cashActuel:                patrimoine.totalCash,
     biensExistants:            patrimoine.biens,
@@ -105,16 +106,33 @@ export function ProjectionFIRE({ patrimoine, lastUpdatedAt }: Props) {
     fi.age, fi.age_cible, revenuCible, epargne, rendement,
     appreciationImmo, inflationLoyers, patrimoine, acquisitions,
   ])
+  const result   = useMemo(() => projectionGlobale(baseInputs),       [baseInputs])
+  const interval = useMemo(() => projectionFIREIntervalle(baseInputs), [baseInputs])
 
-  const ageIndepText = result.ageIndependanceCentral !== null
-    ? `${result.ageIndependanceCentral} ans`
-    : 'Hors horizon'
+  // Texte de l'âge d'indépendance : intervalle [optimiste–pessimiste]
+  // (médiane M) si les 3 scénarios convergent, sinon fallback médian seul.
+  const hasInterval = interval.age_fire_optimiste !== null
+                   && interval.age_fire_pessimiste !== null
+                   && interval.age_fire_median !== null
+  const ageIndepText = hasInterval
+    ? `${interval.age_fire_optimiste}–${interval.age_fire_pessimiste} ans`
+    : result.ageIndependanceCentral !== null
+      ? `${result.ageIndependanceCentral} ans`
+      : 'Hors horizon'
+  const ageIndepSub = hasInterval
+    ? `médiane ${interval.age_fire_median} ans`
+    : null
+
   const ecartText = result.ecartObjectif === null
     ? '—'
     : result.ecartObjectif <= 0
     ? `${-result.ecartObjectif} an${-result.ecartObjectif > 1 ? 's' : ''} d'avance`
     : `${result.ecartObjectif} an${result.ecartObjectif > 1 ? 's' : ''} de retard`
   const onTime = result.ageIndependanceCentral !== null && result.ageIndependanceCentral <= fi.age_cible
+
+  const intervalTooltip =
+    `Hypothèses : rendement médian ${rendement.toFixed(1)} %/an, optimiste +1,5 %, pessimiste −1,5 %. `
+    + `Cible indexée sur 2 %/an d'inflation. Les performances passées ne préjugent pas des performances futures.`
 
   return (
     <div className="card p-5">
@@ -136,9 +154,11 @@ export function ProjectionFIRE({ patrimoine, lastUpdatedAt }: Props) {
         <SummaryCard
           icon={<Sparkles size={12} className="text-accent" />}
           label="Indépendance"
+          subLabel={ageIndepSub ?? undefined}
           value={ageIndepText}
           sub={ecartText}
           accent={onTime ? 'success' : 'warning'}
+          tooltip={intervalTooltip}
         />
         <SummaryCard
           icon={<Wallet size={12} className="text-accent" />}
@@ -341,19 +361,21 @@ export function ProjectionFIRE({ patrimoine, lastUpdatedAt }: Props) {
 // Sous-composants
 // ─────────────────────────────────────────────────────────────────
 
-function SummaryCard({ icon, label, value, sub, accent, subLabel, details, footnote }: {
+function SummaryCard({ icon, label, value, sub, accent, subLabel, details, footnote, tooltip }: {
   icon: React.ReactNode; label: string; value: string;
   sub?: string
   subLabel?: string
   details?: { label: string; value: string }[]
   footnote?: string
   accent?: 'success' | 'warning'
+  tooltip?: string
 }) {
   const color = accent === 'success' ? 'text-accent' : accent === 'warning' ? 'text-warning' : 'text-primary'
   return (
     <div className="bg-surface-2 rounded-lg px-3.5 py-3">
       <div className="flex items-center gap-1.5 text-xs text-secondary uppercase tracking-widest">
         {icon}<span className="truncate">{label}</span>
+        {tooltip && <span className="cursor-help select-none text-muted" title={tooltip}>ⓘ</span>}
       </div>
       {subLabel && <p className="text-[9px] text-muted italic mt-0.5 leading-tight">{subLabel}</p>}
       <p className={`text-base font-semibold financial-value mt-1.5 ${color}`}>{value}</p>

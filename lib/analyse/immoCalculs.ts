@@ -10,7 +10,15 @@
  * un bien sans crédit (payé cash) = `credit_restant=0, mensualite=0`.
  * Un bien sans charges détaillées = `charges_annuelles=0` (rendement
  * net = brut).
+ *
+ * Cashflow fiscalisé (depuis Sprint 1) :
+ *   - cashflow_mensuel       = brut (loyer − mensualité − charges/12)
+ *   - cashflow_net_fiscal    = brut − impôt_estimé/12 (cf. fiscaliteImmo.ts)
+ *   - impot_mensuel_estime   = estimation TMI + PS du régime
  */
+
+import { calculerImpotFoncier } from './fiscaliteImmo'
+import type { FiscalRegime } from '@/types/database.types'
 
 export interface BienImmoInput {
   /** Valeur marché estimée (€). */
@@ -25,6 +33,14 @@ export interface BienImmoInput {
   charges_annuelles:  number
   /** Type de bien (utilisé pour l'affichage : 'RP', 'Locatif', 'SCPI'…). */
   type?:              string
+  /** Régime fiscal du bien (pour le calcul de cashflow net fiscal). null = non renseigné. */
+  fiscal_regime?:     FiscalRegime | null
+  /** TMI utilisateur (points de %, ex. 30). null = défaut 30. */
+  tmi_rate?:          number | null
+  /** Taux d'intérêt annuel du crédit en % (sert à estimer les intérêts annuels). */
+  taux_interet_annuel_pct?: number
+  /** Valeur du bâti amortissable (€), typiquement purchase_price − terrain. */
+  valeur_amortissable?: number
 }
 
 export interface BienImmoKPIs {
@@ -33,6 +49,12 @@ export interface BienImmoKPIs {
   rendement_brut:     number   // % annuel, loyers × 12 / valeur × 100
   rendement_net:      number   // % annuel, (loyers × 12 − charges) / valeur × 100
   cashflow_mensuel:   number   // loyer − mensualité − charges/12 (peut être négatif)
+  /** Cashflow mensuel APRÈS impôt foncier estimé (cf. fiscaliteImmo.ts). */
+  cashflow_net_fiscal: number
+  /** Impôt foncier mensuel estimé (€). 0 si pas de loyer ou régime non renseigné. */
+  impot_mensuel_estime: number
+  /** Taux d'effort fiscal : impôt annuel / loyer annuel × 100 (0 si pas de loyer). */
+  taux_effort_fiscal:  number
   niveau_levier:      'Sans crédit' | 'Faible' | 'Modéré' | 'Fort'
   risque_immo:        number   // 15-85 (LTV + bonus cashflow négatif)
   /** True si données suffisantes (au moins valeur > 0). */
@@ -64,7 +86,8 @@ export function calculerKPIsBien(bien: BienImmoInput): BienImmoKPIs {
   if (valeur <= 0) {
     return {
       equity: 0, ltv: 0, rendement_brut: 0, rendement_net: 0,
-      cashflow_mensuel: 0, niveau_levier: 'Sans crédit',
+      cashflow_mensuel: 0, cashflow_net_fiscal: 0, impot_mensuel_estime: 0,
+      taux_effort_fiscal: 0, niveau_levier: 'Sans crédit',
       risque_immo: 30, donnees_completes: false,
     }
   }
@@ -103,15 +126,43 @@ export function calculerKPIsBien(bien: BienImmoInput): BienImmoKPIs {
   if (cashflow < 0)             risque += 10
   risque = clamp(risque, 0, 85)
 
+  // ── Estimation fiscale (cashflow net après impôt foncier) ───────────
+  // Les intérêts annuels = part "intérêts" de la mensualité × 12. Sans
+  // amortissement précis on approxime par taux × CRD (intérêts de la
+  // première année), ce qui surestime légèrement à mesure que le crédit
+  // s'amortit — acceptable pour une estimation indicative.
+  const tauxCreditPct = bien.taux_interet_annuel_pct ?? 0
+  const interetsAnnuels = creditRestant > 0 && tauxCreditPct > 0
+    ? creditRestant * (tauxCreditPct / 100)
+    : 0
+
+  const fiscalite = calculerImpotFoncier({
+    loyer_annuel:            loyersAnnuels,
+    charges_annuelles:       charges,
+    interets_credit_annuels: interetsAnnuels,
+    fiscal_regime:           bien.fiscal_regime ?? null,
+    tmi_rate:                bien.tmi_rate ?? null,
+    valeur_amortissable:     bien.valeur_amortissable,
+  })
+
+  const impotMensuel       = fiscalite.impot_annuel / 12
+  const cashflowNetFiscal  = cashflow - impotMensuel
+  const tauxEffortFiscal   = loyersAnnuels > 0
+    ? (fiscalite.impot_annuel / loyersAnnuels) * 100
+    : 0
+
   return {
     equity,
     ltv,
     rendement_brut: rendementBrut,
     rendement_net:  rendementNet,
-    cashflow_mensuel: cashflow,
-    niveau_levier:  niveau,
-    risque_immo:    risque,
-    donnees_completes: true,
+    cashflow_mensuel:     cashflow,
+    cashflow_net_fiscal:  cashflowNetFiscal,
+    impot_mensuel_estime: impotMensuel,
+    taux_effort_fiscal:   tauxEffortFiscal,
+    niveau_levier:        niveau,
+    risque_immo:          risque,
+    donnees_completes:    true,
   }
 }
 

@@ -17,6 +17,7 @@ import { geoZone } from './geoMapping'
 import { calculerTousLesScores } from './scores'
 import { genererRecommandations } from './recommandations'
 import { expandPositions, bucketsBySector, bucketsByZone, type ExpansionResult } from './expandETF'
+import { projectionGlobale, projectionFIREIntervalle, calculerRendementPortefeuille } from './projectionFIRE'
 import { getEtfComposition } from './etfCompositions'
 import {
   benchmarkGeoOf, benchmarkSectorOf, classifyDeviation, trackingErrorScore,
@@ -26,6 +27,7 @@ import {
   calculerKPIsBien, calculerRisqueImmoGlobal, calculerRevenuPassifImmo,
   rendementNetMoyenPondere,
 } from './immoCalculs'
+import { getDefaultCharges } from '@/lib/real-estate/defaultCharges'
 import type {
   PatrimoineComplet, BienImmo, CompteCash,
   ClasseAlloc, SecteurAlloc, GeoAlloc, EnrichedPosition, AnalyseAssetType,
@@ -126,6 +128,14 @@ interface ImmoLoadResult {
 async function loadImmo(userId: string): Promise<ImmoLoadResult> {
   const supabase = await createServerClient()
 
+  // TMI utilisateur (pour estimer l'impôt foncier de chaque bien).
+  const { data: profileTmi } = await supabase
+    .from('profiles')
+    .select('tmi_rate')
+    .eq('id', userId)
+    .single()
+  const tmiUser = profileTmi?.tmi_rate ?? null
+
   const { data: props } = await supabase
     .from('real_estate_properties')
     .select(`
@@ -208,10 +218,22 @@ async function loadImmo(userId: string): Promise<ImmoLoadResult> {
 
     // Charges annuelles : property_charges + frais gestion calculés à
     // partir des % loyer (GLI + gestion).
-    const chargesReelles = chargesByProperty.get(r.id) ?? 0
+    // Si aucune ligne `property_charges` n'existe ET qu'on a un prix
+    // d'achat, on retombe sur les charges par défaut (taxe foncière 0,8 %,
+    // PNO 0,4 %, entretien 1 %) — l'UI affichera un bandeau "estimées".
+    const hasRealCharges = chargesByProperty.has(r.id)
+    let chargesReelles   = chargesByProperty.get(r.id) ?? 0
+    if (!hasRealCharges) {
+      const defaults = getDefaultCharges(num(r.purchase_price))
+      chargesReelles = defaults.taxe_fonciere + defaults.insurance_pno + defaults.maintenance
+    }
     const loyersAnnuels  = loyerMensuel * 12
     const fraisGestion   = loyersAnnuels * (num(r.gli_pct) + num(r.management_pct)) / 100
     const chargesAnnuelles = chargesReelles + fraisGestion
+
+    // Taux + durée restante estimés (pour la projection FIRE et l'estimation
+    // des intérêts annuels passés au calcul fiscal).
+    const tauxAnnuelPct = tauxByAsset.get(r.asset_id) ?? 3.0  // défaut 3 %
 
     const kpis = calculerKPIsBien({
       valeur,
@@ -219,10 +241,11 @@ async function loadImmo(userId: string): Promise<ImmoLoadResult> {
       mensualite_credit: mensualite,
       loyer_mensuel:     loyerMensuel,
       charges_annuelles: chargesAnnuelles,
+      fiscal_regime:           r.fiscal_regime as Parameters<typeof calculerKPIsBien>[0]['fiscal_regime'] ?? null,
+      tmi_rate:                tmiUser,
+      taux_interet_annuel_pct: tauxAnnuelPct,
+      valeur_amortissable:     num(r.purchase_price),  // approx : prix d'achat hors works
     })
-
-    // Taux + durée restante estimés (pour la projection FIRE)
-    const tauxAnnuelPct = tauxByAsset.get(r.asset_id) ?? 3.0  // défaut 3 %
     const dureeRestanteMois = creditRestant > 0 && mensualite > 0
       ? estimerDureeRestante(creditRestant, mensualite, tauxAnnuelPct / 100)
       : 0
@@ -244,10 +267,14 @@ async function loadImmo(userId: string): Promise<ImmoLoadResult> {
       credit_restant:      creditRestant,
       mensualite_credit:   mensualite,
       charges_annuelles:   chargesAnnuelles,
+      charges_are_estimated: !hasRealCharges,
       equity:              kpis.equity,
       rendement_brut:      kpis.rendement_brut,
       rendement_net:       kpis.rendement_net,
       cashflow_mensuel:    kpis.cashflow_mensuel,
+      cashflow_net_fiscal:  kpis.cashflow_net_fiscal,
+      impot_mensuel_estime: kpis.impot_mensuel_estime,
+      taux_effort_fiscal:   kpis.taux_effort_fiscal,
       ltv:                 kpis.ltv,
       niveau_levier:       kpis.niveau_levier,
       risque_immo:         kpis.risque_immo,
@@ -716,6 +743,21 @@ export async function getPatrimoineComplet(userId: string): Promise<PatrimoineCo
     ),
     rendementEstime:        rendement,
     revenuPassifActuel:     revenuPassif,
+    projectionFIRESnapshot: computeProjectionSnapshot({
+      ageActuel:             profile.age,
+      ageCible:              profile.age_cible,
+      revenuPassifCible:     profile.revenu_passif_cible,
+      epargneMensuelle:      profile.epargne_mensuelle,
+      rendementCentral:      Math.max(3, Math.min(12,
+        calculerRendementPortefeuille({
+          positions, totalImmo, totalCash,
+        } as unknown as PatrimoineComplet) || 7,
+      )),
+      patrimoineFinancier:   totalPortefeuille,
+      cashActuel:            totalCash,
+      biens,
+      totalNet,
+    }),
     profilType,
     prenom,
     fireInputs,
@@ -744,4 +786,89 @@ export async function getPatrimoineComplet(userId: string): Promise<PatrimoineCo
   }
 
   return { ...partial, scores, recommandations }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Helpers — projection FIRE snapshot (Sprint 1)
+// ─────────────────────────────────────────────────────────────────────
+
+interface ProjectionSnapshotInputs {
+  ageActuel:           number | null
+  ageCible:            number | null
+  revenuPassifCible:   number       // €/mois
+  epargneMensuelle:    number       // €/mois
+  rendementCentral:    number       // %
+  patrimoineFinancier: number
+  cashActuel:          number
+  biens:               BienImmo[]
+  totalNet:            number
+}
+
+/**
+ * Calcule un snapshot de projection FIRE pour le Dashboard Hero.
+ * Retourne null si les inputs profil sont incomplets.
+ *
+ * Détermine aussi l'épargne mensuelle qui permettrait d'atteindre la cible
+ * à l'âge cible déclaré (bissection sur l'épargne mensuelle de l'utilisateur).
+ */
+function computeProjectionSnapshot(i: ProjectionSnapshotInputs): import('@/types/analyse').ProjectionFIRESnapshot | null {
+  if (i.ageActuel === null || i.ageCible === null || i.revenuPassifCible <= 0) return null
+  if (i.ageCible <= i.ageActuel) return null
+
+  const baseInputs = {
+    ageActuel:                 i.ageActuel,
+    ageCible:                  i.ageCible,
+    revenuPassifCible:         i.revenuPassifCible,
+    epargneMensuelle:          i.epargneMensuelle,
+    rendementCentral:          i.rendementCentral,
+    appreciationImmoPct:       2,
+    inflationLoyersPct:        1.5,
+    inflationPct:              2,
+    patrimoineFinancierActuel: i.patrimoineFinancier,
+    cashActuel:                i.cashActuel,
+    biensExistants:            i.biens,
+    acquisitionsFutures:       [],
+  }
+
+  const interval = projectionFIREIntervalle(baseInputs)
+
+  // Cible FIRE indexée sur l'inflation à l'horizon de l'âge cible.
+  const yearsToTarget = Math.max(0, i.ageCible - i.ageActuel)
+  const patrimoineFireCible =
+    i.revenuPassifCible * 12 * 25 * Math.pow(1 + (baseInputs.inflationPct ?? 2) / 100, yearsToTarget)
+
+  // Si déjà sur la trajectoire (atteint la cible avant l'âge cible)
+  // → pas de besoin d'épargne supplémentaire.
+  const onTime = interval.age_fire_median !== null
+              && interval.age_fire_median <= i.ageCible
+  let epargneNecessaire: number | null = null
+  if (!onTime) {
+    let lo = i.epargneMensuelle
+    let hi = Math.max(20_000, i.epargneMensuelle * 10 + 5_000)
+    for (let iter = 0; iter < 18; iter++) {
+      const mid = (lo + hi) / 2
+      const r = projectionGlobale({ ...baseInputs, epargneMensuelle: mid })
+      const reaches = r.ageIndependanceCentral !== null
+                   && r.ageIndependanceCentral <= i.ageCible
+      if (reaches) hi = mid
+      else         lo = mid
+    }
+    epargneNecessaire = Math.round(hi)
+    const check = projectionGlobale({ ...baseInputs, epargneMensuelle: epargneNecessaire })
+    if (check.ageIndependanceCentral === null
+     || check.ageIndependanceCentral > i.ageCible) {
+      epargneNecessaire = null
+    }
+  }
+
+  return {
+    age_fire_projete:             interval.age_fire_median,
+    age_fire_optimiste:           interval.age_fire_optimiste,
+    age_fire_median:              interval.age_fire_median,
+    age_fire_pessimiste:          interval.age_fire_pessimiste,
+    rendement_central_pct:        interval.rendement_central_pct,
+    patrimoine_age_cible:         interval.patrimoine_age_cible_median,
+    patrimoine_fire_cible:        Math.round(patrimoineFireCible),
+    epargne_mensuelle_necessaire: epargneNecessaire,
+  }
 }

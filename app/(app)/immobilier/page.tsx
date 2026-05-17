@@ -5,6 +5,7 @@ import { createServerClient }            from '@/lib/supabase/server'
 import { PageHeader }                    from '@/components/shared/page-header'
 import { EmptyState }                    from '@/components/ui/empty-state'
 import { Badge }                         from '@/components/ui/badge'
+import { ChargesWarningBanner }          from '@/components/ui/charges-warning-banner'
 import { ImmobilierActions }             from '@/components/pages/immobilier-actions'
 import { computeRealEstatePortfolio }    from '@/lib/real-estate/portfolio'
 import { formatCurrency, formatPercent, ASSET_TYPE_LABELS } from '@/lib/utils/format'
@@ -30,6 +31,18 @@ export default async function ImmobilierPage() {
   // ── Simulations agrégées (avec CRD analytique) ──────────────────────────
   const portfolio = await computeRealEstatePortfolio(supabase, user!.id)
   const simByProp = new Map(portfolio.properties.map((p) => [p.propertyId, p]))
+
+  // ── Propriétés sans charges réelles saisies → banner global ─────────────
+  const propIds = (properties ?? []).map((p) => p.id)
+  const propsWithChargesSet = new Set<string>()
+  if (propIds.length > 0) {
+    const { data: chargesRows } = await supabase
+      .from('property_charges')
+      .select('property_id')
+      .in('property_id', propIds)
+    for (const c of chargesRows ?? []) propsWithChargesSet.add(c.property_id as string)
+  }
+  const estimatedCount = (properties ?? []).filter((p) => !propsWithChargesSet.has(p.id)).length
 
   // ── Helpers ──────────────────────────────────────────────────────────────
   type AssetJoin = { name: string; current_value: number | null; acquisition_price: number | null; status: string }
@@ -67,6 +80,15 @@ export default async function ImmobilierPage() {
         />
       ) : (
         <>
+          {estimatedCount > 0 && (
+            <div className="mb-4">
+              <ChargesWarningBanner
+                estimated
+                message={`Charges estimées sur ${estimatedCount} bien${estimatedCount > 1 ? 's' : ''} — rendement à ±10 %. Renseignez la taxe foncière, l'assurance PNO et l'entretien réels pour fiabiliser la projection.`}
+              />
+            </div>
+          )}
+
           {/* ── KPIs globaux du portefeuille immobilier ──────────────────── */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
             <div className="card p-5 border-accent/20">

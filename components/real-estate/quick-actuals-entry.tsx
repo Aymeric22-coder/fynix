@@ -7,6 +7,7 @@ import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
 import { Field, Input, FormGrid } from '@/components/ui/field'
 import { formatCurrency } from '@/lib/utils/format'
+import { getDefaultCharges } from '@/lib/real-estate/defaultCharges'
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -30,6 +31,10 @@ interface Props {
   monthlyRentSuggested:    number          // somme des loyers des lots loués
   monthlyPaymentSuggested: number | null   // mensualité du crédit (si calculable)
   existingCharges:         ExistingCharges[]   // toutes les années déjà saisies
+  /** Prix d'achat du bien — utilisé pour pré-remplir les charges par défaut
+   *  (taxe foncière 0,8 %, PNO 0,4 %, entretien 1 % du prix) quand aucune
+   *  donnée n'existe pour l'année. */
+  purchasePrice?:          number | null
 }
 
 type Tab = 'rent' | 'loan' | 'charges'
@@ -53,7 +58,10 @@ const MONTHS = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Aoû
 export function QuickActualsEntry({
   open, onClose, assetId, debtId, propertyId,
   monthlyRentSuggested, monthlyPaymentSuggested, existingCharges,
+  purchasePrice,
 }: Props) {
+  // Charges suggérées si l'utilisateur n'a jamais saisi de données.
+  const defaults = getDefaultCharges(purchasePrice ?? null)
   const router = useRouter()
   const [tab, setTab] = useState<Tab>('rent')
   const [success, setSuccess] = useState<string | null>(null)
@@ -75,24 +83,30 @@ export function QuickActualsEntry({
   const lastYear = (existingCharges[0]?.year ?? now.getFullYear() - 1) + 1
   const [chargesYear, setChargesYear] = useState<number>(now.getFullYear())
   const existing = existingCharges.find((c) => c.year === chargesYear)
-  const [taxeFonciere, setTaxeFonciere] = useState(existing?.taxe_fonciere ?? 0)
-  const [insurance,    setInsurance]    = useState(existing?.insurance     ?? 0)
+  // Pré-remplit avec les valeurs existantes en base si disponibles, sinon
+  // avec les valeurs par défaut calculées sur le prix d'achat (estimation
+  // française standard : taxe foncière 0,8 %, PNO 0,4 %, entretien 1 %).
+  // Le banner ChargesWarning indique à l'utilisateur que ce sont des
+  // estimations à valider.
+  const [taxeFonciere, setTaxeFonciere] = useState(existing?.taxe_fonciere ?? defaults.taxe_fonciere)
+  const [insurance,    setInsurance]    = useState(existing?.insurance     ?? defaults.insurance_pno)
   const [accountant,   setAccountant]   = useState(existing?.accountant    ?? 0)
   const [cfe,          setCfe]          = useState(existing?.cfe           ?? 0)
   const [condoFees,    setCondoFees]    = useState(existing?.condo_fees    ?? 0)
-  const [maintenance,  setMaintenance]  = useState(existing?.maintenance   ?? 0)
+  const [maintenance,  setMaintenance]  = useState(existing?.maintenance   ?? defaults.maintenance)
   const [other,        setOther]        = useState(existing?.other         ?? 0)
 
-  // Quand l'année change, recharger les valeurs existantes
+  // Quand l'année change, recharger les valeurs existantes (ou les défauts
+  // si aucune donnée n'existe pour cette année).
   function handleYearChange(year: number) {
     setChargesYear(year)
     const e = existingCharges.find((c) => c.year === year)
-    setTaxeFonciere(e?.taxe_fonciere ?? 0)
-    setInsurance(e?.insurance       ?? 0)
+    setTaxeFonciere(e?.taxe_fonciere ?? defaults.taxe_fonciere)
+    setInsurance(e?.insurance       ?? defaults.insurance_pno)
     setAccountant(e?.accountant     ?? 0)
     setCfe(e?.cfe                   ?? 0)
     setCondoFees(e?.condo_fees      ?? 0)
-    setMaintenance(e?.maintenance   ?? 0)
+    setMaintenance(e?.maintenance   ?? defaults.maintenance)
     setOther(e?.other               ?? 0)
   }
 

@@ -7,6 +7,8 @@ import { DonutChart }            from '@/components/charts/donut-chart'
 import { PatrimonyAreaChart }    from '@/components/charts/area-chart'
 import { computeRealEstatePortfolio } from '@/lib/real-estate/portfolio'
 import { buildPortfolioFromDb }  from '@/lib/portfolio/build-from-db'
+import { getPatrimoineComplet }  from '@/lib/analyse/aggregateur'
+import { FIREProgressHero, type FireHeroData } from '@/components/dashboard/fire-progress-hero'
 import { RealEstateAlertsPanel } from '@/components/dashboard/real-estate-alerts-panel'
 import {
   ASSET_TYPE_LABELS, ASSET_TYPE_COLORS,
@@ -55,6 +57,29 @@ export default async function DashboardPage() {
 
   // ── Portefeuille financier (positions + instruments + prix) ──────────────
   const portfolioResult = await buildPortfolioFromDb(supabase, user!.id)
+
+  // ── Snapshot patrimoine complet (pour le FIRE Progress Hero) ─────────────
+  // Inclut projectionFIRESnapshot, revenu passif actuel, etc. Heavy call mais
+  // sert exclusivement au Hero — peut être déplacé si jamais plusieurs Heroes
+  // sont rajoutés en haut du dashboard.
+  const patrimoineComplet = await getPatrimoineComplet(user!.id)
+  const proj = patrimoineComplet.projectionFIRESnapshot
+  const fireHeroData: FireHeroData = {
+    profileComplete: proj !== null,
+    patrimoine_net_actuel:        patrimoineComplet.totalNet,
+    patrimoine_fire_cible:        proj?.patrimoine_fire_cible ?? 0,
+    age_actuel:                   patrimoineComplet.fireInputs.age,
+    age_fire_cible:               patrimoineComplet.fireInputs.age_cible,
+    age_fire_projete:             proj?.age_fire_projete ?? null,
+    age_fire_optimiste:           proj?.age_fire_optimiste ?? null,
+    age_fire_median:              proj?.age_fire_median ?? null,
+    age_fire_pessimiste:          proj?.age_fire_pessimiste ?? null,
+    rendement_central_pct:        proj?.rendement_central_pct ?? 7,
+    epargne_mensuelle_actuelle:   patrimoineComplet.fireInputs.epargne_mensuelle,
+    epargne_mensuelle_necessaire: proj?.epargne_mensuelle_necessaire ?? null,
+    revenu_passif_actuel:         patrimoineComplet.revenuPassifActuel,
+    revenu_passif_cible:          patrimoineComplet.fireInputs.revenu_passif_cible,
+  }
 
   // ── Calculs patrimoine ────────────────────────────────────────────────────
   // Brut = actifs "table assets" (immo, cash, autre) + valeur de marché du portefeuille.
@@ -220,6 +245,9 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-8">
+      {/* FIRE Progress Hero — toujours en premier (Sprint 1) */}
+      <FIREProgressHero data={fireHeroData} />
+
       {/* Alertes */}
       {alerts.length > 0 && <AlertsPanel alerts={alerts} />}
 

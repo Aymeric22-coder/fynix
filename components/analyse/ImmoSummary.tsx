@@ -12,6 +12,7 @@
 import { Building2, AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils/format'
 import { formatCurrency, formatPercent } from '@/lib/utils/format'
+import { ChargesWarningBanner } from '@/components/ui/charges-warning-banner'
 import type { BienImmo } from '@/types/analyse'
 
 interface Props {
@@ -73,7 +74,9 @@ export function ImmoSummary({
 }
 
 function BienRow({ bien }: { bien: BienImmo }) {
-  const cf = bien.cashflow_mensuel
+  const cf       = bien.cashflow_mensuel
+  const cfFiscal = bien.cashflow_net_fiscal
+  const impotM   = bien.impot_mensuel_estime
   return (
     <div className="bg-surface-2 rounded-lg px-4 py-3">
       <div className="flex items-start justify-between gap-3 flex-wrap mb-2">
@@ -89,12 +92,18 @@ function BienRow({ bien }: { bien: BienImmo }) {
         </span>
       </div>
 
+      <ChargesWarningBanner
+        estimated={bien.charges_are_estimated}
+        href={`/immobilier/${bien.id}`}
+        className="mb-3"
+      />
+
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3 text-xs">
         <Cell label="Valeur"          value={formatCurrency(bien.valeur, 'EUR', { compact: true })} />
         <Cell label="Crédit restant"  value={bien.credit_restant > 0 ? formatCurrency(bien.credit_restant, 'EUR', { compact: true }) : '—'} />
         <Cell label="Equity"          value={formatCurrency(bien.equity, 'EUR', { compact: true })} accent="primary" />
         <Cell label="Loyer brut"      value={bien.loyer_mensuel > 0 ? `${formatCurrency(bien.loyer_mensuel, 'EUR', { decimals: 0 })}/m` : '—'} />
-        <Cell label="Cashflow net"
+        <Cell label="Cashflow brut"
               value={bien.loyer_mensuel > 0
                 ? `${cf >= 0 ? '+' : ''}${formatCurrency(cf, 'EUR', { decimals: 0 })}/m`
                 : '—'}
@@ -103,6 +112,31 @@ function BienRow({ bien }: { bien: BienImmo }) {
                 ? `${formatPercent(bien.rendement_brut, { decimals: 1 })} / ${formatPercent(bien.rendement_net, { decimals: 1 })}`
                 : '—'} />
       </div>
+
+      {bien.loyer_mensuel > 0 && (
+        <div className="mt-3 pt-3 border-t border-border flex items-baseline justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] text-muted uppercase tracking-widest">Cashflow net après impôts</span>
+            <span
+              className="text-[10px] text-muted cursor-help select-none"
+              title={`Cashflow brut (${formatCurrency(cf, 'EUR', { decimals: 0 })}/m) moins impôt foncier mensuel estimé (${formatCurrency(impotM, 'EUR', { decimals: 0 })}/m). Estimation indicative basée sur le régime fiscal du bien et votre TMI — le taux réel dépend de votre situation globale (déficit foncier reportable, autres revenus, plafonds non gérés ici).`}
+            >
+              ⓘ
+            </span>
+          </div>
+          <span className={cn(
+            'financial-value text-sm font-medium',
+            cfFiscal >= 0 ? 'text-accent' : 'text-danger',
+          )}>
+            {cfFiscal >= 0 ? '+' : ''}{formatCurrency(cfFiscal, 'EUR', { decimals: 0 })}/m
+            {impotM > 0 && (
+              <span className="text-muted text-[10px] ml-2">
+                · impôt {formatCurrency(impotM, 'EUR', { decimals: 0 })}/m
+              </span>
+            )}
+          </span>
+        </div>
+      )}
 
       {bien.cashflow_mensuel < 0 && bien.loyer_mensuel > 0 && (
         <div className="mt-2 flex items-center gap-1.5 text-[10px] text-warning">

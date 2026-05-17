@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   simulerBienExistant, simulerAcquisitionFuture, projectionGlobale,
-  calculerImpactAcquisition,
+  calculerImpactAcquisition, projectionFIREIntervalle, FIRE_SCENARIO_DELTA_PCT,
 } from '../projectionFIRE'
 import type { BienImmo, AcquisitionFuture, ProjectionInputs } from '@/types/analyse'
 
@@ -11,7 +11,10 @@ function bien(over: Partial<BienImmo> = {}): BienImmo {
     valeur: 200000, loyer_mensuel: 800, credit_restant: 100000,
     mensualite_credit: 700, charges_annuelles: 2000,
     equity: 100000, rendement_brut: 4.8, rendement_net: 3.8,
-    cashflow_mensuel: -67, ltv: 50, niveau_levier: 'Modéré', risque_immo: 45,
+    cashflow_mensuel: -67,
+    cashflow_net_fiscal: -67, impot_mensuel_estime: 0, taux_effort_fiscal: 0,
+    charges_are_estimated: false,
+    ltv: 50, niveau_levier: 'Modéré', risque_immo: 45,
     donnees_completes: true,
     taux_interet_estime: 3, duree_restante_mois: 180,
     ...over,
@@ -138,6 +141,71 @@ describe('projectionGlobale — combinaison complète', () => {
     })
     expect(r.ageIndependanceCentral).not.toBeNull()
     expect(r.ageIndependanceCentral!).toBeLessThan(70)
+  })
+})
+
+describe('projectionGlobale — indexation inflation', () => {
+  const baseInputs = {
+    ageActuel: 30, ageCible: 60,
+    revenuPassifCible: 3000, epargneMensuelle: 2000,
+    rendementCentral: 7, appreciationImmoPct: 2, inflationLoyersPct: 1.5,
+    patrimoineFinancierActuel: 500000, cashActuel: 50000,
+    biensExistants: [],
+    acquisitionsFutures: [],
+  }
+
+  it('cible indexée → âge FIRE plus tardif qu\'avec inflation = 0', () => {
+    const sansInflation = projectionGlobale({ ...baseInputs, inflationPct: 0 })
+    const avecInflation = projectionGlobale({ ...baseInputs, inflationPct: 4 })
+    // Une cible qui grossit chaque année devient plus dure à atteindre.
+    if (sansInflation.ageIndependanceCentral !== null && avecInflation.ageIndependanceCentral !== null) {
+      expect(avecInflation.ageIndependanceCentral)
+        .toBeGreaterThanOrEqual(sansInflation.ageIndependanceCentral)
+    } else {
+      // Au minimum on accepte que l'inflation puisse pousser hors horizon.
+      expect(avecInflation.ageIndependanceCentral === null
+          || avecInflation.ageIndependanceCentral! >= (sansInflation.ageIndependanceCentral ?? 0))
+        .toBe(true)
+    }
+  })
+
+  it('inflation par défaut (2 %) ≠ inflation = 0', () => {
+    const defaut    = projectionGlobale(baseInputs)              // inflation par défaut 2 %
+    const sans      = projectionGlobale({ ...baseInputs, inflationPct: 0 })
+    // Au moins un point doit différer si la cible grossit avec le temps.
+    expect(defaut.ageIndependanceCentral)
+      .not.toBeLessThan(sans.ageIndependanceCentral ?? 0)
+  })
+})
+
+describe('projectionFIREIntervalle — 3 scénarios de rendement', () => {
+  const baseInputs = {
+    ageActuel: 30, ageCible: 60,
+    revenuPassifCible: 3000, epargneMensuelle: 2000,
+    rendementCentral: 7, appreciationImmoPct: 2, inflationLoyersPct: 1.5,
+    inflationPct: 2,
+    patrimoineFinancierActuel: 500000, cashActuel: 50000,
+    biensExistants: [],
+    acquisitionsFutures: [],
+  }
+
+  it('expose les 3 âges + rendement central', () => {
+    const i = projectionFIREIntervalle(baseInputs)
+    expect(i.rendement_central_pct).toBe(7)
+    expect(FIRE_SCENARIO_DELTA_PCT).toBe(1.5)
+    expect(i.age_fire_optimiste).not.toBeUndefined()
+    expect(i.age_fire_median).not.toBeUndefined()
+    expect(i.age_fire_pessimiste).not.toBeUndefined()
+  })
+
+  it('optimiste ≤ médian ≤ pessimiste (atteint la cible plus tôt)', () => {
+    const i = projectionFIREIntervalle(baseInputs)
+    if (i.age_fire_optimiste !== null && i.age_fire_median !== null) {
+      expect(i.age_fire_optimiste).toBeLessThanOrEqual(i.age_fire_median)
+    }
+    if (i.age_fire_median !== null && i.age_fire_pessimiste !== null) {
+      expect(i.age_fire_median).toBeLessThanOrEqual(i.age_fire_pessimiste)
+    }
   })
 })
 

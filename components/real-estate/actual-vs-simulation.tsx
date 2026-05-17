@@ -83,12 +83,15 @@ interface Props {
   monthlyRentSuggested:    number
   monthlyPaymentSuggested: number | null
   existingCharges:         ExistingCharges[]
+  /** Prix d'achat — sert à pré-remplir les charges par défaut. */
+  purchasePrice?:          number | null
 }
 
 export function ActualVsSimulation({
   comparison,
   assetId, debtId, propertyId,
   monthlyRentSuggested, monthlyPaymentSuggested, existingCharges,
+  purchasePrice,
 }: Props) {
   const [expanded, setExpanded] = useState(true)
   const [entryOpen, setEntryOpen] = useState(false)
@@ -124,6 +127,7 @@ export function ActualVsSimulation({
         monthlyRentSuggested={monthlyRentSuggested}
         monthlyPaymentSuggested={monthlyPaymentSuggested}
         existingCharges={existingCharges}
+        purchasePrice={purchasePrice}
       />
       <ImportCsvModal
         open={importOpen}

@@ -544,6 +544,7 @@ export default async function ImmobilierDetailPage({ params }: Props) {
               maintenance:   c.maintenance,
               other:         c.other,
             }))}
+            purchasePrice={prop.purchase_price ?? null}
           />
           {!revisedForecast.isEmpty && (
             <div className="border-t border-border pt-6">
