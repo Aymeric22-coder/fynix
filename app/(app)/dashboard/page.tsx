@@ -10,9 +10,11 @@ import { buildPortfolioFromDb }  from '@/lib/portfolio/build-from-db'
 import { getPatrimoineComplet }  from '@/lib/analyse/aggregateur'
 import { FIREProgressHero, type FireHeroData } from '@/components/dashboard/fire-progress-hero'
 import { ActionsDuMois } from '@/components/dashboard/actions-du-mois'
+import { DashboardEmptyState } from '@/components/dashboard/empty-state'
 import { PatrimoineEvolutionChart } from '@/components/dashboard/patrimoine-evolution-chart'
 import { RealEstateAlertsPanel } from '@/components/dashboard/real-estate-alerts-panel'
 import { genererActionsMensuelles } from '@/lib/analyse/recoMensuelles'
+import { calculerOpportunitesFiscales } from '@/lib/analyse/optimiseurFiscal'
 import {
   ASSET_TYPE_LABELS, ASSET_TYPE_COLORS,
   ASSET_CLASS_LABELS, ASSET_CLASS_COLORS,
@@ -42,17 +44,31 @@ export default async function DashboardPage() {
       .select('asset_id,capital_remaining,monthly_payment')
       .eq('user_id', user!.id)
       .eq('status', 'active'),
+    // Sprint 1 — I4 : on bascule sur wealth_snapshots (alimente par
+    // /api/analyse/snapshot a chaque visite de /analyse). Mapping des colonnes :
+    //   total_net_value   ← patrimoine_net
+    //   total_gross_value ← patrimoine_brut
+    //   total_debt        ← total_dettes
+    //   monthly_cashflow  → pas d'equivalent direct ; non utilise sur ce graphe.
+    //                       Si necessaire, expose-le via getPatrimoineComplet.
     supabase
-      .from('patrimony_snapshots')
-      .select('snapshot_date,total_net_value,total_gross_value,total_debt,monthly_cashflow')
+      .from('wealth_snapshots')
+      .select('snapshot_date,patrimoine_net,patrimoine_brut,total_dettes')
       .eq('user_id', user!.id)
       .order('snapshot_date', { ascending: false })
       .limit(13),
   ])
 
-  const assets    = assetsRes.data    ?? []
-  const debts     = debtsRes.data     ?? []
-  const snapshots = snapshotsRes.data ?? []
+  const assets        = assetsRes.data    ?? []
+  const debts         = debtsRes.data     ?? []
+  const snapshotsRaw  = snapshotsRes.data ?? []
+  // Normalise sur l'ancienne shape pour minimiser le diff downstream.
+  const snapshots = snapshotsRaw.map((s) => ({
+    snapshot_date:      s.snapshot_date as string,
+    total_net_value:    Number(s.patrimoine_net ?? 0),
+    total_gross_value:  Number(s.patrimoine_brut ?? 0),
+    total_debt:         Number(s.total_dettes ?? 0),
+  }))
 
   // ── Simulation immobilière + suivi réel (CF / capital / alertes drift) ───
   const portfolio = await computeRealEstatePortfolio(supabase, user!.id, { withActuals: true })
@@ -79,7 +95,12 @@ export default async function DashboardPage() {
     .limit(1)
     .maybeSingle()
   const lastPositionAddedAt = lastPosRow?.acquisition_date ?? null
-  const actionsDuMois = genererActionsMensuelles(patrimoineComplet, { lastPositionAddedAt })
+  // Sprint 1 — I3 : ActionsDuMois inclut les top opportunites fiscales.
+  const opportunitesFiscales = calculerOpportunitesFiscales({ patrimoine: patrimoineComplet }).opportunites
+  const actionsDuMois = genererActionsMensuelles(patrimoineComplet, {
+    lastPositionAddedAt,
+    opportunitesFiscales,
+  })
   const proj = patrimoineComplet.projectionFIRESnapshot
   const fireHeroData: FireHeroData = {
     profileComplete: proj !== null,
@@ -260,11 +281,23 @@ export default async function DashboardPage() {
     sim_cf_label:       hasSim ? 'après impôts (simulation)' : undefined,
   }
 
+  // Empty state : aucun actif renseigne (ni assets, ni positions, ni biens immo).
+  // On masque alors KpiGrid (qui afficherait 0 € partout) et ActionsDuMois
+  // (qui dirait "Tout est en ordre" alors qu'il n'y a rien a analyser).
+  const isEmpty =
+    assets.length === 0 &&
+    portfolioResult.positions.length === 0 &&
+    portfolio.properties.length === 0
+
   return (
     <div className="space-y-8">
       {/* FIRE Progress Hero — toujours en premier (Sprint 1) */}
       <FIREProgressHero data={fireHeroData} />
 
+      {isEmpty ? (
+        <DashboardEmptyState />
+      ) : (
+        <>
       {/* Actions de ce mois — recoMensuelles (Sprint 2) */}
       <ActionsDuMois actions={actionsDuMois} />
 
@@ -399,6 +432,8 @@ export default async function DashboardPage() {
           </h2>
           <TopAssetsList assets={topAssets} />
         </div>
+      )}
+        </>
       )}
     </div>
   )

@@ -1,16 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { translateAuthError } from '@/lib/auth/errorMessages'
+import { LoginBodySchema } from '@/lib/auth/authSchemas'
+import { formatZodErrors } from '@/lib/portfolio/importSchema'
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? process.env.NEXT_PUBLIC_SITE_URL ?? 'https://fynix-mu.vercel.app'
 
 export async function POST(req: NextRequest) {
   try {
-    const { email, password } = await req.json()
-
-    if (!email) {
-      return NextResponse.json({ error: 'Email requis' }, { status: 400 })
+    const raw = await req.json().catch(() => null)
+    const parsed = LoginBodySchema.safeParse(raw)
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: formatZodErrors(parsed.error).join(' ; ') },
+        { status: 400 },
+      )
     }
+    const { email, password } = parsed.data
 
     const supabase = await createServerClient()
 

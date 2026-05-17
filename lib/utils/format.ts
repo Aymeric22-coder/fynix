@@ -36,6 +36,17 @@ export function formatCurrency(
   return `${sign}${formatted} ${symbol}`.trim()
 }
 
+/**
+ * Alias court : formatEur(1234.5) = formatCurrency(1234.5, 'EUR').
+ * Remplace les implementations locales dans recoMensuelles + Recommandations.
+ */
+export function formatEur(
+  value: number | null | undefined,
+  options?: { compact?: boolean; sign?: boolean; decimals?: number },
+): string {
+  return formatCurrency(value, 'EUR', options)
+}
+
 export function formatPercent(
   value: number | null | undefined,
   options?: { sign?: boolean; decimals?: number },

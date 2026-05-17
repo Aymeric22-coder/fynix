@@ -13,19 +13,25 @@
  */
 
 import type { PatrimoineComplet, BienImmo } from '@/types/analyse'
+import {
+  PRELEVEMENTS_SOCIAUX_PCT,
+  PFU_PCT,
+  AV_LONG_TERME_PCT,
+  AV_ABATTEMENT_CELIBATAIRE,
+  TMI_FALLBACK_PCT,
+} from './constants'
 
 // ─────────────────────────────────────────────────────────────────
 // Constantes fiscales (France 2026)
 // ─────────────────────────────────────────────────────────────────
 
-/** Prélèvements sociaux (PS) sur revenus du capital. */
-const PS_PCT = 17.2
+// Alias local conserve pour minimiser les changements ailleurs dans le fichier.
+const PS_PCT = PRELEVEMENTS_SOCIAUX_PCT
 
-/** Flat Tax (PFU) sur les revenus du CTO : 12,8 % IR + 17,2 % PS = 30 %. */
-const PFU_PCT = 30
-
-/** Taxation AV après 8 ans : 7,5 % IR (sous abattement) + 17,2 % PS = 24,7 %. */
-const AV_LONG_TERME_PCT = 24.7
+// Re-export des constantes communes (depuis lib/analyse/constants.ts)
+// pour que les imports historiques `from '@/lib/analyse/optimiseurFiscal'` continuent
+// de fonctionner.
+export { PFU_PCT, AV_LONG_TERME_PCT, AV_ABATTEMENT_CELIBATAIRE }
 
 /** Plafond PEA en versements cumulés (hors PEA-PME). */
 export const PEA_PLAFOND_VERSEMENTS = 150_000
@@ -47,9 +53,6 @@ export const DEFICIT_FONCIER_PLAFOND_GLOBAL = 10_700
 
 /** Rendement marché monétaire / fonds court terme (annuel %). */
 const RENDEMENT_MONETAIRE_PCT = 3.5
-
-/** Abattement annuel sur les gains d'AV après 8 ans (célibataire). */
-const AV_ABATTEMENT_CELIBATAIRE = 4_600
 
 // ─────────────────────────────────────────────────────────────────
 // Types publics
@@ -156,7 +159,10 @@ const ENVELOPPES_REFERENCE = ['PEA', 'Assurance-vie', 'PER', 'CTO', 'Livret A', 
 
 function construireProfilFiscal(p: PatrimoineComplet): ProfilFiscal {
   const fi  = p.fireInputs
-  const tmi = fi.tmi_rate ?? 0
+  // Fallback uniforme avec fiscaliteImmo : 30% si TMI non renseignee
+  // (etait 0 ici, ce qui masquait toutes les opportunites fiscales).
+  // L'agregateur expose un flag `tmiEstime` pour que l'UI puisse alerter.
+  const tmi = fi.tmi_rate ?? TMI_FALLBACK_PCT
 
   // Enveloppes déclarées (normalisation lowercase)
   const envLower = (fi.enveloppes ?? []).map((e) => e.toLowerCase())
@@ -574,7 +580,7 @@ function evaluerAssuranceVie(p: PatrimoineComplet, profil: ProfilFiscal): Opport
 // OPP_7 — Optimisation cash (Livret A / LDDS / fonds monétaire)
 // ─────────────────────────────────────────────────────────────────
 
-function evaluerCashOptimization(p: PatrimoineComplet, profil: ProfilFiscal): OpportuniteFiscale {
+function evaluerCashOptimization(p: PatrimoineComplet, _profil: ProfilFiscal): OpportuniteFiscale {
   // Cash sur compte courant (rendement 0)
   const compteCourant = p.comptes
     .filter((c) => c.type === 'compte_courant')
@@ -620,7 +626,7 @@ function evaluerCashOptimization(p: PatrimoineComplet, profil: ProfilFiscal): Op
 // OPP_8 — Démembrement / transmission anticipée
 // ─────────────────────────────────────────────────────────────────
 
-function evaluerDemembrement(p: PatrimoineComplet, profil: ProfilFiscal): OpportuniteFiscale {
+function evaluerDemembrement(p: PatrimoineComplet, _profil: ProfilFiscal): OpportuniteFiscale {
   const patrimoineNet = p.totalNet
   const age           = p.fireInputs.age ?? 0
 
@@ -683,10 +689,11 @@ function evaluerDemembrement(p: PatrimoineComplet, profil: ProfilFiscal): Opport
 // Helpers
 // ─────────────────────────────────────────────────────────────────
 
-/** True si le bien correspond à l'un des régimes listés (insensible casse + normalize). */
+// Sprint 2 — D10 : helper isRegime centralise dans regimeFiscalImmo.ts.
+// On re-exporte ici pour conserver la surface d'API privee de ce module
+// (consommateurs internes appellent isRegime directement).
+import { isRegime as isRegimeShared } from './regimeFiscalImmo'
 function isRegime(bien: BienImmo, regimes: ReadonlyArray<string>): boolean {
-  const r = (bien.fiscal_regime ?? '').toLowerCase().trim()
-  if (!r) return false
-  return regimes.some((target) => r === target.toLowerCase() || r.includes(target.toLowerCase()))
+  return isRegimeShared(bien, regimes)
 }
 

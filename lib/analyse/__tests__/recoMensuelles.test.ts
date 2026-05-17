@@ -40,6 +40,7 @@ function pat(over: Partial<PatrimoineComplet> = {}): PatrimoineComplet {
       risk_score: 50,
       enveloppes: [],
       tmi_rate: 30,
+      tmi_estime: false,
       actions_eu_value: 0,
     },
     scores: {} as never, recommandations: [],
@@ -62,7 +63,8 @@ describe('genererActionsMensuelles — cash dormant', () => {
     expect(cash).toBeDefined()
     // Coussin = 6 × 2000 = 12000 ; aInvestir = 40000 - 12000 = 28000
     expect(cash!.montant).toBe(28_000)
-    expect(cash!.titre).toContain('28 000 €')
+    // toLocaleString('fr-FR') utilise U+202F (narrow no-break space) entre les milliers.
+    expect(cash!.titre.replace(/\s/g, ' ')).toContain('28 000 €')
   })
 
   it('aucune action si cash <= 12 mois de charges', () => {
@@ -222,5 +224,121 @@ describe('constantes seuils', () => {
     expect(DRIFT_SEUIL_PCT).toBe(5)
     expect(CASH_SEUIL_MOIS).toBe(12)
     expect(DCA_SEUIL_JOURS).toBe(60)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────
+// Sprint 1 — I3 : injection des opportunites fiscales
+// ─────────────────────────────────────────────────────────────────
+
+import type { OpportuniteFiscale } from '../optimiseurFiscal'
+
+function makeOpp(over: Partial<OpportuniteFiscale> = {}): OpportuniteFiscale {
+  return {
+    id:                'opp-pea',
+    categorie:         'enveloppe',
+    titre:             'Ouvrir un PEA',
+    description:       'Transferer X € sur PEA',
+    gain_annuel_eur:   600,
+    gain_5ans_eur:     3000,
+    effort:            'faible',
+    priorite:          1,
+    action_concrete:   'Ouvrir un PEA chez un courtier en ligne et transferer vos actions europeennes.',
+    conditions:        [],
+    applicable:        true,
+    ...over,
+  }
+}
+
+describe('genererActionsMensuelles — injection opportunites fiscales (I3)', () => {
+  it('user TMI 30 + actions hors PEA → action fiscal apparait dans la liste', () => {
+    const out = genererActionsMensuelles(pat({
+      totalCash: 5000, // pas de cash dormant
+      repartitionClasses: [],
+      totalBrut: 50_000,
+    }), {
+      today: TODAY,
+      opportunitesFiscales: [makeOpp()],
+    })
+    const fiscal = out.find((a) => a.type === 'fiscal')
+    expect(fiscal).toBeDefined()
+    expect(fiscal!.priorite).toBe('haute')
+    expect(fiscal!.titre).toContain('PEA')
+    expect(fiscal!.titre).toContain('600')
+  })
+
+  it('aucune opportunite fournie → liste inchangee (compat retro)', () => {
+    const baseOut = genererActionsMensuelles(pat(), { today: TODAY })
+    const withOpps = genererActionsMensuelles(pat(), {
+      today: TODAY,
+      opportunitesFiscales: [],
+    })
+    expect(withOpps).toEqual(baseOut)
+  })
+
+  it('opportunites non applicables ignorees', () => {
+    const out = genererActionsMensuelles(pat({ totalCash: 5000 }), {
+      today: TODAY,
+      opportunitesFiscales: [
+        makeOpp({ applicable: false }),
+        makeOpp({ id: 'opp-no-gain', gain_annuel_eur: 0 }),
+      ],
+    })
+    expect(out.find((a) => a.type === 'fiscal')).toBeUndefined()
+  })
+
+  it('garde les 2 plus gros gains parmi les opportunites applicables', () => {
+    const out = genererActionsMensuelles(pat({
+      totalCash: 5000, repartitionClasses: [], totalBrut: 50_000,
+    }), {
+      today: TODAY,
+      opportunitesFiscales: [
+        makeOpp({ id: 'opp-a', titre: 'Ouvrir PER',           gain_annuel_eur: 1000 }),
+        makeOpp({ id: 'opp-b', titre: 'Reorganiser fonds',    gain_annuel_eur: 1500 }),
+        makeOpp({ id: 'opp-c', titre: 'Optimiser AV',         gain_annuel_eur:  300 }),
+      ],
+    })
+    const fiscales = out.filter((a) => a.type === 'fiscal')
+    expect(fiscales).toHaveLength(2)
+    // Les 2 plus gros gains : 1500 (opp-b) et 1000 (opp-a)
+    expect(fiscales.map((a) => a.id)).toEqual([
+      'fiscal-opp-b', 'fiscal-opp-a',
+    ])
+  })
+
+  it('plafonne le total a maxActions (defaut 5)', () => {
+    const ninetyDaysAgo = new Date(TODAY.getTime() - 90 * 24 * 3600 * 1000).toISOString()
+    // pat() declenche cash + drift + DCA = 3 regles, + 2 fiscales = 5
+    const out = genererActionsMensuelles(pat(), {
+      today: TODAY,
+      lastPositionAddedAt: ninetyDaysAgo,
+      opportunitesFiscales: [
+        makeOpp({ id: 'a', titre: 'PER',           gain_annuel_eur: 2000 }),
+        makeOpp({ id: 'b', titre: 'CTO transfer',  gain_annuel_eur: 1000 }),
+      ],
+    })
+    expect(out.length).toBeLessThanOrEqual(5)
+  })
+
+  it('opportunite PEA filtree si une action drift mentionne deja "PEA"', () => {
+    // Surponderation "PEA" (label artificiel, benchmark=0 → ecart=+80) +
+    // sous-ponderation "Obligataire" (benchmark=10, value=0 → ecart=-10).
+    // → detectDriftAllocation cree une action rebalance source=PEA.
+    // → l'opportunite PEA fiscale doit etre filtree par overlap.
+    const out = genererActionsMensuelles(pat({
+      totalCash: 5000,  // pas de cash dormant
+      repartitionClasses: [
+        { label: 'PEA',         valeur: 80_000, pourcentage: 80, color: '#10b981' },
+        { label: 'ETF / Fonds', valeur: 20_000, pourcentage: 20, color: '#3b82f6' },
+        { label: 'Obligataire', valeur:      0, pourcentage:  0, color: '#3b82f6' },
+      ],
+      totalBrut: 100_000,
+    }), {
+      today: TODAY,
+      opportunitesFiscales: [makeOpp({ titre: 'Optimiser PEA' })],
+    })
+    // L'action drift doit etre la, l'opportunite PEA filtree.
+    expect(out.find((a) => a.type === 'rebalance')).toBeDefined()
+    expect(out.find((a) => a.type === 'fiscal')).toBeUndefined()
   })
 })

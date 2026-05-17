@@ -188,6 +188,11 @@ export interface JalonFIRE {
   type:   'milestone' | 'fire' | 'lean_fire' | 'debt'
   /** Valeur numérique associée (patrimoine, montant remboursé, etc.). */
   valeur: number
+  /** Sprint 2 — I7 : true si un snapshot historique a deja franchi ce
+   *  jalon. Renseigne par `enrichJalonsAvecHistorique`. */
+  atteint?:        boolean
+  /** Date a laquelle le jalon a ete franchi historiquement (ISO YYYY-MM-DD). */
+  date_atteinte?:  string
 }
 
 /** Inputs requis par la projection globale. */
@@ -343,6 +348,10 @@ export interface PatrimoineComplet {
     risk_score:          number   // recalculé depuis profile.risk_1..4 (0-100)
     enveloppes:          string[]
     tmi_rate:            number | null
+    /** True si le profil n'a pas renseigne `tmi_rate` et qu'on a applique
+     *  le fallback (30 %) dans les calculs fiscalite immo + optimiseur.
+     *  L'UI peut afficher un badge "TMI estimee" et inviter a renseigner. */
+    tmi_estime:          boolean
     actions_eu_value:    number   // valeur des positions stock+etf zone Europe (PEA-éligible)
   }
 

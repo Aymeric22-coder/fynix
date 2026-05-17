@@ -25,7 +25,6 @@ import {
   type ScenarioStress, type ResultatStress,
 } from '@/lib/analyse/stressTest'
 import { formatCurrency } from '@/lib/utils/format'
-import { Button } from '@/components/ui/button'
 import type { ProjectionGlobaleResult, AnneeProjection } from '@/types/analyse'
 
 interface Props {
@@ -229,12 +228,22 @@ function StressResults({
             resultat.retard_mois === null
               ? 'Inatteignable'
               : resultat.retard_mois === 0
-              ? 'Objectif maintenu'
+              ? (resultat.age_fire_avec_stress !== null
+                  ? 'Objectif maintenu'
+                  : 'Objectif non atteint dans ce scenario')
               : `+${resultat.retard_mois} mois`
           }
-          tone={resultat.retard_mois === null || (resultat.retard_mois ?? 0) > 12
-            ? 'danger'
-            : resultat.retard_mois === 0 ? 'success' : 'warning'}
+          tone={
+            resultat.retard_mois === null
+              ? 'danger'
+              : resultat.retard_mois === 0 && resultat.age_fire_avec_stress === null
+                ? 'warning'
+                : (resultat.retard_mois ?? 0) > 12
+                  ? 'danger'
+                  : resultat.retard_mois === 0
+                    ? 'success'
+                    : 'warning'
+          }
         />
         <KpiBlock
           icon={<TrendingDown size={12} className="text-warning" />}

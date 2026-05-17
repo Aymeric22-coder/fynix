@@ -114,7 +114,7 @@ export default function ParametresForm({ profile, userEmail }: Props) {
           <input disabled value={userEmail} className={INPUT + ' opacity-50 cursor-not-allowed'} />
         </div>
         <div>
-          <label className={LABEL}>Nom d'affichage</label>
+          <label className={LABEL}>Nom d&apos;affichage</label>
           <input
             type="text"
             value={displayName}
@@ -131,12 +131,12 @@ export default function ParametresForm({ profile, userEmail }: Props) {
           <Percent size={15} className="text-muted" />
           <h2 className="text-sm font-medium text-primary">Situation fiscale</h2>
           <span className="text-xs text-secondary ml-1">
-            Utilisée pour l'estimation du rendement net après impôt
+            Utilisée pour l&apos;estimation du rendement net après impôt
           </span>
         </div>
 
         <div>
-          <label className={LABEL}>Tranche marginale d'imposition (TMI)</label>
+          <label className={LABEL}>Tranche marginale d&apos;imposition (TMI)</label>
           <div className="flex gap-2 flex-wrap">
             {TMI_OPTIONS.map((rate) => (
               <button

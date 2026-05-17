@@ -144,7 +144,7 @@ export function AddValuationForm({ open, onClose, propertyId, surfaceM2 }: Props
 
         <div className="flex justify-end gap-3 pt-2 border-t border-border">
           <Button variant="secondary" type="button" onClick={onClose}>Annuler</Button>
-          <Button type="submit" loading={loading}>Enregistrer l'estimation</Button>
+          <Button type="submit" loading={loading}>Enregistrer l&apos;estimation</Button>
         </div>
       </form>
     </Modal>

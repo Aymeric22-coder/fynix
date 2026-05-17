@@ -12,11 +12,11 @@
 'use client'
 
 import { useMemo } from 'react'
-import { Briefcase, RefreshCw } from 'lucide-react'
+import Link from 'next/link'
+import { RefreshCw } from 'lucide-react'
 import { PageHeader } from '@/components/shared/page-header'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { EmptyState } from '@/components/ui/empty-state'
 import { Tabs, type TabItem } from '@/components/ui/tabs'
 import { usePatrimoineAnalyse } from '@/hooks/use-patrimoine-analyse'
 
@@ -83,18 +83,10 @@ export function AnalyseClient() {
   if (!data) return null
 
   // ── Patrimoine vide ──────────────────────────────────────────────
-  if (data.totalBrut === 0) {
-    return (
-      <div>
-        <PageHeader title="Analyse patrimoniale" />
-        <EmptyState
-          icon={Briefcase}
-          title="Patrimoine vide"
-          description="Ajoutez des positions, biens ou comptes dans Portefeuille / Immobilier / Cash pour voir votre analyse consolidée."
-        />
-      </div>
-    )
-  }
+  // On affiche un bandeau explicatif + on garde Scores & Projection visibles
+  // pour guider un utilisateur fraichement onboarde (la projection peut
+  // utiliser ses objectifs de profil meme sans actif).
+  const isEmpty = data.totalBrut === 0
 
   const lastUpdatedFr = new Date(data.lastUpdated).toLocaleString('fr-FR', {
     dateStyle: 'short', timeStyle: 'short',
@@ -127,6 +119,20 @@ export function AnalyseClient() {
         <p className="text-xs text-warning bg-warning-muted px-3 py-2 rounded-lg mb-4">
           ⚠ {error} (les données affichées peuvent être anciennes)
         </p>
+      )}
+
+      {isEmpty && (
+        <div className="card p-4 mb-4 border-l-4 border-l-accent">
+          <p className="text-sm text-primary font-medium">Patrimoine vide</p>
+          <p className="text-xs text-secondary mt-1">
+            Tu n&apos;as pas encore d&apos;actif. La projection ci-dessous est basee
+            uniquement sur tes objectifs de profil. Ajoute des positions dans
+            <Link href="/portefeuille" className="text-accent hover:underline ml-1">Portefeuille</Link>,
+            <Link href="/immobilier" className="text-accent hover:underline ml-1">Immobilier</Link> ou
+            <Link href="/cash" className="text-accent hover:underline ml-1">Cash</Link> pour
+            debloquer l&apos;analyse complete.
+          </p>
+        </div>
       )}
 
       <Tabs tabs={tabs} urlParam="tab" />

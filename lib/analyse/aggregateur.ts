@@ -18,6 +18,8 @@ import { calculerTousLesScores } from './scores'
 import { genererRecommandations } from './recommandations'
 import { expandPositions, bucketsBySector, bucketsByZone, type ExpansionResult } from './expandETF'
 import { projectionGlobale, projectionFIREIntervalle, calculerRendementPortefeuille } from './projectionFIRE'
+import { swrPctFromFireType, INFLATION_DEFAUT_PCT } from './projectionFIRE'
+import { devLog, devWarn } from '@/lib/utils/devLog'
 import { getEtfComposition } from './etfCompositions'
 import {
   benchmarkGeoOf, benchmarkSectorOf, classifyDeviation, trackingErrorScore,
@@ -103,14 +105,26 @@ function estimerDureeRestante(capital: number, mensualite: number, tauxAnnuel: n
   return Math.max(0, Math.round(n))
 }
 
-const FISCAL_TO_TYPE: Record<string, string> = {
-  rp:           'Résidence principale',
-  primary:      'Résidence principale',
-  rental:       'Locatif',
-  lmnp:         'Locatif (LMNP)',
-  lmp:          'Locatif (LMP)',
-  nue:          'Locatif nu',
-  scpi:         'SCPI',
+// Sprint 2 — D10 : remplace par fiscalRegimeLabel (lib/analyse/regimeFiscalImmo).
+// On garde une map locale "type d'usage" plus generique que les labels fiscaux
+// car l'UI veut afficher "Locatif" / "Résidence principale" plutot que le nom
+// du regime.
+import { normalizeFiscalRegime } from './regimeFiscalImmo'
+function inferTypeUsageFromRegime(regime: string | null | undefined): string {
+  const norm = normalizeFiscalRegime(regime)
+  switch (norm) {
+    case 'rp':              return 'Résidence principale'
+    case 'foncier_micro':   return 'Locatif nu'
+    case 'foncier_nu':      return 'Locatif nu'
+    case 'lmnp_micro':      return 'Locatif (LMNP)'
+    case 'lmnp_reel':       return 'Locatif (LMNP)'
+    case 'lmp':             return 'Locatif (LMP)'
+    case 'sci_ir':          return 'Locatif (SCI IR)'
+    case 'sci_is':          return 'Locatif (SCI IS)'
+    case 'scpi':            return 'SCPI'
+    case 'meuble_tourisme': return 'Meublé de tourisme'
+    default:                return 'Immobilier'
+  }
 }
 
 interface ImmoLoadResult {
@@ -258,7 +272,7 @@ async function loadImmo(userId: string): Promise<ImmoLoadResult> {
     loyersMensuels   += loyerMensuel
     mensualitesTotal += mensualite
 
-    const type = FISCAL_TO_TYPE[(r.fiscal_regime ?? '').toLowerCase()] ?? 'Immobilier'
+    const type = inferTypeUsageFromRegime(r.fiscal_regime)
     return {
       id:                  r.id,
       nom:                 asset?.name ?? r.address_city ?? 'Bien',
@@ -523,12 +537,12 @@ function repartitionClasses(positions: EnrichedPosition[], totalImmo: number, to
  * bug "secteurs vides".
  */
 function logExpansionDebug(positions: EnrichedPosition[], exp: ExpansionResult) {
-  console.log(`[expandETF] ────── début expansion (${positions.length} positions, total ${exp.totalValue.toFixed(0)}€) ──────`)
+  devLog(`[expandETF] ────── début expansion (${positions.length} positions, total ${exp.totalValue.toFixed(0)}€) ──────`)
 
   for (const p of positions) {
     const compo = p.isin ? getEtfComposition(p.isin) : null
     const isInTable = compo !== null
-    console.log(
+    devLog(
       `[expandETF] ${p.isin || '(no ISIN)'}` +
       ` ${p.name.padEnd(30).slice(0, 30)}` +
       ` type=${p.asset_type.padEnd(7)}` +
@@ -540,12 +554,12 @@ function logExpansionDebug(positions: EnrichedPosition[], exp: ExpansionResult) 
         .sort(([, a], [, b]) => b - a)
         .map(([s, pct]) => `${s}:${(p.current_value * pct / 100).toFixed(0)}€`)
         .join(', ')
-      console.log(`[expandETF]    → ${compo.name} décomposé en ${decomp}`)
+      devLog(`[expandETF]    → ${compo.name} décomposé en ${decomp}`)
     }
   }
 
-  console.log(`[expandETF] identifié=${exp.identifiedValue.toFixed(0)}€ / ${exp.totalValue.toFixed(0)}€ (${exp.totalValue > 0 ? Math.round(exp.identifiedValue / exp.totalValue * 100) : 0}%)`)
-  console.log(`[expandETF] ────── fin expansion ──────`)
+  devLog(`[expandETF] identifié=${exp.identifiedValue.toFixed(0)}€ / ${exp.totalValue.toFixed(0)}€ (${exp.totalValue > 0 ? Math.round(exp.identifiedValue / exp.totalValue * 100) : 0}%)`)
+  devLog(`[expandETF] ────── fin expansion ──────`)
 }
 
 /**
@@ -703,7 +717,7 @@ export async function getPatrimoineComplet(userId: string): Promise<PatrimoineCo
     loadProfile(userId),
   ])
   const {
-    biens, totalImmo, totalDettes, loyersMensuels,
+    biens, totalImmo, totalDettes,
     totalImmoEquity, risqueImmoGlobal, revenuPassifImmo,
     mensualitesImmoTotal, rendementNetImmoMoyen,
   } = immoData
@@ -751,6 +765,7 @@ export async function getPatrimoineComplet(userId: string): Promise<PatrimoineCo
     risk_score:           profile.risk_score,
     enveloppes:           profile.enveloppes,
     tmi_rate:             profile.tmi_rate,
+    tmi_estime:           profile.tmi_rate === null,
     actions_eu_value:     actionsEuValue,
     stabilite_revenus:    profile.stabilite_revenus,
     priorite:             profile.priorite,
@@ -796,6 +811,8 @@ export async function getPatrimoineComplet(userId: string): Promise<PatrimoineCo
       cashActuel:            totalCash,
       biens,
       totalNet,
+      fireType:              profile.fire_type,
+      inflationPct:          INFLATION_DEFAUT_PCT,
     }),
     profilType,
     prenom,
@@ -813,15 +830,15 @@ export async function getPatrimoineComplet(userId: string): Promise<PatrimoineCo
   const scores          = calculerTousLesScores(partial)
   const recommandations = genererRecommandations({ ...partial, scores }, scores)
 
-  console.log(`[aggregateur] patrimoine complet en ${Date.now() - t0}ms — ${positions.length} pos, ${biens.length} biens, ${comptes.length} comptes, fiabilité ${allocs.fiabilite.pct}%, ${recommandations.length} reco(s)`)
+  devLog(`[aggregateur] patrimoine complet en ${Date.now() - t0}ms — ${positions.length} pos, ${biens.length} biens, ${comptes.length} comptes, fiabilité ${allocs.fiabilite.pct}%, ${recommandations.length} reco(s)`)
   // Log breakdown patrimoine net (utile pour debug discordance UI)
-  console.log(`[aggregateur] patrimoine = financier ${totalPortefeuille.toFixed(0)}€ + immo brut ${totalImmo.toFixed(0)}€ + cash ${totalCash.toFixed(0)}€ = brut ${totalBrut.toFixed(0)}€ — dettes ${totalDettes.toFixed(0)}€ = NET ${totalNet.toFixed(0)}€ (equity immo ${totalImmoEquity.toFixed(0)}€)`)
+  devLog(`[aggregateur] patrimoine = financier ${totalPortefeuille.toFixed(0)}€ + immo brut ${totalImmo.toFixed(0)}€ + cash ${totalCash.toFixed(0)}€ = brut ${totalBrut.toFixed(0)}€ — dettes ${totalDettes.toFixed(0)}€ = NET ${totalNet.toFixed(0)}€ (equity immo ${totalImmoEquity.toFixed(0)}€)`)
   if (allocs.unmappedEtfs.length > 0) {
-    console.warn(`[aggregateur] ⚠ ${allocs.unmappedEtfs.length} ETF non mappé(s) — secteurs estimés uniquement :`)
+    devWarn(`[aggregateur] ⚠ ${allocs.unmappedEtfs.length} ETF non mappé(s) — secteurs estimés uniquement :`)
     for (const u of allocs.unmappedEtfs) {
-      console.warn(`  ${u.isin}  ${u.name}  (${u.value.toFixed(0)}€)`)
+      devWarn(`  ${u.isin}  ${u.name}  (${u.value.toFixed(0)}€)`)
     }
-    console.warn('  → Ces ISIN à ajouter dans lib/analyse/etfCompositions.ts')
+    devWarn('  → Ces ISIN à ajouter dans lib/analyse/etfCompositions.ts')
   }
 
   return { ...partial, scores, recommandations }
@@ -841,6 +858,8 @@ interface ProjectionSnapshotInputs {
   cashActuel:          number
   biens:               BienImmo[]
   totalNet:            number
+  fireType:            string | null
+  inflationPct:        number       // %, aligne sur projection /analyse
 }
 
 /**
@@ -854,6 +873,12 @@ function computeProjectionSnapshot(i: ProjectionSnapshotInputs): import('@/types
   if (i.ageActuel === null || i.ageCible === null || i.revenuPassifCible <= 0) return null
   if (i.ageCible <= i.ageActuel) return null
 
+  // SWR aligne sur le fire_type du profil (lean=3.5, fat=3, standard=4).
+  // C'est le meme helper que /analyse > ProjectionFIRE.tsx, donc Hero et
+  // page Analyse affichent desormais la meme cible et le meme pourcentage.
+  const swrPct = swrPctFromFireType(i.fireType)
+  const swrFraction = swrPct / 100
+
   const baseInputs = {
     ageActuel:                 i.ageActuel,
     ageCible:                  i.ageCible,
@@ -862,7 +887,8 @@ function computeProjectionSnapshot(i: ProjectionSnapshotInputs): import('@/types
     rendementCentral:          i.rendementCentral,
     appreciationImmoPct:       2,
     inflationLoyersPct:        1.5,
-    inflationPct:              2,
+    inflationPct:              i.inflationPct,
+    swrPct,
     patrimoineFinancierActuel: i.patrimoineFinancier,
     cashActuel:                i.cashActuel,
     biensExistants:            i.biens,
@@ -871,10 +897,11 @@ function computeProjectionSnapshot(i: ProjectionSnapshotInputs): import('@/types
 
   const interval = projectionFIREIntervalle(baseInputs)
 
-  // Cible FIRE indexée sur l'inflation à l'horizon de l'âge cible.
+  // Cible FIRE = revenu annuel cible / SWR, indexee sur l'inflation a
+  // l'horizon de l'age cible. Avant : x12x25 fige (= SWR 4% en dur).
   const yearsToTarget = Math.max(0, i.ageCible - i.ageActuel)
   const patrimoineFireCible =
-    i.revenuPassifCible * 12 * 25 * Math.pow(1 + (baseInputs.inflationPct ?? 2) / 100, yearsToTarget)
+    (i.revenuPassifCible * 12 / swrFraction) * Math.pow(1 + i.inflationPct / 100, yearsToTarget)
 
   // Si déjà sur la trajectoire (atteint la cible avant l'âge cible)
   // → pas de besoin d'épargne supplémentaire.

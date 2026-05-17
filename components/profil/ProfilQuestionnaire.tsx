@@ -74,10 +74,14 @@ export function ProfilQuestionnaire({
     }
 
     // Sauvegarde intermédiaire de l'étape complétée (fire & forget : on
-    // n'attend pas pour passer à la suite, mais on logue les erreurs).
+    // n'attend pas pour passer à la suite, mais on remonte l'erreur dans
+    // le state pour que l'utilisateur sache que sa progression n'est pas
+    // garantie — sinon il croit avoir sauve et perd ses donnees au refresh).
     if (onStepSave && step < 8) {
       onStepSave(step, values).then((res) => {
-        if (res.error) console.warn('[wizard] saveStep failed:', res.error)
+        if (res.error) {
+          setError(`Sauvegarde echouee : ${res.error}. Reessaie ou rafraichis la page.`)
+        }
       })
     }
 
@@ -99,7 +103,9 @@ export function ProfilQuestionnaire({
     setError(null)
     if (onStepSave) {
       onStepSave(step, values).then((res) => {
-        if (res.error) console.warn('[wizard] skipStep failed:', res.error)
+        if (res.error) {
+          setError(`Sauvegarde echouee : ${res.error}. Reessaie ou rafraichis la page.`)
+        }
       })
     }
     setStep((s) => s + 1)

@@ -13,17 +13,12 @@
  *      cet instrument, on recalcule un PRU pondéré (existant + import) et
  *      on additionne les quantités.
  *
- * Réponse :
- *   {
- *     broker_detected:    string,
- *     total_rows:         number,
- *     transactions_found: number,
- *     positions_imported: number,
- *     positions_updated:  number,
- *     positions_skipped:  number,
- *     errors:             Array<{ row?: number; isin?: string; reason: string }>,
- *     preview:            AggregatedPosition[],
- *   }
+ * Sprint 2 — hardening :
+ *   - D14 : limites taille (5 Mo) et lignes (5000) explicites.
+ *   - D15 : validation Zod du body JSON.
+ *   - D16 : nettoyage du nom d'instrument avant INSERT (catalogue partage).
+ *   - D13 : insert ISIN-safe (ON CONFLICT + fallback SELECT en cas de race).
+ *   - D19 : enrichissement ISIN paralelise via runInBatches.
  */
 
 import { createHash } from 'node:crypto'
@@ -35,6 +30,9 @@ import {
   type BrokerFormat, type AggregatedPosition, type AssetClassNormalized,
 } from '@/lib/portfolio/csvImport'
 import { enrichISIN } from '@/lib/analyse/isinEnricher'
+import { cleanInstrumentName } from '@/lib/portfolio/cleanInstrumentName'
+import { ImportCsvBodySchema, formatZodErrors } from '@/lib/portfolio/importSchema'
+import { runInBatches } from '@/lib/email/batch'
 import type { AssetClass, CurrencyCode } from '@/types/database.types'
 
 interface ImportSummary {
@@ -57,14 +55,51 @@ const ASSET_CLASS_MAP: Record<AssetClassNormalized, AssetClass> = {
   obligation: 'bond',
 }
 
+// Limites D14 — surface d'attaque CSV. Exportes pour les tests.
+export const MAX_CSV_BYTES = 5 * 1024 * 1024   // 5 Mo
+export const MAX_CSV_LINES = 5000              // lignes brutes
+
+// Mapping enrichISIN.asset_type → AssetClass DB
+const ENRICH_ASSET_CLASS_MAP: Record<string, AssetClass> = {
+  stock: 'equity', etf: 'etf', bond: 'bond',
+  crypto: 'crypto', scpi: 'scpi', metal: 'metal',
+}
+
 // ─────────────────────────────────────────────────────────────────────
 
-async function readCsv(req: Request): Promise<{ csv: string | null; brokerHint?: BrokerFormat; excludedKeys: string[] }> {
+interface ReadCsvResult {
+  csv:           string | null
+  brokerHint?:   BrokerFormat
+  excludedKeys:  string[]
+  /** Si défini, court-circuite avec ce code HTTP + message. */
+  earlyError?:   { status: number; message: string }
+}
+
+async function readCsv(req: Request): Promise<ReadCsvResult> {
+  // D14 — taille max via Content-Length quand fourni par le client.
+  const lenHeader = req.headers.get('content-length')
+  if (lenHeader) {
+    const len = parseInt(lenHeader, 10)
+    if (Number.isFinite(len) && len > MAX_CSV_BYTES) {
+      return {
+        csv: null, excludedKeys: [],
+        earlyError: { status: 413, message: 'Fichier trop volumineux (max 5 Mo)' },
+      }
+    }
+  }
+
   const contentType = req.headers.get('content-type') ?? ''
   if (contentType.includes('multipart/form-data')) {
     const fd = await req.formData()
     const file = fd.get('file')
     if (!(file instanceof File)) return { csv: null, excludedKeys: [] }
+    // D14 (fallback) : le browser fournit `size` sur File.
+    if (file.size > MAX_CSV_BYTES) {
+      return {
+        csv: null, excludedKeys: [],
+        earlyError: { status: 413, message: 'Fichier trop volumineux (max 5 Mo)' },
+      }
+    }
     const bytes = await file.arrayBuffer()
     const csv = decodeCsvBytes(bytes)
     const hint = fd.get('broker') as BrokerFormat | null
@@ -74,20 +109,49 @@ async function readCsv(req: Request): Promise<{ csv: string | null; brokerHint?:
       : []
     return { csv, brokerHint: hint && hint !== 'unknown' ? hint : undefined, excludedKeys }
   }
-  try {
-    const json = await req.json() as { csv?: string; broker?: BrokerFormat; excludedIds?: string[]; _exclusions?: string[] }
-    const excludedKeys = Array.isArray(json.excludedIds)
-      ? json.excludedIds
-      : Array.isArray(json._exclusions) ? json._exclusions : []
-    return { csv: json.csv ?? null, brokerHint: json.broker, excludedKeys }
-  } catch {
-    return { csv: null, excludedKeys: [] }
+
+  // JSON body : validation Zod (D15).
+  let raw: unknown
+  try { raw = await req.json() }
+  catch { return { csv: null, excludedKeys: [] } }
+
+  const parsed = ImportCsvBodySchema.safeParse(raw)
+  if (!parsed.success) {
+    return {
+      csv: null, excludedKeys: [],
+      earlyError: {
+        status:  400,
+        message: 'Body JSON invalide : ' + formatZodErrors(parsed.error).join(' ; '),
+      },
+    }
+  }
+  const body = parsed.data
+  const excludedKeys = body.excludedIds ?? body._exclusions ?? []
+  // D14 (JSON) — on mesure aussi la taille du csv string.
+  if (body.csv && body.csv.length > MAX_CSV_BYTES) {
+    return {
+      csv: null, excludedKeys: [],
+      earlyError: { status: 413, message: 'Fichier trop volumineux (max 5 Mo)' },
+    }
+  }
+  return {
+    csv:        body.csv ?? null,
+    brokerHint: body.broker as BrokerFormat | undefined,
+    excludedKeys,
   }
 }
 
 export const POST = withAuth(async (req: Request, user: User) => {
-  const { csv, brokerHint, excludedKeys } = await readCsv(req)
+  const { csv, brokerHint, excludedKeys, earlyError } = await readCsv(req)
+  if (earlyError) return err(earlyError.message, earlyError.status)
   if (!csv || csv.trim().length === 0) return err('Fichier CSV manquant', 400)
+
+  // D14 — borne haute en nombre de lignes brutes (lecture rapide avant
+  // d'allouer le parseur complet).
+  const lineCount = (csv.match(/\n/g)?.length ?? 0) + 1
+  if (lineCount > MAX_CSV_LINES) {
+    return err(`Fichier trop long (max ${MAX_CSV_LINES} lignes, ${lineCount} detectees)`, 422)
+  }
 
   // Hash SHA-256 du contenu : la dedup tient compte des exclusions pour
   // que l'utilisateur puisse re-importer le meme fichier avec une selection
@@ -162,6 +226,28 @@ export const POST = withAuth(async (req: Request, user: User) => {
     }
   }
 
+  // ── 2b) D19 — Enrichissement ISIN paralelise par batch.
+  //       Limite OpenFIGI sans cle API : 25 requetes/min.
+  //       batchSize=5 + delayMs=2500ms → max 12 req/min en regime, large marge.
+  const isinsToEnrich = positions
+    .map((p) => p.isin)
+    .filter((i): i is string => !!i && !instrumentByIsin.has(i))
+
+  const enrichedByIsin = new Map<string, Awaited<ReturnType<typeof enrichISIN>>>()
+  if (isinsToEnrich.length > 0) {
+    const summaryBatch = await runInBatches(
+      isinsToEnrich,
+      async (isin) => {
+        try { return { isin, data: await enrichISIN(isin) } }
+        catch { return { isin, data: null } }
+      },
+      { batchSize: 5, delayMs: 2500 },
+    )
+    for (const r of summaryBatch.results) {
+      if (r.ok && r.value.data) enrichedByIsin.set(r.value.isin, r.value.data)
+    }
+  }
+
   // ── 3) Traitement position par position
   for (const pos of positions) {
     try {
@@ -176,45 +262,63 @@ export const POST = withAuth(async (req: Request, user: User) => {
 
       // 3a — Création de l'instrument si absent du référentiel global
       if (!instrument && pos.isin) {
-        // Enrichissement via le pipeline existant (cache + OpenFIGI + Yahoo).
-        // Erreurs silencieuses : si l'enrichissement échoue, on insère avec
-        // les données du CSV et asset_class=mapping CSV → DB.
         let assetClassDb: AssetClass = ASSET_CLASS_MAP[pos.asset_class] ?? 'other'
         let resolvedName = pos.name
-        try {
-          const enriched = await enrichISIN(pos.isin)
+        const enriched = enrichedByIsin.get(pos.isin)
+        if (enriched) {
           if (enriched.name) resolvedName = enriched.name
-          // Si l'enrichissement détecte une classe différente, on lui fait
-          // confiance (ex : Trade Republic dit "STOCK" mais ISIN est un ETF).
           if (enriched.asset_type && enriched.asset_type !== 'unknown') {
-            const map: Record<string, AssetClass> = {
-              stock: 'equity', etf: 'etf', bond: 'bond',
-              crypto: 'crypto', scpi: 'scpi', metal: 'metal',
-            }
-            assetClassDb = map[enriched.asset_type] ?? assetClassDb
+            assetClassDb = ENRICH_ASSET_CLASS_MAP[enriched.asset_type] ?? assetClassDb
           }
-        } catch (e) {
-          // L'enrichissement ne doit pas planter l'import.
-          console.warn(`[import] enrichISIN ${pos.isin} a échoué :`, (e as Error).message)
         }
 
-        const { data: created, error: ie } = await supabase
+        // D16 — nettoyage du libellé broker avant insertion dans le
+        // catalogue partagé. Sinon "VENTE ALSTOM 15/03" se retrouve
+        // visible par tous les autres users.
+        const cleanedName = cleanInstrumentName({
+          rawName: resolvedName,
+          isin:    pos.isin,
+          ticker:  pos.ticker,
+        })
+
+        // D13 — INSERT ISIN-safe : si une race condition a deja insere
+        // cet ISIN par un autre user/autre import, on recupere son id.
+        const insertPayload = {
+          name:        cleanedName,
+          asset_class: assetClassDb,
+          ticker:      pos.ticker ?? null,
+          isin:        pos.isin,
+          currency:    (pos.currency as CurrencyCode) ?? 'EUR',
+          data_source: 'import',
+        }
+        const insertResult = await supabase
           .from('instruments')
-          .insert({
-            name:        resolvedName,
-            asset_class: assetClassDb,
-            ticker:      pos.ticker ?? null,
-            isin:        pos.isin,
-            currency:    (pos.currency as CurrencyCode) ?? 'EUR',
-            data_source: 'import',
-          })
+          .insert(insertPayload)
           .select('id, asset_class')
-          .single()
-        if (ie || !created) {
-          summary.errors.push({ isin: pos.isin, reason: `Création instrument échouée : ${ie?.message ?? 'inconnu'}` })
+          .maybeSingle()
+
+        let resolvedId: string | undefined = insertResult.data?.id as string | undefined
+        let resolvedClass: AssetClass | undefined = insertResult.data?.asset_class as AssetClass | undefined
+
+        if (!resolvedId) {
+          // Conflit UNIQUE(isin) probable → on recupere l'existant.
+          const existingByConflict = await supabase
+            .from('instruments')
+            .select('id, asset_class')
+            .eq('isin', pos.isin)
+            .maybeSingle()
+          resolvedId    = existingByConflict.data?.id as string | undefined
+          resolvedClass = existingByConflict.data?.asset_class as AssetClass | undefined
+        }
+
+        if (!resolvedId) {
+          summary.errors.push({
+            isin: pos.isin,
+            reason: `Création instrument échouée : ${insertResult.error?.message ?? 'inconnu'}`,
+          })
           continue
         }
-        instrument = { id: created.id as string, asset_class: created.asset_class as AssetClass }
+        instrument = { id: resolvedId, asset_class: resolvedClass ?? assetClassDb }
         instrumentByIsin.set(pos.isin, instrument)
       }
 
@@ -262,7 +366,6 @@ export const POST = withAuth(async (req: Request, user: User) => {
           continue
         }
         summary.positions_imported++
-        // Marque la position comme désormais existante pour la suite de la boucle
         existingByInstrumentId.set(instrument.id, {
           id:            'new',
           quantity:      pos.quantity,
@@ -275,8 +378,6 @@ export const POST = withAuth(async (req: Request, user: User) => {
   }
 
   // ── 4) Enregistre le hash pour bloquer les futurs imports identiques.
-  //       En cas d'echec (race condition, autre client a deja insere),
-  //       on log mais on ne fait pas echouer l'import.
   const totalImported = summary.positions_imported + summary.positions_updated
   if (totalImported > 0) {
     const { error: he } = await supabase

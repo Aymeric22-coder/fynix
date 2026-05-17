@@ -13,16 +13,10 @@ import {
 import type { LucideIcon } from 'lucide-react'
 import type { Recommandation } from '@/types/analyse'
 import type { RecommandationEnrichie } from '@/lib/analyse/recommandations'
+import { formatEur } from '@/lib/utils/format'
 
 interface Props {
   recos: Recommandation[]
-}
-
-/** Formate un montant en € avec espaces de séparation. */
-function formatEur(n: number): string {
-  const sign = n < 0 ? '-' : ''
-  const abs  = Math.abs(Math.round(n))
-  return `${sign}${abs.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} €`
 }
 
 const PRIO_COLOR: Record<Recommandation['priorite'], { border: string; badge: string; label: string; icon: LucideIcon }> = {
@@ -120,7 +114,7 @@ function RecoCard({ reco }: { reco: Recommandation }) {
           {gainEur !== null && gainEur > 0 && (
             <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-accent/10 border border-accent/30 text-xs">
               <Coins size={11} className="text-accent" />
-              <span className="text-accent font-medium financial-value">{formatEur(gainEur)}</span>
+              <span className="text-accent font-medium financial-value">{formatEur(gainEur, { decimals: 0 })}</span>
               {gainLabel && <span className="text-secondary">{gainLabel}</span>}
             </span>
           )}

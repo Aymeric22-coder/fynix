@@ -69,6 +69,7 @@ function patrimoine(over: Partial<PatrimoineComplet> = {}): PatrimoineComplet {
       risk_score: 50,
       enveloppes: ['PEA', 'Assurance-vie'],
       tmi_rate: 30,
+      tmi_estime: false,
       actions_eu_value: 30000,
     },
     scores: {} as never, recommandations: [],

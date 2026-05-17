@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 import { Button }    from '@/components/ui/button'
-import { Field, Input, Select, Textarea, FormGrid, FormSection } from '@/components/ui/field'
+import { Field, Input, Select, Textarea, FormGrid } from '@/components/ui/field'
 import { useForm }   from '@/hooks/use-form'
 
 const INITIAL = {
@@ -67,7 +67,7 @@ export default function NouveauBienPage() {
         className="flex items-center gap-2 text-sm text-secondary hover:text-primary transition-colors w-fit"
       >
         <ArrowLeft size={14} />
-        Retour à l'immobilier
+        Retour à l&apos;immobilier
       </Link>
 
       <div>
@@ -172,7 +172,7 @@ export default function NouveauBienPage() {
           {/* Coût total d'acquisition */}
           {(values.purchase_price || values.purchase_fees || values.works_amount) && (
             <div className="bg-surface-2 rounded-lg px-4 py-3 text-sm">
-              <span className="text-secondary">Coût total d'acquisition : </span>
+              <span className="text-secondary">Coût total d&apos;acquisition : </span>
               <span className="text-primary font-medium financial-value">
                 {(
                   (values.purchase_price ?? 0) +

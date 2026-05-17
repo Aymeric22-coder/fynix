@@ -20,9 +20,11 @@
  */
 
 import type { FiscalRegime } from '@/types/database.types'
+import { PRELEVEMENTS_SOCIAUX_PCT, TMI_FALLBACK_PCT } from './constants'
 
-/** Prélèvements sociaux (PS) sur revenus fonciers et BIC non-pro. */
-export const PRELEVEMENTS_SOCIAUX_PCT = 17.2
+// Re-export pour conserver la surface d'API publique du module
+// (consommateurs qui faisaient `import { PRELEVEMENTS_SOCIAUX_PCT } from '@/lib/analyse/fiscaliteImmo'`).
+export { PRELEVEMENTS_SOCIAUX_PCT }
 
 /** Taux marginal d'IS appliqué à la SCI à l'IS (estimation simplifiée). */
 export const SCI_IS_RATE_PCT = 25
@@ -81,7 +83,7 @@ export function calculerImpotFoncier(inputs: ImpotFoncierInputs): ImpotFoncierRe
   const loyer    = Math.max(0, inputs.loyer_annuel)
   const charges  = Math.max(0, inputs.charges_annuelles)
   const interets = Math.max(0, inputs.interets_credit_annuels)
-  const tmiPct   = inputs.tmi_rate ?? 30
+  const tmiPct   = inputs.tmi_rate ?? TMI_FALLBACK_PCT
   const valeurAmort = Math.max(0, inputs.valeur_amortissable ?? 0)
   const amortissement = valeurAmort * (LMNP_AMORT_DEFAULT_PCT / 100)
 

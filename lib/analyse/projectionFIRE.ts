@@ -28,25 +28,32 @@ import type {
   AcquisitionFuture, AnneeProjection, ProjectionGlobaleResult, ProjectionInputs,
   ProjectionPoint, ProjectionResult, JalonFIRE,
 } from '@/types/analyse'
+import {
+  PRELEVEMENTS_SOCIAUX_PCT,
+  PFU_PCT,
+  AV_LONG_TERME_PCT,
+  SWR_STANDARD_PCT,
+  swrPctFromFireType,
+} from './constants'
+import { devWarn } from '../utils/devLog'
 
 // ─────────────────────────────────────────────────────────────────
 // Constantes Sprint 3 — paramètres FIRE ajustables
 // ─────────────────────────────────────────────────────────────────
 
 /** SWR par défaut (règle des 25× / Trinity Study). */
-export const SWR_DEFAUT_PCT = 4
+export const SWR_DEFAUT_PCT = SWR_STANDARD_PCT
 
 /** Inflation générale par défaut (cible BCE). */
 export const INFLATION_DEFAUT_PCT = 2
 
-/** Taux PFU (Flat Tax) sur les revenus du capital en CTO. */
-const PFU_CTO_PCT = 30
+// Helper pour aligner Hero / projection / scores sur la meme grille SWR.
+export { swrPctFromFireType }
 
-/** Prélèvements sociaux uniquement (PEA après 5 ans, AV). */
-const PS_PEA_AV_PCT = 17.2
-
-/** Fiscalité Assurance-Vie (PFL 7,5 % + PS 17,2 %) après 8 ans, en simplifié. */
-const FISCALITE_AV_LONG_TERME_PCT = 24.7
+// Alias locaux pour minimiser les changements ailleurs dans le fichier.
+const PFU_CTO_PCT                 = PFU_PCT
+const PS_PEA_AV_PCT               = PRELEVEMENTS_SOCIAUX_PCT
+const FISCALITE_AV_LONG_TERME_PCT = AV_LONG_TERME_PCT
 
 /**
  * Estime un taux de pression fiscale moyen sur les revenus du PORTEFEUILLE
@@ -150,6 +157,13 @@ interface BienAnnee {
  *   - Le loyer s'apprécie de `inflationLoyersPct` / an (IRL).
  *   - Les charges suivent l'inflation loyers.
  *
+ * Sprint 1 — B6 : si `cashflowNetFiscalAnnuel` est fourni, il est utilise
+ * comme cashflow de l'annee 0 et l'on derive un ratio impot/loyer constant
+ * applique a chaque annee suivante (le loyer evolue avec l'inflation,
+ * l'impot suit proportionnellement). Sans ce parametre, on retombe sur le
+ * cashflow brut (avant impot) — c'est l'ancien comportement, conserve pour
+ * compat des appelants directs sans donnees fiscales (devWarn emis).
+ *
  * Retourne un snapshot par année (année 0 = état actuel inclus).
  */
 export function simulerBienExistant(
@@ -157,6 +171,7 @@ export function simulerBienExistant(
   annees:              number,
   appreciationPct:     number,
   inflationLoyersPct:  number,
+  cashflowNetFiscalAnnuel?: number,
 ): BienAnnee[] {
   const tauxAnnuel = bien.taux_interet_estime / 100
   const tauxMensuel = tauxAnnuel / 12
@@ -169,12 +184,31 @@ export function simulerBienExistant(
   let mensualite      = bien.mensualite_credit
   let moisEcoules     = 0
 
+  // Derive un ratio impot/loyer constant a partir du cashflow net fiscal de
+  // l'annee 0. Plus stable a long terme qu'un montant absolu : quand les
+  // loyers s'inflatent et que le credit se solde, l'impot suit en proportion.
+  let ratioImpotSurLoyers = 0
+  let hasFiscalData = false
+  if (cashflowNetFiscalAnnuel !== undefined && Number.isFinite(cashflowNetFiscalAnnuel)) {
+    const loyerY0    = bien.loyer_mensuel * 12
+    const chargesY0  = bien.charges_annuelles
+    const mensY0     = bien.mensualite_credit * 12
+    const cfBrutY0   = loyerY0 - chargesY0 - mensY0
+    const impotAnnY0 = Math.max(0, cfBrutY0 - cashflowNetFiscalAnnuel)
+    ratioImpotSurLoyers = loyerY0 > 0 ? impotAnnY0 / loyerY0 : 0
+    hasFiscalData = true
+  } else {
+    devWarn(`[projectionFIRE] simulerBienExistant("${bien.nom}") sans cashflowNetFiscalAnnuel — fallback cashflow brut (impot non deduit).`)
+  }
+
   const points: BienAnnee[] = []
   for (let y = 0; y <= annees; y++) {
     // Snapshot année y
     const equity        = Math.max(0, valeur - creditRestant)
     const loyerAnnuel   = loyerMensuel * 12
-    const cashflowAnnuel = loyerAnnuel - chargesAnn - mensualite * 12
+    const cashflowBrut  = loyerAnnuel - chargesAnn - mensualite * 12
+    const impotAnnuel   = hasFiscalData ? loyerAnnuel * ratioImpotSurLoyers : 0
+    const cashflowAnnuel = cashflowBrut - impotAnnuel
     points.push({
       valeur:            Math.round(valeur),
       credit_restant:    Math.round(creditRestant),
@@ -383,8 +417,14 @@ export function projectionGlobale(inputs: ProjectionInputs): ProjectionGlobaleRe
   }
 
   // 2. Simulation des biens existants validés
+  //    Sprint 1 — B6 : on propage cashflow_net_fiscal (mensuel) × 12 pour
+  //    que la projection deduise l'impot foncier annee par annee au lieu
+  //    de simuler un cashflow brut.
   const trajExistants = biensValides.map((b) =>
-    simulerBienExistant(b, horizon, inputs.appreciationImmoPct, inputs.inflationLoyersPct),
+    simulerBienExistant(
+      b, horizon, inputs.appreciationImmoPct, inputs.inflationLoyersPct,
+      Number.isFinite(b.cashflow_net_fiscal) ? b.cashflow_net_fiscal * 12 : undefined,
+    ),
   )
 
   // 2. Simulation des acquisitions futures
