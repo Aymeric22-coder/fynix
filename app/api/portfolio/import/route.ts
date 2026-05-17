@@ -55,9 +55,10 @@ const ASSET_CLASS_MAP: Record<AssetClassNormalized, AssetClass> = {
   obligation: 'bond',
 }
 
-// Limites D14 — surface d'attaque CSV. Exportes pour les tests.
-export const MAX_CSV_BYTES = 5 * 1024 * 1024   // 5 Mo
-export const MAX_CSV_LINES = 5000              // lignes brutes
+// Limites D14 — surface d'attaque CSV.
+// Re-export depuis lib/portfolio/importLimits pour les tests (Next.js 15
+// interdit l'export de constantes non reservees depuis les Route Handlers).
+import { MAX_CSV_BYTES, MAX_CSV_LINES } from '@/lib/portfolio/importLimits'
 
 // Mapping enrichISIN.asset_type → AssetClass DB
 const ENRICH_ASSET_CLASS_MAP: Record<string, AssetClass> = {
