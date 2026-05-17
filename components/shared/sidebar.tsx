@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
   LayoutDashboard, Building2, PiggyBank,
-  ArrowLeftRight, RefreshCw, Briefcase, Settings, LogOut, ChevronRight, UserCircle2, PieChart,
+  Briefcase, Settings, LogOut, ChevronRight, UserCircle2, PieChart,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
@@ -14,15 +14,16 @@ import { createClient } from '@/lib/supabase/client'
 // SCPI, fonds, REIT, obligations, métaux et actifs alternatifs sous un
 // modèle unique positions/instruments. Les anciennes routes /financier
 // et /scpi ont été supprimées (migration 012).
+// Les sections "Transactions" et "DCA" ont été retirées de la navigation —
+// l'historique reste en base (tables transactions / dca_plans / dca_occurrences)
+// mais n'est plus exposé dans l'UI.
 const NAV = [
-  { href: '/dashboard',    label: 'Dashboard',     icon: LayoutDashboard },
   { href: '/profil',       label: 'Profil',        icon: UserCircle2 },
+  { href: '/dashboard',    label: 'Dashboard',     icon: LayoutDashboard },
   { href: '/portefeuille', label: 'Portefeuille',  icon: Briefcase },
-  { href: '/analyse',      label: 'Analyse',       icon: PieChart },
   { href: '/immobilier',   label: 'Immobilier',    icon: Building2 },
   { href: '/cash',         label: 'Cash',          icon: PiggyBank },
-  { href: '/transactions', label: 'Transactions',  icon: ArrowLeftRight },
-  { href: '/dca',          label: 'DCA',           icon: RefreshCw },
+  { href: '/analyse',      label: 'Analyse',       icon: PieChart },
 ]
 
 export default function Sidebar() {
