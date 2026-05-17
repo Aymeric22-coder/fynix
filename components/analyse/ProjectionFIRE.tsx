@@ -28,6 +28,7 @@ import { normalizeFireType } from '@/lib/profil/calculs'
 import { formatCurrency } from '@/lib/utils/format'
 import { Button } from '@/components/ui/button'
 import { AcquisitionFutureForm } from './AcquisitionFutureForm'
+import { StressTestPanel } from './StressTestPanel'
 import { useFutureAcquisitions } from '@/hooks/use-future-acquisitions'
 import type { PatrimoineComplet, AcquisitionFuture, JalonFIRE } from '@/types/analyse'
 
@@ -390,6 +391,25 @@ export function ProjectionFIRE({ patrimoine, lastUpdatedAt }: Props) {
         <Slider label="Progression épargne/an" value={epargneCroissance} min={0}    max={8}    step={0.5}
                 format={(v) => `${v.toFixed(1)} %`} onChange={setEpargneCroissance}
                 tooltip="Augmentation annuelle de votre capacité d'épargne (évolution de carrière, baisse des charges, enfants qui grandissent…). 0 % = épargne constante." />
+      </div>
+
+      {/* ─── Stress tests (Sprint 4) ─── */}
+      <div className="mt-6 pt-5 border-t border-border">
+        <StressTestPanel
+          projectionBase={result}
+          age_actuel={fi.age!}
+          age_cible={fi.age_cible!}
+          cible_fire={result.ciblePatrimoineAjusteeInflation}
+          revenu_passif_cible={revenuCible}
+          rendement_central_pct={rendement}
+          swr_pct={swr}
+          inflation_pct={inflationGenerale}
+          total_portefeuille={patrimoine.totalPortefeuille}
+          total_immo={patrimoine.totalImmo}
+          total_cash={patrimoine.totalCash}
+          epargne_mensuelle={epargne}
+          revenu_loyers={Math.max(0, patrimoine.revenuPassifImmo)}
+        />
       </div>
 
       {/* ─── Simulateur acquisitions futures ─── */}
