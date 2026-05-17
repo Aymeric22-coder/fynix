@@ -155,6 +155,72 @@ function ChatDemo() {
 }
 ```
 
+---
+
+## Phase 3 — Tool calls ✅
+
+**Date :** 2026-05-18
+**Périmètre :** 6 tools que Claude peut appeler pour exécuter de vraies fonctions de l'app, boucle `tool_use → tool_result` dans la route streaming, events SSE `tool_use` et `tool_result`.
+
+### Fichiers ajoutés/modifiés
+
+| Fichier | Rôle |
+|---|---|
+| `lib/aria/tools/definitions.ts` | 6 schémas JSON-Schema des tools (descriptions FR détaillées — c'est elles qui guident Claude). |
+| `lib/aria/tools/projectionInputs.ts` | Helper `buildProjectionInputs(p)` — reconstruit `ProjectionInputs` depuis `PatrimoineComplet` pour les 3 tools de simulation. |
+| `lib/aria/tools/executors/simulerNouveauDCA.ts` | Wrappe `projectionGlobale` + `projectionFIREIntervalle`. |
+| `lib/aria/tools/executors/simulerStressTest.ts` | Wrappe `simulerStress` + `SCENARIOS_STRESS` (6 scénarios canoniques). |
+| `lib/aria/tools/executors/simulerAcquisitionFuture.ts` | Wrappe `projectionGlobale` avec `acquisitionsFutures` injectées. |
+| `lib/aria/tools/executors/chercherPosition.ts` | Recherche fuzzy dans `patrimoine.positions` (nom/ticker/ISIN). |
+| `lib/aria/tools/executors/obtenirDetailBien.ts` | Détail d'un bien immo, candidats si ambigu. |
+| `lib/aria/tools/executors/obtenirHistoriquePatrimoine.ts` | Lit `wealth_snapshots`, échantillonne à 20 points, calcule variation. |
+| `lib/aria/tools/index.ts` | `ARIA_TOOLS` + dispatcher `executeTool(name, input, ctx)` avec capture d'erreurs. |
+| `lib/aria/sse.ts` (modifié) | Ajout types `AriaSSEToolUse` / `AriaSSEToolResult` dans l'union `AriaSSEEvent`. |
+| `app/api/aria/chat/route.ts` (modifié) | Boucle `tool_use` (max 5 itérations), persistance `tool_calls` + `tool_results` dans `aria_messages`, events SSE relais. |
+
+### Format SSE étendu
+
+```
+data: {"type":"meta",        "conversation_id":"..."}
+data: {"type":"delta",       "delta":"..."}
+data: {"type":"tool_use",    "tool_use_id":"...", "name":"...", "input":{...}}
+data: {"type":"tool_result", "tool_use_id":"...", "success":true, "data":{...}}
+data: {"type":"done",        "message_id":"...", "usage":{...}}
+data: {"type":"error",       "message":"..."}
+```
+
+### Tools disponibles
+
+| Nom | Question utilisateur typique |
+|---|---|
+| `simulerNouveauDCA` | « Si je passe mon DCA à 1500 €/mois ? » |
+| `simulerStressTest` | « Simule un krach de -40 % » / « Que se passe-t-il si je perds mon emploi ? » |
+| `simulerAcquisitionFuture` | « Si j'achète un appart de 200 k€ dans 2 ans ? » |
+| `chercherPosition` | « Où en est mon LVMH ? » |
+| `obtenirDetailBien` | « Donne-moi le détail de mon bien à Saint-Brieuc » |
+| `obtenirHistoriquePatrimoine` | « Comment a évolué mon patrimoine sur 90 jours ? » |
+
+### Sécurité anti-boucle
+
+`MAX_TOOL_ITERATIONS = 5`. Si Claude n'a pas terminé après 5 tours, on coupe et on annexe `[ARIA a atteint la limite d'itérations tool — réponse partielle]` à la réponse.
+
+### Règle #1 respectée
+
+Chaque executor **importe** une fonction canonique :
+- `projectionGlobale`, `projectionFIREIntervalle` ← `lib/analyse/projectionFIRE.ts`
+- `simulerStress`, `SCENARIOS_STRESS` ← `lib/analyse/stressTest.ts`
+- `swrPctFromFireType` ← `lib/analyse/projectionFIRE.ts`
+
+Aucune logique de simulation ré-implémentée.
+
+### Validation Phase 3
+
+```
+✓ npx vitest run     → 909/909 tests passent (+26 nouveaux pour Phase 3)
+✓ npx tsc --noEmit   → silence
+✓ npx eslint . --max-warnings 0 → silence
+```
+
 ### Prochaine étape
 
-**Phase 3 — Tool calls** : ARIA pourra appeler des fonctions de l'app (`simulerNouveauDCA`, `simulerStressTest`, `chercherPosition`, etc.). Chaque executor importera les fonctions canoniques existantes. **À démarrer après validation utilisateur.**
+**Phase 4 — Mémoire persistante long terme** : résumés de conversations passées injectés dans le system prompt, table `aria_user_insights` (préoccupations / objectifs / préférences détectées). **À démarrer après validation utilisateur.**

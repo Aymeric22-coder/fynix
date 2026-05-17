@@ -15,6 +15,18 @@
 
 export interface AriaSSEMeta  { type: 'meta';  conversation_id: string }
 export interface AriaSSEDelta { type: 'delta'; delta: string }
+export interface AriaSSEToolUse {
+  type:         'tool_use'
+  tool_use_id:  string
+  name:         string
+  input:        unknown
+}
+export interface AriaSSEToolResult {
+  type:        'tool_result'
+  tool_use_id: string
+  success:     boolean
+  data:        unknown
+}
 export interface AriaSSEDone {
   type:        'done'
   message_id:  string
@@ -23,7 +35,9 @@ export interface AriaSSEDone {
 }
 export interface AriaSSEError { type: 'error'; message: string }
 
-export type AriaSSEEvent = AriaSSEMeta | AriaSSEDelta | AriaSSEDone | AriaSSEError
+export type AriaSSEEvent =
+  | AriaSSEMeta | AriaSSEDelta | AriaSSEToolUse | AriaSSEToolResult
+  | AriaSSEDone | AriaSSEError
 
 /**
  * Encode un payload en une frame SSE prete a etre envoyee dans le stream.
@@ -60,6 +74,7 @@ function isValidEvent(o: unknown): o is AriaSSEEvent {
   if (!o || typeof o !== 'object') return false
   const t = (o as { type?: unknown }).type
   return t === 'meta' || t === 'delta' || t === 'done' || t === 'error'
+      || t === 'tool_use' || t === 'tool_result'
 }
 
 /**
