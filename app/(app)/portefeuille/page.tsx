@@ -230,7 +230,7 @@ export default async function PortefeuillePage({ searchParams }: Props) {
               pas par catégorie. La courbe est donc cachée quand on filtre. */}
           {activeCategory === 'global' && (
             <div className="card p-5 mb-6">
-              <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
                 <p className="text-xs text-secondary uppercase tracking-widest flex items-center gap-1">
                   <LineChart size={11} /> Évolution du portefeuille
                 </p>
@@ -242,6 +242,11 @@ export default async function PortefeuillePage({ searchParams }: Props) {
                   <span className="flex items-center gap-1.5">
                     <span className="inline-block w-4 border-t border-dashed border-secondary" style={{ height: 1 }} />
                     Capital investi
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="inline-block w-4 h-0.5" style={{ background: summary.totalUnrealizedPnL !== null && summary.totalUnrealizedPnL < 0 ? '#ef4444' : '#10b981' }} />
+                    Plus-value latente
+                    <span className="text-muted">(axe droit)</span>
                   </span>
                 </div>
               </div>

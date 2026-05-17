@@ -1,9 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer,
+  ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid,
+  Tooltip, ResponsiveContainer, ReferenceLine,
 } from 'recharts'
 import { formatCurrency, formatDate } from '@/lib/utils/format'
 
@@ -21,21 +21,27 @@ interface Props {
 
 function CustomTooltip({ active, payload, label }: {
   active?: boolean
-  payload?: { name: string; value: number; color: string }[]
+  payload?: { name: string; value: number; color: string; dataKey?: string }[]
   label?: string
 }) {
   if (!active || !payload?.length) return null
   return (
-    <div className="bg-surface border border-border rounded-lg px-4 py-3 shadow-card min-w-44">
+    <div className="bg-surface border border-border rounded-lg px-4 py-3 shadow-card min-w-52">
       <p className="text-xs text-secondary mb-2">{formatDate(label, 'medium')}</p>
-      {payload.map((p) => (
-        <div key={p.name} className="flex items-center justify-between gap-4">
-          <span className="text-xs text-secondary">{p.name}</span>
-          <span className="text-sm financial-value font-medium" style={{ color: p.color }}>
-            {formatCurrency(p.value, 'EUR', { decimals: 2 })}
-          </span>
-        </div>
-      ))}
+      {payload.map((p) => {
+        const isPnl = p.dataKey === 'total_pnl'
+        const color = isPnl
+          ? (p.value >= 0 ? '#10b981' : '#ef4444')
+          : p.color
+        return (
+          <div key={p.name} className="flex items-center justify-between gap-4">
+            <span className="text-xs text-secondary">{p.name}</span>
+            <span className="text-sm financial-value font-medium" style={{ color }}>
+              {formatCurrency(p.value, 'EUR', { decimals: 2, sign: isPnl })}
+            </span>
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -46,12 +52,29 @@ function formatYAxis(value: number): string {
   return String(value)
 }
 
+function formatPnlAxis(value: number): string {
+  const sign = value > 0 ? '+' : value < 0 ? '−' : ''
+  const abs = Math.abs(value)
+  if (abs >= 1_000_000) return `${sign}${(abs / 1_000_000).toFixed(1)}M`
+  if (abs >= 1_000)     return `${sign}${(abs / 1_000).toFixed(0)}k`
+  return `${sign}${abs}`
+}
+
 export function PortfolioEvolutionChart({ data }: Props) {
   // Recharts plante parfois pendant l'hydratation (ResponsiveContainer mesure
   // le DOM). On reporte le rendu après le premier mount pour éviter ce
   // problème connu.
   const [mounted, setMounted] = useState(false)
   useEffect(() => { setMounted(true) }, [])
+
+  // Couleur dominante du PnL (vert si dernier point > 0, rouge sinon) — sert
+  // a colorer la ligne unique du PnL latent puisque Recharts ne supporte pas
+  // nativement un trait change de couleur selon le signe par segment.
+  const pnlColor = useMemo(() => {
+    const last = data[data.length - 1]
+    if (!last) return '#10b981'
+    return last.total_pnl >= 0 ? '#10b981' : '#ef4444'
+  }, [data])
 
   if (data.length < 2) {
     return (
@@ -73,8 +96,8 @@ export function PortfolioEvolutionChart({ data }: Props) {
   }
 
   return (
-    <ResponsiveContainer width="100%" height={260}>
-      <AreaChart data={data} margin={{ top: 16, right: 12, left: 0, bottom: 0 }}>
+    <ResponsiveContainer width="100%" height={300}>
+      <ComposedChart data={data} margin={{ top: 16, right: 56, left: 0, bottom: 0 }}>
         <defs>
           <linearGradient id="portfolio-mv" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%"   stopColor="#10b981" stopOpacity={0.35} />
@@ -96,15 +119,35 @@ export function PortfolioEvolutionChart({ data }: Props) {
           axisLine={{ stroke: 'rgba(255,255,255,0.05)' }}
           tickLine={false}
         />
+        {/* Axe gauche : montants (Capital investi + Valeur actuelle) */}
         <YAxis
+          yAxisId="value"
           tick={{ fontSize: 11, fill: '#9ca3af' }}
           tickFormatter={formatYAxis}
           axisLine={{ stroke: 'rgba(255,255,255,0.05)' }}
           tickLine={false}
           width={48}
         />
+        {/* Axe droit : plus-value latente (echelle independante car beaucoup
+            plus petite que les montants absolus) */}
+        <YAxis
+          yAxisId="pnl"
+          orientation="right"
+          tick={{ fontSize: 11, fill: pnlColor }}
+          tickFormatter={formatPnlAxis}
+          axisLine={{ stroke: 'rgba(255,255,255,0.05)' }}
+          tickLine={false}
+          width={48}
+        />
+        <ReferenceLine
+          yAxisId="pnl"
+          y={0}
+          stroke="rgba(255,255,255,0.15)"
+          strokeDasharray="2 4"
+        />
         <Tooltip content={<CustomTooltip />} />
         <Area
+          yAxisId="value"
           type="monotone"
           dataKey="total_cost_basis"
           name="Capital investi"
@@ -112,16 +155,28 @@ export function PortfolioEvolutionChart({ data }: Props) {
           fill="url(#portfolio-cb)"
           strokeWidth={1.5}
           strokeDasharray="4 4"
+          dot={false}
         />
         <Area
+          yAxisId="value"
           type="monotone"
           dataKey="total_market_value"
           name="Valeur actuelle"
           stroke="#10b981"
           fill="url(#portfolio-mv)"
           strokeWidth={2}
+          dot={false}
         />
-      </AreaChart>
+        <Line
+          yAxisId="pnl"
+          type="monotone"
+          dataKey="total_pnl"
+          name="Plus-value latente"
+          stroke={pnlColor}
+          strokeWidth={2}
+          dot={false}
+        />
+      </ComposedChart>
     </ResponsiveContainer>
   )
 }
