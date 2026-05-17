@@ -107,7 +107,7 @@ export function PortfolioEvolutionChart({ data }: Props) {
         <Area
           type="monotone"
           dataKey="total_cost_basis"
-          name="Cost basis"
+          name="Capital investi"
           stroke="#6b7280"
           fill="url(#portfolio-cb)"
           strokeWidth={1.5}
@@ -116,7 +116,7 @@ export function PortfolioEvolutionChart({ data }: Props) {
         <Area
           type="monotone"
           dataKey="total_market_value"
-          name="Valeur de marché"
+          name="Valeur actuelle"
           stroke="#10b981"
           fill="url(#portfolio-mv)"
           strokeWidth={2}

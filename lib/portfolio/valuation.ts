@@ -166,7 +166,8 @@ function aggregate(
 
   let totalCostBasisRef       = 0  // toutes positions actives (capital investi)
   let totalCostBasisValuedRef = 0  // positions avec un prix (base pour +/-)
-  let totalMarketValueRef     = 0
+  let totalMarketValueRef     = 0  // effective value (prix si dispo, sinon cost_basis)
+  let valuedMarketValueRef    = 0  // STRICTEMENT le prix de marche des positions valorisees
   let freshCount              = 0
   let valuedCount             = 0
 
@@ -180,24 +181,35 @@ function aggregate(
     const costRef = v.costBasis * factor
     totalCostBasisRef += costRef
 
+    // Effective value : prix de marche si dispo, sinon repli sur le cost_basis
+    // pour ne pas exclure les positions a valorisation rare (SCPI, REIT non
+    // cotes, fonds mensuels en attente de prix...) des totaux et de la
+    // repartition par classe. Le PnL et la freshness restent calcules
+    // STRICTEMENT sur les positions reellement valorisees (pas de fausse
+    // plus-value sur un actif sans prix).
     if (v.marketValue !== null) {
       const mv = v.marketValue * factor
       totalMarketValueRef     += mv
+      valuedMarketValueRef    += mv
       totalCostBasisValuedRef += costRef
       valuedCount++
       if (!v.priceStale) freshCount++
       byClass.set(v.assetClass, (byClass.get(v.assetClass) ?? 0) + mv)
       byEnvelope.set(v.envelopeId, (byEnvelope.get(v.envelopeId) ?? 0) + mv)
+    } else {
+      totalMarketValueRef += costRef
+      byClass.set(v.assetClass, (byClass.get(v.assetClass) ?? 0) + costRef)
+      byEnvelope.set(v.envelopeId, (byEnvelope.get(v.envelopeId) ?? 0) + costRef)
     }
   }
 
-  // +/- latente : SEULEMENT sur les positions valorisées, sinon null
-  // (on ne peut pas inventer une perte sur un titre dont on ignore le prix)
+  // +/- latente : SEULEMENT sur les positions valorisées (utiliser le market
+  // value des valorisees vs leur cost_basis, jamais le total avec fallback).
   const totalUnrealizedPnL =
-    valuedCount > 0 ? totalMarketValueRef - totalCostBasisValuedRef : null
+    valuedCount > 0 ? valuedMarketValueRef - totalCostBasisValuedRef : null
   const totalUnrealizedPnLPct =
     valuedCount > 0 && totalCostBasisValuedRef > 0
-      ? ((totalMarketValueRef - totalCostBasisValuedRef) / totalCostBasisValuedRef) * 100
+      ? ((valuedMarketValueRef - totalCostBasisValuedRef) / totalCostBasisValuedRef) * 100
       : null
 
   const allocationByClass = Array.from(byClass.entries())

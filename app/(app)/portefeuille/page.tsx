@@ -166,26 +166,29 @@ export default async function PortefeuillePage({ searchParams }: Props) {
         <>
           {/* ── KPIs ─────────────────────────────────────────────────────── */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            {/* Carte 1 — Capital investi */}
+            <div className="card p-5">
+              <p className="text-xs text-secondary uppercase tracking-widest">Capital investi</p>
+              <p className="text-xl font-semibold financial-value text-primary mt-2">
+                {formatCurrency(summary.totalCostBasis, summary.referenceCurrency, { compact: true })}
+              </p>
+              <p className="text-xs text-secondary mt-1">montant total investi</p>
+            </div>
+
+            {/* Carte 2 — Valeur actuelle */}
             <div className="card p-5 border-accent/20">
               <p className="text-xs text-secondary uppercase tracking-widest flex items-center gap-1">
-                <Wallet size={11} /> Valeur de marché
+                <Wallet size={11} /> Valeur actuelle
               </p>
               <p className="text-xl font-semibold financial-value text-primary mt-2">
                 {formatCurrency(summary.totalMarketValue, summary.referenceCurrency, { compact: true })}
               </p>
               <p className="text-xs text-secondary mt-1">
-                {summary.positionsCount} position{summary.positionsCount > 1 ? 's' : ''}
+                {summary.valuedPositionsCount}/{summary.positionsCount} position{summary.positionsCount > 1 ? 's' : ''} valorisée{summary.valuedPositionsCount > 1 ? 's' : ''}
               </p>
             </div>
 
-            <div className="card p-5">
-              <p className="text-xs text-secondary uppercase tracking-widest">Cost basis</p>
-              <p className="text-xl font-semibold financial-value text-primary mt-2">
-                {formatCurrency(summary.totalCostBasis, summary.referenceCurrency, { compact: true })}
-              </p>
-              <p className="text-xs text-secondary mt-1">capital investi</p>
-            </div>
-
+            {/* Carte 3 — Plus-value latente */}
             <div className="card p-5 border-accent/20">
               <p className="text-xs text-secondary uppercase tracking-widest flex items-center gap-1">
                 <TrendingUp size={11} /> Plus-value latente
@@ -202,16 +205,15 @@ export default async function PortefeuillePage({ searchParams }: Props) {
                   </p>
                   <p className={`text-xs mt-1 ${summary.totalUnrealizedPnL >= 0 ? 'text-accent' : 'text-danger'}`}>
                     {formatPercent(summary.totalUnrealizedPnLPct, { sign: true })}
-                    {summary.valuedPositionsCount < summary.positionsCount && (
-                      <span className="text-muted ml-1.5">
-                        · sur {summary.valuedPositionsCount}/{summary.positionsCount} valorisée{summary.valuedPositionsCount > 1 ? 's' : ''}
-                      </span>
-                    )}
+                    <span className="text-muted ml-1.5">
+                      · sur {summary.valuedPositionsCount}/{summary.positionsCount} valorisée{summary.valuedPositionsCount > 1 ? 's' : ''}
+                    </span>
                   </p>
                 </>
               )}
             </div>
 
+            {/* Carte 4 — Fraicheur prix */}
             <div className="card p-5">
               <p className="text-xs text-secondary uppercase tracking-widest flex items-center gap-1">
                 <Activity size={11} /> Fraîcheur prix
@@ -228,9 +230,21 @@ export default async function PortefeuillePage({ searchParams }: Props) {
               pas par catégorie. La courbe est donc cachée quand on filtre. */}
           {activeCategory === 'global' && (
             <div className="card p-5 mb-6">
-              <p className="text-xs text-secondary uppercase tracking-widest flex items-center gap-1 mb-4">
-                <LineChart size={11} /> Évolution de la valeur de marché
-              </p>
+              <div className="flex items-center justify-between mb-4">
+                <p className="text-xs text-secondary uppercase tracking-widest flex items-center gap-1">
+                  <LineChart size={11} /> Évolution du portefeuille
+                </p>
+                <div className="flex items-center gap-4 text-[10px] text-muted">
+                  <span className="flex items-center gap-1.5">
+                    <span className="inline-block w-4 h-0.5 bg-accent" />
+                    Valeur actuelle
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="inline-block w-4 border-t border-dashed border-secondary" style={{ height: 1 }} />
+                    Capital investi
+                  </span>
+                </div>
+              </div>
               <PortfolioEvolutionChart data={snapshots} />
             </div>
           )}

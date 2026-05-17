@@ -63,7 +63,9 @@ describe('valuePortfolio — base cases', () => {
     expect(r.positions[0]!.marketValue).toBeNull()
     expect(r.positions[0]!.unrealizedPnL).toBeNull()
     expect(r.positions[0]!.unrealizedPnLPct).toBeNull()
-    expect(r.summary.totalMarketValue).toBe(0)
+    // totalMarketValue inclut le cost_basis en repli pour ne pas exclure
+    // les positions a valorisation rare (SCPI, REIT non cotes...).
+    expect(r.summary.totalMarketValue).toBe(1000)
     // BUG FIX : pas de prix → pas de fausse perte. PnL = null, pas -100%.
     expect(r.summary.totalUnrealizedPnL).toBeNull()
     expect(r.summary.totalUnrealizedPnLPct).toBeNull()
@@ -85,8 +87,9 @@ describe('valuePortfolio — base cases', () => {
     expect(r.summary.valuedPositionsCount).toBe(1)
     expect(r.summary.totalCostBasis).toBe(1500)         // 1000 + 500
     expect(r.summary.totalCostBasisValued).toBe(1000)   // p1 only
-    expect(r.summary.totalMarketValue).toBe(1100)
-    // PnL = 1100 - 1000 = +100 → +10%, PAS calculé sur 1500
+    // 1100 (p1 valorise) + 500 (p2 cost_basis en repli) = 1600
+    expect(r.summary.totalMarketValue).toBe(1600)
+    // PnL = 1100 - 1000 = +100 → +10%, calcule UNIQUEMENT sur p1 valorisee
     expect(r.summary.totalUnrealizedPnL).toBeCloseTo(100, 6)
     expect(r.summary.totalUnrealizedPnLPct).toBeCloseTo(10, 6)
   })

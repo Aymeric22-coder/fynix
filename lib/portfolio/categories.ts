@@ -104,7 +104,8 @@ export function recomputeSummary(
 
   let totalCostBasis        = 0
   let totalCostBasisValued  = 0
-  let totalMarketValue      = 0
+  let totalMarketValue      = 0   // effective value (avec repli cost_basis)
+  let valuedMarketValue     = 0   // strictement le prix de marche des valorisees
   let freshCount            = 0
   let valuedCount           = 0
 
@@ -113,21 +114,30 @@ export function recomputeSummary(
 
   for (const v of actives) {
     totalCostBasis += v.costBasis
+    // Repli sur le cost_basis si pas de marketValue (cf. valuation.ts) — les
+    // positions a valorisation rare (SCPI, REIT non cotes...) restent comptees
+    // dans les totaux et la repartition par classe.
     if (v.marketValue !== null) {
       totalMarketValue       += v.marketValue
+      valuedMarketValue      += v.marketValue
       totalCostBasisValued   += v.costBasis
       valuedCount++
       if (!v.priceStale) freshCount++
       byClass.set(v.assetClass, (byClass.get(v.assetClass) ?? 0) + v.marketValue)
       byEnvelope.set(v.envelopeId, (byEnvelope.get(v.envelopeId) ?? 0) + v.marketValue)
+    } else {
+      totalMarketValue += v.costBasis
+      byClass.set(v.assetClass, (byClass.get(v.assetClass) ?? 0) + v.costBasis)
+      byEnvelope.set(v.envelopeId, (byEnvelope.get(v.envelopeId) ?? 0) + v.costBasis)
     }
   }
 
+  // PnL strictement sur les positions valorisees (jamais le total avec repli).
   const totalUnrealizedPnL =
-    valuedCount > 0 ? totalMarketValue - totalCostBasisValued : null
+    valuedCount > 0 ? valuedMarketValue - totalCostBasisValued : null
   const totalUnrealizedPnLPct =
     valuedCount > 0 && totalCostBasisValued > 0
-      ? ((totalMarketValue - totalCostBasisValued) / totalCostBasisValued) * 100
+      ? ((valuedMarketValue - totalCostBasisValued) / totalCostBasisValued) * 100
       : null
 
   const allocationByClass = Array.from(byClass.entries())
