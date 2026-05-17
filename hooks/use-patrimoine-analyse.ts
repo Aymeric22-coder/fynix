@@ -52,6 +52,16 @@ async function fetchPatrimoine(): Promise<PatrimoineComplet> {
   return json.data as PatrimoineComplet
 }
 
+/** Snapshot du patrimoine du jour — fire & forget, ne bloque ni n'erreurs
+ *  vers l'UI. Aliments wealth_snapshots pour la courbe d'évolution.
+ *  Pas de cron requis : si l'user consulte son analyse, le snapshot existe. */
+function fireAndForgetSnapshot(): void {
+  // Promise non awaitée — on swallow toute erreur pour ne pas polluer l'UI.
+  // La table est append-only par jour (UPSERT), un échec ponctuel = perte
+  // d'un point dans la courbe historique, jamais un blocage.
+  fetch('/api/analyse/snapshot', { method: 'POST' }).catch(() => {})
+}
+
 // Tables sources de la projection FIRE — abonnement realtime
 const REALTIME_TABLES = ['positions', 'real_estate_properties', 'cash_accounts', 'debts'] as const
 
@@ -81,6 +91,7 @@ export function usePatrimoineAnalyse(): UsePatrimoineResult {
       memCache = { data: fresh, expiresAt: Date.now() + CLIENT_CACHE_MS }
       setData(fresh)
       setLastUpdatedAt(Date.now())
+      fireAndForgetSnapshot()
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -98,6 +109,7 @@ export function usePatrimoineAnalyse(): UsePatrimoineResult {
       setData(fresh)
       setLastUpdatedAt(Date.now())
       setError(null)
+      fireAndForgetSnapshot()
     } catch (e) {
       setError((e as Error).message)
     }
@@ -151,6 +163,7 @@ export function usePatrimoineAnalyse(): UsePatrimoineResult {
       memCache = { data: fresh, expiresAt: Date.now() + CLIENT_CACHE_MS }
       setData(fresh)
       setLastUpdatedAt(Date.now())
+      fireAndForgetSnapshot()
     } catch (e) {
       setError((e as Error).message)
     } finally {

@@ -9,7 +9,10 @@ import { computeRealEstatePortfolio } from '@/lib/real-estate/portfolio'
 import { buildPortfolioFromDb }  from '@/lib/portfolio/build-from-db'
 import { getPatrimoineComplet }  from '@/lib/analyse/aggregateur'
 import { FIREProgressHero, type FireHeroData } from '@/components/dashboard/fire-progress-hero'
+import { ActionsDuMois } from '@/components/dashboard/actions-du-mois'
+import { PatrimoineEvolutionChart } from '@/components/dashboard/patrimoine-evolution-chart'
 import { RealEstateAlertsPanel } from '@/components/dashboard/real-estate-alerts-panel'
+import { genererActionsMensuelles } from '@/lib/analyse/recoMensuelles'
 import {
   ASSET_TYPE_LABELS, ASSET_TYPE_COLORS,
   ASSET_CLASS_LABELS, ASSET_CLASS_COLORS,
@@ -63,6 +66,20 @@ export default async function DashboardPage() {
   // sert exclusivement au Hero — peut être déplacé si jamais plusieurs Heroes
   // sont rajoutés en haut du dashboard.
   const patrimoineComplet = await getPatrimoineComplet(user!.id)
+
+  // ── Actions du mois (recoMensuelles) ─────────────────────────────────────
+  // Pour la règle "DCA en retard", on charge la date de la position
+  // ajoutée/modifiée la plus récemment. Si pas de position, la règle est skip.
+  const { data: lastPosRow } = await supabase
+    .from('positions')
+    .select('acquisition_date')
+    .eq('user_id', user!.id)
+    .not('acquisition_date', 'is', null)
+    .order('acquisition_date', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  const lastPositionAddedAt = lastPosRow?.acquisition_date ?? null
+  const actionsDuMois = genererActionsMensuelles(patrimoineComplet, { lastPositionAddedAt })
   const proj = patrimoineComplet.projectionFIRESnapshot
   const fireHeroData: FireHeroData = {
     profileComplete: proj !== null,
@@ -247,6 +264,12 @@ export default async function DashboardPage() {
     <div className="space-y-8">
       {/* FIRE Progress Hero — toujours en premier (Sprint 1) */}
       <FIREProgressHero data={fireHeroData} />
+
+      {/* Actions de ce mois — recoMensuelles (Sprint 2) */}
+      <ActionsDuMois actions={actionsDuMois} />
+
+      {/* Évolution patrimoine — wealth_snapshots (Sprint 2) */}
+      <PatrimoineEvolutionChart cibleFire={fireHeroData.patrimoine_fire_cible || null} />
 
       {/* Alertes */}
       {alerts.length > 0 && <AlertsPanel alerts={alerts} />}

@@ -41,6 +41,10 @@ export interface BienImmoInput {
   taux_interet_annuel_pct?: number
   /** Valeur du bâti amortissable (€), typiquement purchase_price − terrain. */
   valeur_amortissable?: number
+  /** Date d'acquisition (ISO yyyy-MM-dd). Si renseignée et < 24 mois, le
+   *  malus risque pour cashflow négatif est neutralisé (les premières années
+   *  d'un crédit sont structurellement négatives, ce n'est pas un signal). */
+  acquisition_date?:  string | null
 }
 
 export interface BienImmoKPIs {
@@ -62,6 +66,22 @@ export interface BienImmoKPIs {
 }
 
 const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v))
+
+/** True si la date d'acquisition est postérieure à (now - monthsBack mois).
+ *  Utile pour neutraliser le malus cashflow négatif sur les biens récents
+ *  (les premières années d'un crédit sont structurellement négatives). */
+function isAcquiredWithinMonths(
+  acquisitionDate: string | null,
+  monthsBack:      number,
+  now: Date = new Date(),
+): boolean {
+  if (!acquisitionDate) return false
+  const d = new Date(acquisitionDate)
+  if (isNaN(d.getTime())) return false
+  const threshold = new Date(now)
+  threshold.setMonth(threshold.getMonth() - monthsBack)
+  return d >= threshold
+}
 
 /**
  * Calcule les KPIs d'un bien immobilier à partir de ses paramètres.
@@ -106,24 +126,32 @@ export function calculerKPIsBien(bien: BienImmoInput): BienImmoKPIs {
     ltv >= 60           ? 'Modéré'      :
                           'Faible'
 
-  // Score de risque — Phase 10 : recalibré pour refléter le levier réel.
-  // L'immobilier à fort levier (LTV > 75 %) est une stratégie OFFENSIVE,
-  // pas prudente. L'ancien plafond 75 sous-estimait cet effet.
+  // Score de risque — Sprint 2 (recalibrage) : la grille précédente
+  // étiquetait un investissement parfaitement standard (LTV 80 % + cashflow
+  // négatif les 3 premières années) comme « très risqué ». LTV 80 % est la
+  // norme française pour un primo-investisseur — pas une dérive.
   //
-  // Table directe (remplace base 30 + ajustements) :
-  //   LTV = 0   → 15   (immo cash = stable défensif)
-  //   LTV < 40  → 20
-  //   LTV 40-60 → 35
-  //   LTV 60-75 → 50
-  //   LTV ≥ 75  → 65
-  //   + 10 si cashflow < 0 (effort mensuel assumé = prise de risque)
+  // Nouvelle table directe :
+  //   LTV = 0    → 5   (immo cash = stable défensif)
+  //   LTV < 70   → 15  (très faible)
+  //   LTV 70-79  → 30  (norme française, risque modéré)
+  //   LTV 80-89  → 30  (toujours norme, idem)
+  //   LTV ≥ 90   → 50  (risque élevé, sur-endettement)
+  //   + 10 si cashflow < 0 ET bien acquis depuis ≥ 24 mois (les 2 premières
+  //     années d'un crédit sont structurellement négatives — pas un signal).
   let risque: number
-  if      (creditRestant === 0) risque = 15
-  else if (ltv < 40)            risque = 20
-  else if (ltv < 60)            risque = 35
-  else if (ltv < 75)            risque = 50
-  else                          risque = 65
-  if (cashflow < 0)             risque += 10
+  if      (creditRestant === 0) risque = 5
+  else if (ltv < 70)            risque = 15
+  else if (ltv < 90)            risque = 30
+  else                          risque = 50
+
+  // Malus cashflow : appliqué uniquement si bien ancien (≥ 24 mois).
+  // Sans date d'acquisition fournie on garde le malus (comportement
+  // conservateur), avec date < 24 mois on le neutralise.
+  if (cashflow < 0) {
+    const isYoungAcquisition = isAcquiredWithinMonths(bien.acquisition_date ?? null, 24)
+    if (!isYoungAcquisition) risque += 10
+  }
   risque = clamp(risque, 0, 85)
 
   // ── Estimation fiscale (cashflow net après impôt foncier) ───────────

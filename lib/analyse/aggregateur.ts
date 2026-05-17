@@ -58,7 +58,7 @@ interface ImmoRow {
   gli_pct:            number | string | null
   /** % loyer net pour frais de gestion. */
   management_pct:     number | string | null
-  asset?: { id: string; name: string | null; status: string | null } | null
+  asset?: { id: string; name: string | null; status: string | null; acquisition_date: string | null } | null
 }
 
 interface DebtRow {
@@ -142,7 +142,7 @@ async function loadImmo(userId: string): Promise<ImmoLoadResult> {
       id, asset_id, address_city, address_country, purchase_price,
       works_amount, fiscal_regime, assumed_total_rent,
       gli_pct, management_pct,
-      asset:assets!asset_id ( id, name, status )
+      asset:assets!asset_id ( id, name, status, acquisition_date )
     `)
     .eq('user_id', userId)
 
@@ -245,6 +245,9 @@ async function loadImmo(userId: string): Promise<ImmoLoadResult> {
       tmi_rate:                tmiUser,
       taux_interet_annuel_pct: tauxAnnuelPct,
       valeur_amortissable:     num(r.purchase_price),  // approx : prix d'achat hors works
+      // Sprint 2 — recalibrage : neutralise le malus cashflow négatif si bien
+      // acquis depuis moins de 24 mois (effort structurel d'un crédit récent).
+      acquisition_date:        asset?.acquisition_date ?? null,
     })
     const dureeRestanteMois = creditRestant > 0 && mensualite > 0
       ? estimerDureeRestante(creditRestant, mensualite, tauxAnnuelPct / 100)

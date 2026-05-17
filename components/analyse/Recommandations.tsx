@@ -8,12 +8,21 @@
 
 import {
   AlertTriangle, AlertCircle, Info, Compass, Receipt, Sparkles, Shield, PiggyBank,
+  Coins, Clock,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { Recommandation } from '@/types/analyse'
+import type { RecommandationEnrichie } from '@/lib/analyse/recommandations'
 
 interface Props {
   recos: Recommandation[]
+}
+
+/** Formate un montant en € avec espaces de séparation. */
+function formatEur(n: number): string {
+  const sign = n < 0 ? '-' : ''
+  const abs  = Math.abs(Math.round(n))
+  return `${sign}${abs.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} €`
 }
 
 const PRIO_COLOR: Record<Recommandation['priorite'], { border: string; badge: string; label: string; icon: LucideIcon }> = {
@@ -77,6 +86,14 @@ function RecoCard({ reco }: { reco: Recommandation }) {
   const PrioIcon = PRIO_COLOR[reco.priorite].icon
   const CatIcon  = CATEGORIE_ICON[reco.categorie]
 
+  // Tache C : champs structurés (gain_estime_eur / mois_gagnes_fire) ajoutés
+  // par genererRecommandations via le type local RecommandationEnrichie. Le
+  // type public reste Recommandation, on caste pour lire les champs optionnels.
+  const enriched = reco as RecommandationEnrichie
+  const gainEur     = typeof enriched.gain_estime_eur  === 'number' ? enriched.gain_estime_eur  : null
+  const gainLabel   = enriched.gain_estime_label
+  const moisGagnes  = typeof enriched.mois_gagnes_fire === 'number' ? enriched.mois_gagnes_fire : null
+
   return (
     <div className={`bg-surface-2 rounded-lg border-l-4 ${border} px-4 py-3.5`}>
       <div className="flex items-start justify-between gap-3 mb-2 flex-wrap">
@@ -94,6 +111,29 @@ function RecoCard({ reco }: { reco: Recommandation }) {
 
       {reco.impact_estime && (
         <p className="text-xs text-accent mb-2">→ {reco.impact_estime}</p>
+      )}
+
+      {/* Chips chiffrées (Tâche C) — visibles uniquement si les champs
+          structurés sont fournis par genererRecommandations. */}
+      {(gainEur !== null || moisGagnes !== null) && (
+        <div className="flex flex-wrap gap-2 mb-2">
+          {gainEur !== null && gainEur > 0 && (
+            <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-accent/10 border border-accent/30 text-xs">
+              <Coins size={11} className="text-accent" />
+              <span className="text-accent font-medium financial-value">{formatEur(gainEur)}</span>
+              {gainLabel && <span className="text-secondary">{gainLabel}</span>}
+            </span>
+          )}
+          {moisGagnes !== null && moisGagnes > 0 && (
+            <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-accent/10 border border-accent/30 text-xs">
+              <Clock size={11} className="text-accent" />
+              <span className="text-accent font-medium financial-value">
+                {moisGagnes} mois
+              </span>
+              <span className="text-secondary">gagnés sur le FIRE</span>
+            </span>
+          )}
+        </div>
       )}
 
       <div className="bg-bg/40 border border-border rounded-md px-3 py-2 mt-2">

@@ -25,6 +25,7 @@ import { PortefeuilleAnalyse }      from '@/components/analyse/tabs/Portefeuille
 import { ImmoPhysiqueAnalyse }      from '@/components/analyse/tabs/ImmoPhysiqueAnalyse'
 import { CashAnalyse }              from '@/components/analyse/tabs/CashAnalyse'
 import { ScoresProjectionAnalyse }  from '@/components/analyse/tabs/ScoresProjectionAnalyse'
+import { WhatIfSimulator }          from '@/components/analyse/WhatIfSimulator'
 import { Recommandations }          from '@/components/analyse/Recommandations'
 
 export function AnalyseClient() {
@@ -47,6 +48,7 @@ export function AnalyseClient() {
       out.push({ id: 'cash', label: 'Cash', content: <CashAnalyse data={data} /> })
     }
     out.push({ id: 'scores', label: 'Scores & Projection', content: <ScoresProjectionAnalyse data={data} lastUpdatedAt={lastUpdatedAt} /> })
+    out.push({ id: 'simulateur', label: 'Simulateur', content: <WhatIfSimulator patrimoine={data} /> })
     out.push({ id: 'recos',  label: 'Recommandations',
                badge: data.recommandations.length > 0 ? <Badge variant="warning">{data.recommandations.length}</Badge> : undefined,
                content: <Recommandations recos={data.recommandations} /> })
