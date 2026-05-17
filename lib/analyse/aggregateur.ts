@@ -284,6 +284,8 @@ async function loadImmo(userId: string): Promise<ImmoLoadResult> {
       donnees_completes:   kpis.donnees_completes,
       taux_interet_estime: tauxAnnuelPct,
       duree_restante_mois: dureeRestanteMois,
+      // Sprint 5 — consommé par lib/analyse/optimiseurFiscal.ts
+      fiscal_regime:       r.fiscal_regime,
     }
   })
 

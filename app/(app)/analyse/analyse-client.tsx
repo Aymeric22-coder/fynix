@@ -26,6 +26,7 @@ import { ImmoPhysiqueAnalyse }      from '@/components/analyse/tabs/ImmoPhysique
 import { CashAnalyse }              from '@/components/analyse/tabs/CashAnalyse'
 import { ScoresProjectionAnalyse }  from '@/components/analyse/tabs/ScoresProjectionAnalyse'
 import { WhatIfSimulator }          from '@/components/analyse/WhatIfSimulator'
+import { OptimiseurFiscal }         from '@/components/analyse/OptimiseurFiscal'
 import { Recommandations }          from '@/components/analyse/Recommandations'
 
 export function AnalyseClient() {
@@ -52,6 +53,7 @@ export function AnalyseClient() {
     out.push({ id: 'recos',  label: 'Recommandations',
                badge: data.recommandations.length > 0 ? <Badge variant="warning">{data.recommandations.length}</Badge> : undefined,
                content: <Recommandations recos={data.recommandations} /> })
+    out.push({ id: 'fiscal', label: 'Optimisation fiscale', content: <OptimiseurFiscal patrimoine={data} /> })
     return out
   }, [data, lastUpdatedAt])
 

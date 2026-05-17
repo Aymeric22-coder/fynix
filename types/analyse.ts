@@ -97,6 +97,9 @@ export interface BienImmo {
   /** Durée restante du crédit en mois (utilisée pour la projection).
    *  Calculée depuis capital + mensualité + taux ; 0 si pas de crédit. */
   duree_restante_mois: number
+  /** Régime fiscal saisi sur le bien (Sprint 5 — utilisé par
+   *  l'optimiseur fiscal). null = non renseigné. */
+  fiscal_regime?: string | null
 }
 
 // ─────────────────────────────────────────────────────────────────
