@@ -18,6 +18,12 @@ interface UseUserProfileResult {
   error:    string | null
   /** Sauvegarde les réponses du questionnaire et met à jour le state local. */
   save:     (values: QuestionnaireValues) => Promise<{ error?: string }>
+  /** Sauvegarde intermédiaire (étape courante + valeurs partielles).
+   *  Ne marque PAS le profil comme complété (différent de `save`). */
+  saveStep: (
+    step:    number,
+    partial: Partial<QuestionnaireValues>,
+  ) => Promise<{ error?: string }>
   /** Recharge le profil depuis le serveur. */
   reload:   () => Promise<void>
 }
@@ -60,5 +66,24 @@ export function useUserProfile(): UseUserProfileResult {
     }
   }, [])
 
-  return { profile, loading, error, save, reload }
+  const saveStep = useCallback(async (
+    step:    number,
+    partial: Partial<QuestionnaireValues>,
+  ): Promise<{ error?: string }> => {
+    try {
+      const res = await fetch('/api/profile', {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ ...partial, wizard_step_completed: step }),
+      })
+      const json = await res.json()
+      if (json.error) return { error: json.error }
+      setProfile(json.data as Profile)
+      return {}
+    } catch (e) {
+      return { error: (e as Error).message }
+    }
+  }, [])
+
+  return { profile, loading, error, save, saveStep, reload }
 }

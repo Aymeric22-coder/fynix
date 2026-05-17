@@ -7,21 +7,36 @@
  *    "Modifier mon profil" → affiche le wizard
  *  - sinon → affiche la carte de profil
  *
+ * Tâche B :
+ *  - Si le wizard a été abandonné (wizard_step_completed > 0 et < 8 sans
+ *    profile_completed_at), propose une bannière "Reprendre à l'étape X"
+ *    avec deux CTA : reprendre où l'utilisateur en était, ou recommencer.
+ *  - L'étape initiale du wizard est lue depuis profile.wizard_step_completed.
+ *  - À chaque changement d'étape dans le wizard, la progression est
+ *    sauvegardée via le hook `saveStep`.
+ *
  * Le profile de base (id, display_name, etc.) existe toujours grâce au
  * trigger on_auth_user_created — pas besoin de gérer le cas "row inexistante".
  */
 'use client'
 
 import { useState } from 'react'
+import { PlayCircle, RotateCcw } from 'lucide-react'
 import { PageHeader } from '@/components/shared/page-header'
+import { Button } from '@/components/ui/button'
 import { ProfilQuestionnaire } from '@/components/profil/ProfilQuestionnaire'
 import { ProfilCard } from '@/components/profil/ProfilCard'
 import { useUserProfile } from '@/hooks/use-user-profile'
 import type { QuestionnaireValues } from '@/components/profil/questionnaire-types'
 
 export function ProfilClient() {
-  const { profile, loading, error, save } = useUserProfile()
-  const [editing, setEditing] = useState(false)
+  const { profile, loading, error, save, saveStep } = useUserProfile()
+  const [editing, setEditing]     = useState(false)
+  const [startFresh, setStartFresh] = useState(false)
+  /** Étape de départ choisie via la bannière de reprise. Null = laisser le
+   *  wizard utiliser profile.wizard_step_completed + 1 (comportement par
+   *  défaut, ouverture sur la prochaine étape à compléter). */
+  const [resumeStep, setResumeStep] = useState<number | null>(null)
 
   if (loading) {
     return (
@@ -44,12 +59,27 @@ export function ProfilClient() {
   }
 
   const isComplete = !!profile.profile_completed_at
-  const showWizard = !isComplete || editing
+  const lastStep   = Math.min(8, Math.max(0, profile.wizard_step_completed ?? 0))
+  const hasPartial = !isComplete && lastStep > 0 && lastStep < 8
+  // Si on a une reprise possible et que l'utilisateur n'a pas encore choisi
+  // (resumeStep null, startFresh false), on affiche d'abord la bannière.
+  const showResumeBanner = hasPartial && resumeStep === null && !startFresh
+  const showWizard       = (!isComplete || editing) && !showResumeBanner
+  // Étape d'ouverture du wizard : choix utilisateur > reprise auto > 1.
+  const wizardInitialStep = resumeStep ?? (hasPartial ? lastStep + 1 : 1)
 
   async function handleSubmit(v: QuestionnaireValues) {
     const res = await save(v)
-    if (!res.error) setEditing(false)
+    if (!res.error) {
+      setEditing(false)
+      setResumeStep(null)
+      setStartFresh(false)
+    }
     return res
+  }
+
+  async function handleStepSave(step: number, partial: Partial<QuestionnaireValues>) {
+    return saveStep(step, partial)
   }
 
   return (
@@ -57,20 +87,43 @@ export function ProfilClient() {
       <PageHeader
         title="Profil investisseur"
         subtitle={
-          showWizard
+          showResumeBanner
+            ? 'Tu as déjà commencé le questionnaire — reprends où tu en étais.'
+            : showWizard
             ? 'Quelques minutes pour calibrer ton accompagnement Fynix.'
             : 'Ta synthèse globale — recalculée à chaque modification.'
         }
       />
 
-      {showWizard ? (
+      {showResumeBanner ? (
+        <div className="max-w-2xl mx-auto">
+          <div className="card p-6 sm:p-8 text-center">
+            <p className="text-base text-primary font-medium">
+              Tu as complété {lastStep} étape{lastStep > 1 ? 's' : ''} sur 8.
+            </p>
+            <p className="text-sm text-secondary mt-2">
+              Reprends à l&apos;étape {lastStep + 1} ou recommence depuis le début.
+            </p>
+            <div className="mt-6 flex items-center justify-center gap-3 flex-wrap">
+              <Button icon={PlayCircle} onClick={() => setResumeStep(lastStep + 1)}>
+                Reprendre à l&apos;étape {lastStep + 1}
+              </Button>
+              <Button variant="secondary" icon={RotateCcw} onClick={() => setStartFresh(true)}>
+                Recommencer
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : showWizard ? (
         <ProfilQuestionnaire
           initialValues={extractInitialValues(profile)}
+          initialStep={wizardInitialStep}
           onSubmit={handleSubmit}
+          onStepSave={handleStepSave}
           onCancel={isComplete ? () => setEditing(false) : undefined}
         />
       ) : (
-        <ProfilCard profile={profile} onEdit={() => setEditing(true)} />
+        <ProfilCard profile={profile} onEdit={() => { setEditing(true); setResumeStep(1) }} />
       )}
     </div>
   )

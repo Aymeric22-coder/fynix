@@ -7,14 +7,22 @@
  *   Note : on garde l'accent emerald de l'app, pas le gold du mockup.
  * - À la dernière étape, le bouton "Voir mon profil" déclenche la
  *   sauvegarde via `onSubmit` et bascule sur la carte.
+ *
+ * Tâche B :
+ * - Validation réactive : bouton "Continuer" désactivé tant que les
+ *   champs obligatoires de l'étape ne sont pas remplis (étapes 1 et 8).
+ * - "Passer cette étape" sur les étapes non-critiques (2, 3, 6, 7).
+ * - Persistance intermédiaire via `saveStep` à chaque changement
+ *   d'étape, pour permettre la reprise.
  */
 'use client'
 
 import { useState } from 'react'
-import { ArrowLeft, ArrowRight, Flame } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Flame, SkipForward } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils/format'
 import { STEPS } from '@/lib/profil/calculs'
+import { REQUIRED_STEPS, SKIPPABLE_STEPS, missingFields } from '@/lib/profil/wizardValidation'
 import { EMPTY_VALUES, type QuestionnaireValues } from './questionnaire-types'
 import { Step1 } from './steps/Step1'
 import { Step2 } from './steps/Step2'
@@ -27,29 +35,80 @@ import { Step8 } from './steps/Step8'
 
 interface Props {
   initialValues?: Partial<QuestionnaireValues>
+  /** Étape à laquelle ouvrir le wizard (par défaut 1). Permet la reprise
+   *  après abandon : si l'utilisateur avait validé l'étape 4, on l'ouvre à 5. */
+  initialStep?:   number
   onSubmit:       (v: QuestionnaireValues) => Promise<{ error?: string }>
+  /** Sauvegarde intermédiaire : appelée à chaque changement d'étape pour
+   *  persister la progression. Optionnelle : si absente, pas de save auto. */
+  onStepSave?:    (step: number, partial: Partial<QuestionnaireValues>) => Promise<{ error?: string }>
   /** Pour les profils déjà complétés : permet de revenir en arrière. */
   onCancel?:      () => void
 }
 
-export function ProfilQuestionnaire({ initialValues, onSubmit, onCancel }: Props) {
-  const [step,    setStep]    = useState(1)
+export function ProfilQuestionnaire({
+  initialValues, initialStep = 1, onSubmit, onStepSave, onCancel,
+}: Props) {
+  const [step,    setStep]    = useState(Math.min(8, Math.max(1, initialStep)))
   const [values,  setValues]  = useState<QuestionnaireValues>({ ...EMPTY_VALUES, ...initialValues })
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState<string | null>(null)
+  /** Vrai si le user a tenté de continuer en laissant des champs vides.
+   *  Affiche les messages d'erreur uniquement après cette tentative. */
+  const [touched, setTouched] = useState(false)
 
   function set<K extends keyof QuestionnaireValues>(k: K, v: QuestionnaireValues[K]) {
     setValues((prev) => ({ ...prev, [k]: v }))
   }
 
+  const missing  = missingFields(step, values)
+  const stepValid = missing.length === 0
+  const canSkip  = SKIPPABLE_STEPS.includes(step)
+
   async function handleNext() {
     setError(null)
-    if (step < 8) { setStep((s) => s + 1); return }
-    // Étape 8 → submit
+
+    if (!stepValid) {
+      setTouched(true)
+      return
+    }
+
+    // Sauvegarde intermédiaire de l'étape complétée (fire & forget : on
+    // n'attend pas pour passer à la suite, mais on logue les erreurs).
+    if (onStepSave && step < 8) {
+      onStepSave(step, values).then((res) => {
+        if (res.error) console.warn('[wizard] saveStep failed:', res.error)
+      })
+    }
+
+    if (step < 8) {
+      setStep((s) => s + 1)
+      setTouched(false)
+      return
+    }
+
+    // Étape 8 → submit définitif (marque profile_completed_at)
     setLoading(true)
     const res = await onSubmit(values)
     setLoading(false)
     if (res.error) { setError(res.error); return }
+  }
+
+  async function handleSkip() {
+    if (!canSkip) return
+    setError(null)
+    if (onStepSave) {
+      onStepSave(step, values).then((res) => {
+        if (res.error) console.warn('[wizard] skipStep failed:', res.error)
+      })
+    }
+    setStep((s) => s + 1)
+    setTouched(false)
+  }
+
+  function handleBack() {
+    setStep((s) => Math.max(1, s - 1))
+    setTouched(false)
   }
 
   const meta = STEPS[step - 1]!
@@ -91,28 +150,47 @@ export function ProfilQuestionnaire({ initialValues, onSubmit, onCancel }: Props
 
         <StepComp values={values} set={set} />
 
+        {touched && !stepValid && (
+          <p className="text-xs text-warning bg-warning-muted px-3 py-2 rounded-lg mt-4">
+            Champ{missing.length > 1 ? 's' : ''} requis : {missing.join(', ')}.
+          </p>
+        )}
+
         {error && (
           <p className="text-sm text-danger bg-danger-muted px-3 py-2 rounded-lg mt-4">{error}</p>
         )}
 
-        <div className="flex items-center gap-3 mt-7 pt-5 border-t border-border">
+        <div className="flex items-center gap-3 mt-7 pt-5 border-t border-border flex-wrap">
           {step > 1 ? (
-            <Button variant="secondary" type="button" icon={ArrowLeft} onClick={() => setStep((s) => s - 1)}>
+            <Button variant="secondary" type="button" icon={ArrowLeft} onClick={handleBack}>
               Retour
             </Button>
           ) : onCancel ? (
             <Button variant="secondary" type="button" onClick={onCancel}>Annuler</Button>
           ) : <div />}
 
-          <Button
-            type="button"
-            onClick={handleNext}
-            loading={loading}
-            icon={step === 8 ? Flame : ArrowRight}
-            className="ml-auto"
-          >
-            {step === 8 ? 'Voir mon profil' : 'Continuer'}
-          </Button>
+          <div className="ml-auto flex items-center gap-3">
+            {canSkip && (
+              <Button
+                variant="ghost"
+                type="button"
+                icon={SkipForward}
+                onClick={handleSkip}
+                title="Sauvegarde les champs déjà remplis et passe à l'étape suivante"
+              >
+                Passer cette étape
+              </Button>
+            )}
+            <Button
+              type="button"
+              onClick={handleNext}
+              loading={loading}
+              icon={step === 8 ? Flame : ArrowRight}
+              disabled={!stepValid && REQUIRED_STEPS.includes(step)}
+            >
+              {step === 8 ? 'Voir mon profil' : 'Continuer'}
+            </Button>
+          </div>
         </div>
       </div>
     </div>

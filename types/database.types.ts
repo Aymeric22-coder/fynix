@@ -88,6 +88,12 @@ export interface Profile {
 
   /** Sentinel : si null, le wizard n'a jamais ete soumis. */
   profile_completed_at: string | null
+
+  // ── Migration 019 ────────────────────────────────────────────────
+  /** Numero de la derniere etape (0..8) completee dans le wizard.
+   *  0 = jamais commence, 8 = wizard termine. Utilise pour proposer
+   *  "Reprendre a l etape X" quand l utilisateur revient sans avoir fini. */
+  wizard_step_completed: number
 }
 
 export interface Asset {

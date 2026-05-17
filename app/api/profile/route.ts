@@ -52,6 +52,7 @@ export const PUT = withAuth(async (req: Request, user: User) => {
     'quiz_bourse', 'quiz_crypto', 'quiz_immo',
     'risk_1', 'risk_2', 'risk_3', 'risk_4',
     'fire_type', 'revenu_passif_cible', 'age_cible', 'priorite',
+    'wizard_step_completed',
   ]
 
   const update: Record<string, unknown> = {}
@@ -61,6 +62,54 @@ export const PUT = withAuth(async (req: Request, user: User) => {
 
   // Marqueur de complétion : timestamp de la dernière soumission.
   update['profile_completed_at'] = new Date().toISOString()
+  // Wizard final = étape 8 atteinte.
+  update['wizard_step_completed'] = 8
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .update(update)
+    .eq('id', user.id)
+    .select()
+    .single()
+
+  if (error) return err(error.message, 500)
+  return ok(data)
+})
+
+/**
+ * PATCH /api/profile — sauvegarde INTERMEDIAIRE pendant le wizard.
+ *
+ * Différences avec PUT :
+ *  - NE met PAS `profile_completed_at` (le wizard n'est pas terminé)
+ *  - Accepte `wizard_step_completed` pour suivre la progression
+ *  - Toutes les autres colonnes sont écrites uniquement si présentes
+ *
+ * Permet à l'utilisateur de revenir reprendre le questionnaire là où il
+ * l'avait laissé.
+ */
+export const PATCH = withAuth(async (req: Request, user: User) => {
+  const body = await parseBody<Partial<WritableFields> & { wizard_step_completed?: number }>(req)
+  if (!body) return err('Invalid JSON body')
+
+  const supabase = await createServerClient()
+
+  const allowed: (keyof WritableFields)[] = [
+    'prenom', 'age', 'situation_familiale', 'enfants', 'statut_pro',
+    'revenu_mensuel', 'revenu_conjoint', 'autres_revenus', 'stabilite_revenus',
+    'loyer', 'autres_credits', 'charges_fixes', 'depenses_courantes',
+    'epargne_mensuelle', 'invest_mensuel', 'enveloppes',
+    'quiz_bourse', 'quiz_crypto', 'quiz_immo',
+    'risk_1', 'risk_2', 'risk_3', 'risk_4',
+    'fire_type', 'revenu_passif_cible', 'age_cible', 'priorite',
+    'wizard_step_completed',
+  ]
+
+  const update: Record<string, unknown> = {}
+  for (const k of allowed) {
+    if (k in body) update[k] = body[k]
+  }
+
+  if (Object.keys(update).length === 0) return err('Aucune donnée à mettre à jour', 400)
 
   const { data, error } = await supabase
     .from('profiles')
