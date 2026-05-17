@@ -13,9 +13,36 @@
 
 import { calculerImpactEpargne } from './projectionFIRE'
 import type { PatrimoineComplet, Recommandation, ScoresComplets } from '@/types/analyse'
+import { normalizePriorite, type PrioriteId } from '../profil/calculs'
 
 const PRIO_RANK: Record<Recommandation['priorite'], number> = {
   haute: 0, moyenne: 1, info: 2,
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Boost de tri selon la priorité du profil
+// ─────────────────────────────────────────────────────────────────
+//
+// L'utilisateur choisit dans le wizard sa priorité de vie. On utilise cette
+// info pour faire REMONTER (ou redescendre) certaines catégories de recos
+// sans changer leur niveau de priorité absolu (haute/moyenne/info), ce qui
+// pourrait masquer une vraie alerte (cash insuffisant) au profit d'une reco
+// "préférentielle". Le tri principal reste haute > moyenne > info ; à
+// niveau égal, on applique ce boost.
+//
+// Valeurs négatives = remonter dans la liste. Positives = redescendre.
+
+const PRIORITE_BOOST: Record<PrioriteId, Partial<Record<Recommandation['categorie'], number>>> = {
+  securite:   { liquidite: -2, risque: -1, fiscalite: 0,  diversification: 0,  fire: 1 },
+  croissance: { fire: -2,      diversification: -1, fiscalite: 0,  liquidite: 1, risque: 0 },
+  immo:       { diversification: -2, fire: -1, fiscalite: 0,  liquidite: 0,  risque: 0 },
+  equilibre:  {},  // pas de boost — tri purement par priorité haute/moyenne/info
+}
+
+/** Type étendu local pour lire `priorite` depuis fireInputs sans modifier
+ *  types/analyse.ts (autre session). */
+type FireInputsExt = PatrimoineComplet['fireInputs'] & {
+  priorite?: string | null
 }
 
 /** Génère la liste des recommandations actives pour ce snapshot. */
@@ -216,7 +243,20 @@ export function genererRecommandations(
     })
   }
 
-  // Tri par priorité, max 6
-  out.sort((a, b) => PRIO_RANK[a.priorite] - PRIO_RANK[b.priorite])
+  // Tri par priorité, puis par boost catégoriel selon la priorité de vie
+  // déclarée dans le profil (securite / croissance / immo / equilibre).
+  // Le boost ne déclasse jamais une "haute" derrière une "moyenne" : il
+  // joue uniquement à niveau de priorité absolu égal.
+  const priorite = normalizePriorite((p.fireInputs as FireInputsExt).priorite)
+  const boostMap = priorite ? PRIORITE_BOOST[priorite] : undefined
+
+  out.sort((a, b) => {
+    const dPrio = PRIO_RANK[a.priorite] - PRIO_RANK[b.priorite]
+    if (dPrio !== 0) return dPrio
+    const ba = boostMap?.[a.categorie] ?? 0
+    const bb = boostMap?.[b.categorie] ?? 0
+    return ba - bb
+  })
+
   return out.slice(0, 6)
 }

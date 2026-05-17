@@ -4,6 +4,10 @@ import {
   globalScore, fireTarget, fireYears, inferProfileType, riskLabel,
   computeAxes, computeProfileMetrics,
   QUIZ_BOURSE, QUIZ_CRYPTO, QUIZ_IMMO,
+  normalizeFireType, normalizeStabiliteRevenus, normalizePriorite,
+  normalizeSituationFamiliale, normalizeEnfants,
+  swrMultiplier, fireTargetByType,
+  adjustCibleFamille, revenuPassifCibleAjuste,
 } from '../calculs'
 
 describe('quizScore', () => {
@@ -273,5 +277,193 @@ describe('computeProfileMetrics — agrégat complet', () => {
     expect(m.savingsRatePct).toBe(0)
     expect(m.fireYearsValue).toBe(99)
     expect(m.fireAge).toBeNull()
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────
+// Tâche A — normalisation des champs profil
+// ─────────────────────────────────────────────────────────────────
+
+describe('normalizeFireType', () => {
+  it('détecte les 5 ids même via libellé UI', () => {
+    expect(normalizeFireType('Lean FIRE')).toBe('lean')
+    expect(normalizeFireType('classic')).toBe('classic')
+    expect(normalizeFireType('Fat FIRE')).toBe('fat')
+    expect(normalizeFireType('Coast FIRE')).toBe('coast')
+    expect(normalizeFireType('Barista FIRE')).toBe('barista')
+  })
+  it('null pour valeurs vides ou inconnues', () => {
+    expect(normalizeFireType(null)).toBeNull()
+    expect(normalizeFireType(undefined)).toBeNull()
+    expect(normalizeFireType('')).toBeNull()
+    expect(normalizeFireType('quoi')).toBeNull()
+  })
+})
+
+describe('normalizeStabiliteRevenus', () => {
+  it('mappe les libellés UI vers les 4 ids', () => {
+    expect(normalizeStabiliteRevenus('Très stables (CDI)')).toBe('cdi')
+    expect(normalizeStabiliteRevenus('Stables mais variables')).toBe('cdi')
+    expect(normalizeStabiliteRevenus('Irréguliers')).toBe('independant')
+    expect(normalizeStabiliteRevenus('Très variables')).toBe('independant')
+    expect(normalizeStabiliteRevenus('Indépendant / Freelance')).toBe('independant')
+    expect(normalizeStabiliteRevenus('Chômage longue durée')).toBe('chomage')
+    expect(normalizeStabiliteRevenus('Retraité')).toBe('retraite')
+  })
+  it('accepte aussi l\'id direct', () => {
+    expect(normalizeStabiliteRevenus('cdi')).toBe('cdi')
+  })
+  it('null si non renseigné', () => {
+    expect(normalizeStabiliteRevenus(null)).toBeNull()
+    expect(normalizeStabiliteRevenus('autre situation')).toBeNull()
+  })
+})
+
+describe('normalizePriorite', () => {
+  it('mappe les libellés UI', () => {
+    expect(normalizePriorite('Sécurité famille')).toBe('securite')
+    expect(normalizePriorite('Transmettre un patrimoine')).toBe('croissance')
+    expect(normalizePriorite('Liberté de temps')).toBe('equilibre')
+    expect(normalizePriorite('Voyager')).toBe('equilibre')
+    expect(normalizePriorite('Investir en immobilier')).toBe('immo')
+  })
+  it('accepte aussi les ids', () => {
+    expect(normalizePriorite('securite')).toBe('securite')
+    expect(normalizePriorite('immo')).toBe('immo')
+  })
+})
+
+describe('normalizeSituationFamiliale', () => {
+  it('détecte célibataire / couple / marié / pacsé', () => {
+    expect(normalizeSituationFamiliale('Célibataire')).toBe('celibataire')
+    expect(normalizeSituationFamiliale('En couple')).toBe('couple')
+    expect(normalizeSituationFamiliale('Marié(e) / PACS')).toBe('pacse')  // PACS prioritaire
+    expect(normalizeSituationFamiliale('Marié')).toBe('marie')
+    expect(normalizeSituationFamiliale('Autre')).toBe('autre')
+  })
+})
+
+describe('normalizeEnfants', () => {
+  it('parse "0" .. "4+"', () => {
+    expect(normalizeEnfants('0')).toBe(0)
+    expect(normalizeEnfants('1')).toBe(1)
+    expect(normalizeEnfants('3')).toBe(3)
+    expect(normalizeEnfants('4+')).toBe(5)
+  })
+  it('0 pour valeur invalide', () => {
+    expect(normalizeEnfants(null)).toBe(0)
+    expect(normalizeEnfants('xyz')).toBe(0)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────
+// Tâche A.1 — SWR adapté au type FIRE
+// ─────────────────────────────────────────────────────────────────
+
+describe('swrMultiplier', () => {
+  it('classic / barista → ×25 (SWR 4 %)', () => {
+    expect(swrMultiplier('classic')).toBe(25)
+    expect(swrMultiplier('barista')).toBe(25)
+  })
+  it('lean / fat → ×28.57 (SWR 3.5 %)', () => {
+    expect(swrMultiplier('lean')).toBeCloseTo(28.571, 2)
+    expect(swrMultiplier('fat')).toBeCloseTo(28.571, 2)
+  })
+  it('coast → ×25 (le multiplicateur reste celui de classic)', () => {
+    expect(swrMultiplier('coast')).toBe(25)
+  })
+  it('null → ×25 par défaut', () => {
+    expect(swrMultiplier(null)).toBe(25)
+    expect(swrMultiplier(undefined)).toBe(25)
+  })
+})
+
+describe('fireTargetByType', () => {
+  it('classic 3000€/mois → 900 000 €', () => {
+    expect(fireTargetByType(3000, 'classic')).toBe(900_000)
+  })
+  it('lean 2000€/mois → 685 714 € (×28.57)', () => {
+    expect(fireTargetByType(2000, 'lean')).toBeCloseTo(685_714, 0)
+  })
+  it('fat 5000€/mois → 1 714 285 € (×28.57)', () => {
+    expect(fireTargetByType(5000, 'fat')).toBeCloseTo(1_714_286, 0)
+  })
+  it('coast à 30 ans visant 65 ans → cible classic divisée par (1.07)^35', () => {
+    // À 30 ans, viser 3000€/mois passifs à 65 ans en mode coast :
+    // capital_now = 900 000 / (1.07)^35 ≈ 84 350 €
+    const out = fireTargetByType(3000, 'coast', 30, 65)
+    const expected = 900_000 / Math.pow(1.07, 35)
+    expect(out).toBeCloseTo(expected, 0)
+    expect(out).toBeLessThan(100_000)
+  })
+  it('coast sans age renseigné → retombe sur cible classic', () => {
+    expect(fireTargetByType(3000, 'coast', null, null)).toBe(900_000)
+    expect(fireTargetByType(3000, 'coast', 40, 35)).toBe(900_000)  // ageCible < age
+  })
+  it('null → cible classic (backward compat)', () => {
+    expect(fireTargetByType(2000, null)).toBe(fireTarget(2000))
+  })
+  it('revenu négatif clampé à 0', () => {
+    expect(fireTargetByType(-100, 'classic')).toBe(0)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────
+// Tâche A.2 — Ajustement composition du foyer
+// ─────────────────────────────────────────────────────────────────
+
+describe('adjustCibleFamille', () => {
+  it('célibataire sans enfant → +0', () => {
+    expect(adjustCibleFamille({
+      enfants: '0', situation_familiale: 'Célibataire',
+      revenu_conjoint: 0, revenu_passif_cible: 3000,
+    })).toBe(0)
+  })
+  it('2 enfants → +600€/mois (2 × 300)', () => {
+    expect(adjustCibleFamille({
+      enfants: '2', situation_familiale: 'Célibataire',
+      revenu_conjoint: 0, revenu_passif_cible: 3000,
+    })).toBe(600)
+  })
+  it('marié sans revenu conjoint déclaré → +50% de la cible', () => {
+    expect(adjustCibleFamille({
+      enfants: '0', situation_familiale: 'Marié(e) / PACS',
+      revenu_conjoint: 0, revenu_passif_cible: 3000,
+    })).toBe(1500)  // 50% × 3000
+  })
+  it('marié AVEC revenu conjoint déclaré → 0 (le conjoint contribue)', () => {
+    expect(adjustCibleFamille({
+      enfants: '0', situation_familiale: 'Marié(e) / PACS',
+      revenu_conjoint: 2500, revenu_passif_cible: 3000,
+    })).toBe(0)
+  })
+  it('combinaison enfants + couple sans revenu conjoint', () => {
+    // 2 enfants (+600) + couple sans conjoint revenu (+50% × 3000 = +1500)
+    expect(adjustCibleFamille({
+      enfants: '2', situation_familiale: 'Marié(e) / PACS',
+      revenu_conjoint: 0, revenu_passif_cible: 3000,
+    })).toBe(2100)
+  })
+  it('4+ enfants → +1500€/mois (5 × 300)', () => {
+    expect(adjustCibleFamille({
+      enfants: '4+', situation_familiale: 'Célibataire',
+      revenu_conjoint: 0, revenu_passif_cible: 2000,
+    })).toBe(1500)
+  })
+})
+
+describe('revenuPassifCibleAjuste', () => {
+  it('= saisi + adjustCibleFamille', () => {
+    const profil = {
+      enfants: '2', situation_familiale: 'Marié(e) / PACS',
+      revenu_conjoint: 0, revenu_passif_cible: 3000,
+    }
+    expect(revenuPassifCibleAjuste(profil)).toBe(3000 + 600 + 1500)
+  })
+  it('cible saisie 0 et famille → contribue seulement les enfants', () => {
+    expect(revenuPassifCibleAjuste({
+      enfants: '1', situation_familiale: 'Célibataire',
+      revenu_conjoint: 0, revenu_passif_cible: 0,
+    })).toBe(300)
   })
 })

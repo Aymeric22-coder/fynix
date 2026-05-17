@@ -202,6 +202,34 @@ describe('calculerSolidite', () => {
     }))
     expect(s.niveau).not.toBe('vert')
   })
+
+  // ── Tâche A.3 — stabilite_revenus en facteur additionnel ──
+  it('CDI → +5 pts vs profil sans stabilité renseignée', () => {
+    const base = patrimoine()
+    const sBase = calculerSolidite(base)
+    const sCdi = calculerSolidite(patrimoine({
+      fireInputs: { ...base.fireInputs, stabilite_revenus: 'Très stables (CDI)' } as never,
+    }))
+    expect(sCdi.value!).toBe(Math.min(100, sBase.value! + 5))
+  })
+
+  it('chomage → -15 pts vs profil sans stabilité renseignée', () => {
+    const base = patrimoine()
+    const sBase = calculerSolidite(base)
+    const sChomage = calculerSolidite(patrimoine({
+      fireInputs: { ...base.fireInputs, stabilite_revenus: 'Chômage' } as never,
+    }))
+    expect(sChomage.value!).toBe(Math.max(0, sBase.value! - 15))
+  })
+
+  it('expose la stabilité dans les inputs d\'explication', () => {
+    const s = calculerSolidite(patrimoine({
+      fireInputs: { ...patrimoine().fireInputs, stabilite_revenus: 'Indépendant / Freelance' } as never,
+    }))
+    const stabiliteInput = s.explanation?.inputs.find((i) => i.label === 'Stabilité des revenus')
+    expect(stabiliteInput?.value).toContain('independant')
+    expect(stabiliteInput?.value).toContain('-5')
+  })
 })
 
 describe('calculerEfficienceFiscale', () => {
@@ -341,6 +369,71 @@ describe('genererRecommandations', () => {
 
   it('priorise haute > moyenne > info', () => {
     const recos = genererRecommandations(patrimoine(), calculerTousLesScores(patrimoine()))
+    const ranks = { haute: 0, moyenne: 1, info: 2 }
+    for (let i = 1; i < recos.length; i++) {
+      expect(ranks[recos[i]!.priorite]).toBeGreaterThanOrEqual(ranks[recos[i - 1]!.priorite])
+    }
+  })
+
+  // ── Tâche A.4 — priorite du profil influe sur le tri à niveau égal ──
+  it('priorite "securite" remonte les recos liquidité/risque à priorité égale', () => {
+    // Profil avec à la fois cash insuffisant (liquidite, haute) et surexpo
+    // sectorielle (diversification, haute). En mode "securite", liquidite
+    // doit passer en premier.
+    const p = patrimoine({
+      totalCash: 1000,
+      fireInputs: {
+        ...patrimoine().fireInputs,
+        charges_mensuelles: 2000,
+        priorite: 'Sécurité famille',
+      } as never,
+    })
+    const recos = genererRecommandations(p, calculerTousLesScores(p))
+    const hautes = recos.filter((r) => r.priorite === 'haute')
+    const idxLiq = hautes.findIndex((r) => r.categorie === 'liquidite')
+    const idxDiv = hautes.findIndex((r) => r.categorie === 'diversification')
+    if (idxLiq >= 0 && idxDiv >= 0) {
+      expect(idxLiq).toBeLessThan(idxDiv)
+    }
+  })
+
+  it('priorite "croissance" remonte les recos fire et diversification', () => {
+    const p = patrimoine({
+      totalCash: 1000,
+      fireInputs: {
+        ...patrimoine().fireInputs,
+        charges_mensuelles: 2000,
+        priorite: 'Transmettre un patrimoine',  // → croissance
+      } as never,
+    })
+    const recos = genererRecommandations(p, calculerTousLesScores(p))
+    // Le tri par priorité absolu reste prioritaire : on vérifie juste qu'à
+    // priorité égale, fire / diversification précèdent liquidite.
+    const hautes = recos.filter((r) => r.priorite === 'haute')
+    const idxFire = hautes.findIndex((r) => r.categorie === 'fire')
+    const idxLiq  = hautes.findIndex((r) => r.categorie === 'liquidite')
+    if (idxFire >= 0 && idxLiq >= 0) {
+      expect(idxFire).toBeLessThan(idxLiq)
+    }
+  })
+
+  it('priorite "equilibre" ou absente → tri inchangé', () => {
+    const base = genererRecommandations(patrimoine(), calculerTousLesScores(patrimoine()))
+    const eq = genererRecommandations(
+      patrimoine({ fireInputs: { ...patrimoine().fireInputs, priorite: 'Liberté de temps' } as never }),
+      calculerTousLesScores(patrimoine()),
+    )
+    expect(eq.map((r) => r.id)).toEqual(base.map((r) => r.id))
+  })
+
+  it('le boost ne déclasse JAMAIS une reco haute derrière une moyenne', () => {
+    const p = patrimoine({
+      fireInputs: {
+        ...patrimoine().fireInputs,
+        priorite: 'Investir en immobilier',  // → immo, boost diversification
+      } as never,
+    })
+    const recos = genererRecommandations(p, calculerTousLesScores(p))
     const ranks = { haute: 0, moyenne: 1, info: 2 }
     for (let i = 1; i < recos.length; i++) {
       expect(ranks[recos[i]!.priorite]).toBeGreaterThanOrEqual(ranks[recos[i - 1]!.priorite])

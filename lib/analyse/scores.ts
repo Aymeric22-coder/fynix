@@ -19,6 +19,37 @@ import type {
   AnalyseAssetType,
 } from '@/types/analyse'
 import { trackingErrorScore, BENCHMARK_CLASSES_PATRIMOINE } from './benchmarks'
+import { normalizeStabiliteRevenus, type StabiliteRevenusId } from '../profil/calculs'
+
+// ─────────────────────────────────────────────────────────────────
+// Type étendu local : permet d'utiliser les champs profil ajoutés en
+// migration 015 (stabilite_revenus, priorite, fire_type, situation,
+// enfants) sans modifier types/analyse.ts (autre session en cours).
+//
+// Les ajustements ne s'activent QUE si l'aggregateur fournit ces champs
+// dans `fireInputs` — sinon comportement actuel inchangé.
+// ─────────────────────────────────────────────────────────────────
+
+type FireInputsExt = PatrimoineComplet['fireInputs'] & {
+  stabilite_revenus?:    string | null
+  priorite?:             string | null
+  fire_type?:            string | null
+  situation_familiale?:  string | null
+  enfants?:              string | null
+}
+
+function ext(p: PatrimoineComplet): FireInputsExt {
+  return p.fireInputs as FireInputsExt
+}
+
+/** Delta de points appliqué au score Solidité selon la stabilité des revenus
+ *  déclarée par l'utilisateur. Neutre si non renseigné. */
+const STABILITE_REVENUS_PTS: Record<StabiliteRevenusId, number> = {
+  cdi:         +5,
+  retraite:     0,
+  independant: -5,
+  chomage:    -15,
+}
 
 // ─────────────────────────────────────────────────────────────────
 // Helpers communs
@@ -416,6 +447,15 @@ export function calculerSolidite(p: PatrimoineComplet): Score {
   // adossée à un actif réel et n'est PAS comparable à une dette sans
   // garantie (crédit conso, découvert). Seul le taux d'effort compte.
 
+  // e) Stabilité des revenus (CDI / indépendant / chômage / retraite)
+  // Bonus/malus modeste pour refléter le risque de perte de revenu :
+  // un indépendant a des revenus plus volatils, un chômeur n'a pas de
+  // revenu d'activité régulier. Neutre si non renseigné.
+  const stabiliteRaw = ext(p).stabilite_revenus
+  const stabiliteId  = normalizeStabiliteRevenus(stabiliteRaw)
+  const stabilitePts = stabiliteId ? STABILITE_REVENUS_PTS[stabiliteId] : 0
+  pts += stabilitePts
+
   const value = clamp(Math.round(pts))
   const niveau = niveauScore(value)
   const label =
@@ -429,7 +469,7 @@ export function calculerSolidite(p: PatrimoineComplet): Score {
     details: `${coussinTxt} · effort ${tauxEffortTxt} · loyers couvrent ${couvTxt}`,
     explanation: {
       formule:
-        'Score base 60, ajusté par 4 facteurs de CAPACITÉ DE REMBOURSEMENT\n' +
+        'Score base 60, ajusté par 5 facteurs de CAPACITÉ DE REMBOURSEMENT\n' +
         '(la dette immo adossée à un actif n\'est PAS pénalisée en soi) :\n' +
         '  a) Taux d\'effort (mensualités / revenus) :\n' +
         '     < 33 % → +20 sain / 33-40 % → +5 / > 40 % → −20\n' +
@@ -437,7 +477,9 @@ export function calculerSolidite(p: PatrimoineComplet): Score {
         '     > 110 % → +25 / 90-110 % → +10 / 70-90 % → 0 / < 70 % → −10\n' +
         '  c) Coussin cash vs charges réelles (perso + effort immo net) :\n' +
         '     < 3 mois → −20 / 3-6 mois → +5 / ≥ 6 mois → +20\n' +
-        '  d) Krach −30 % sur actifs risqués : impact > 30 % du net → −10, < 10 % → +10',
+        '  d) Krach −30 % sur actifs risqués : impact > 30 % du net → −10, < 10 % → +10\n' +
+        '  e) Stabilité des revenus déclarée :\n' +
+        '     CDI +5 / retraite 0 / indépendant −5 / chômage −15',
       inputs: [
         { label: 'Revenu mensuel total',          value: revenuMensuel > 0 ? `${revenuMensuel.toFixed(0)} €` : 'Non renseigné' },
         { label: 'Mensualités immo / mois',       value: `${p.mensualitesImmoTotal.toFixed(0)} €` },
@@ -447,6 +489,10 @@ export function calculerSolidite(p: PatrimoineComplet): Score {
         { label: 'Cash disponible',               value: `${p.totalCash.toFixed(0)} €` },
         { label: 'Coussin de sécurité',           value: chargesACouvrir > 0 ? `${moisCouverts.toFixed(1)} mois (sur ${chargesACouvrir.toFixed(0)} €/mois de charges)` : '—' },
         { label: 'Impact krach −30 %',            value: `${impactKrach.toFixed(0)} € (${partImpact.toFixed(0)} % du net)` },
+        { label: 'Stabilité des revenus',
+          value: stabiliteId
+            ? `${stabiliteId} (${stabilitePts >= 0 ? '+' : ''}${stabilitePts} pts)`
+            : 'Non renseignée (0 pts)' },
         { label: 'Score final',                   value: `${value} / 100`, highlight: true },
       ],
       lecture:

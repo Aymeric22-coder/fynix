@@ -349,9 +349,186 @@ export function globalScore(parts: {
 
 /**
  * Patrimoine cible FIRE = revenu passif mensuel × 12 × 25 (règle des 25x).
+ * Default historique (SWR 4 %) — pour un calcul adapté au type FIRE
+ * (lean / classic / fat / coast / barista), utiliser `fireTargetByType`.
  */
 export function fireTarget(revenuPassifMensuelCible: number): number {
   return Math.max(0, revenuPassifMensuelCible) * 12 * 25
+}
+
+// ───────────────────────────────────────────────────────────────────
+// Normalisation tolérante des champs profil (valeurs UI → ids stables)
+// ───────────────────────────────────────────────────────────────────
+//
+// La DB stocke les libellés du wizard ("Très stables (CDI)", "Sécurité
+// famille", "Marié(e) / PACS"...). Les calculs ont besoin d'ids stables.
+// Ces normalizers font le mapping et tolèrent les deux formes (libellé UI
+// ou id direct si la valeur a été persistée autrement).
+
+export type FireTypeId          = 'lean' | 'classic' | 'fat' | 'coast' | 'barista'
+export type StabiliteRevenusId  = 'cdi' | 'independant' | 'chomage' | 'retraite'
+export type PrioriteId          = 'securite' | 'croissance' | 'immo' | 'equilibre'
+export type SituationFamilialeId = 'celibataire' | 'couple' | 'marie' | 'pacse' | 'autre'
+
+export function normalizeFireType(v: string | null | undefined): FireTypeId | null {
+  if (!v) return null
+  const s = v.toLowerCase().trim()
+  if (s.includes('lean'))    return 'lean'
+  if (s.includes('classic')) return 'classic'
+  if (s.includes('fat'))     return 'fat'
+  if (s.includes('coast'))   return 'coast'
+  if (s.includes('barista')) return 'barista'
+  return null
+}
+
+export function normalizeStabiliteRevenus(v: string | null | undefined): StabiliteRevenusId | null {
+  if (!v) return null
+  const s = v.toLowerCase().trim()
+  // Ordre : "stable" et "cdi" en premier pour que "Stables mais variables"
+  // (qui contient les deux) soit classé "cdi" plutôt que "independant".
+  if (s.includes('cdi') || s.includes('stable'))                         return 'cdi'
+  if (s.includes('chômage') || s.includes('chomage'))                    return 'chomage'
+  if (s.includes('retrait'))                                             return 'retraite'
+  if (s.includes('indépendant') || s.includes('independant')
+   || s.includes('freelance')   || s.includes('irrégul')
+   || s.includes('irregul')     || s.includes('variable'))               return 'independant'
+  return null
+}
+
+export function normalizePriorite(v: string | null | undefined): PrioriteId | null {
+  if (!v) return null
+  const s = v.toLowerCase().trim()
+  if (s.includes('sécurité') || s.includes('securite') || s.includes('famille')) return 'securite'
+  if (s.includes('immo'))                                                          return 'immo'
+  if (s.includes('croissance') || s.includes('transmet') || s.includes('patrimoine')) return 'croissance'
+  if (s.includes('équilibre') || s.includes('equilibre'))                          return 'equilibre'
+  // Libellés "Liberté de temps" / "Arrêter de travailler" / "Voyager" →
+  // équilibré par défaut (FIRE classique sans biais sectoriel).
+  if (s.includes('liberté') || s.includes('liberte') || s.includes('arrêter')
+   || s.includes('arreter') || s.includes('voyager')) return 'equilibre'
+  return null
+}
+
+export function normalizeSituationFamiliale(v: string | null | undefined): SituationFamilialeId | null {
+  if (!v) return null
+  const s = v.toLowerCase().trim()
+  if (s.includes('célibataire') || s.includes('celibataire')) return 'celibataire'
+  if (s.includes('pacs'))                                     return 'pacse'
+  if (s.includes('marié') || s.includes('marie'))             return 'marie'
+  if (s.includes('couple'))                                   return 'couple'
+  if (s.includes('autre'))                                    return 'autre'
+  return null
+}
+
+/** Convertit "0" / "1" / ... / "4+" en entier (4+ → 5). */
+export function normalizeEnfants(v: string | null | undefined): number {
+  if (!v) return 0
+  const s = v.trim()
+  if (s.includes('+')) return 5  // "4+" → 5
+  const n = parseInt(s, 10)
+  return Number.isFinite(n) && n >= 0 ? n : 0
+}
+
+// ───────────────────────────────────────────────────────────────────
+// FIRE adapté au type (SWR variable + Coast FIRE)
+// ───────────────────────────────────────────────────────────────────
+
+/**
+ * Multiplicateur de capital cible selon le type FIRE (basé SWR) :
+ *   - classic / barista → ×25    (SWR 4 % — règle de Trinity)
+ *   - lean              → ×28.57 (SWR 3.5 % — patrimoine plus modeste, on
+ *                                 prend un SWR plus prudent pour durer)
+ *   - fat               → ×28.57 (SWR 3.5 % — confort élevé, dépenses
+ *                                 sensibles à l'inflation, pérennité accrue)
+ *   - coast             → ×25    (le multiplicateur de référence est
+ *                                 classic, l'effet "coast" est appliqué
+ *                                 par fireTargetByType)
+ *   - null              → ×25 (défaut)
+ */
+export function swrMultiplier(fireType: string | null | undefined): number {
+  const t = normalizeFireType(fireType)
+  if (t === 'lean' || t === 'fat') return 1 / 0.035  // 28.571…
+  return 25  // classic, barista, coast (base classic), null
+}
+
+/**
+ * Capital cible FIRE selon le type :
+ *   - lean / fat            : revenuPassif × 12 × 28.57 (SWR 3.5 %)
+ *   - classic / barista     : revenuPassif × 12 × 25    (SWR 4 %)
+ *   - coast                 : capital nécessaire AUJOURD'HUI pour atteindre
+ *                             la cible classic à `ageCible` sans plus cotiser,
+ *                             en supposant un rendement annuel composé.
+ *
+ * Si `age`/`ageCible` manquent pour 'coast', on retombe sur la cible classic.
+ */
+export function fireTargetByType(
+  revenuPassifMensuelCible: number,
+  fireType:     string | null | undefined,
+  age?:         number | null,
+  ageCible?:    number | null,
+  annualReturn: number = 0.07,
+): number {
+  const t = normalizeFireType(fireType)
+  const cibleAnnuelle = Math.max(0, revenuPassifMensuelCible) * 12
+
+  if (t === 'coast') {
+    const classicTarget = cibleAnnuelle * 25
+    const n = (ageCible ?? 0) - (age ?? 0)
+    if (n <= 0 || !isFinite(n)) return classicTarget
+    return classicTarget / Math.pow(1 + annualReturn, n)
+  }
+
+  return cibleAnnuelle * swrMultiplier(t)
+}
+
+// ───────────────────────────────────────────────────────────────────
+// Ajustement du revenu passif cible selon la composition du foyer
+// ───────────────────────────────────────────────────────────────────
+
+/** Coût mensuel moyen estimé d'un enfant à charge en France (INSEE 2023,
+ *  ~3 600 €/an pour un enfant scolarisé sans frais exceptionnels). */
+const COUT_MENSUEL_PAR_ENFANT_EUR = 300
+
+/** Quotient appliqué au revenu passif cible si l'utilisateur est en couple
+ *  marié/pacsé SANS revenu conjoint déclaré : on suppose qu'il devra
+ *  financer pour 2 personnes (+50 % de la cible saisie). */
+const QUOTIENT_COUPLE_SANS_CONJOINT_REVENU = 0.5
+
+/**
+ * Delta mensuel à ADDITIONNER au `revenu_passif_cible` saisi pour refléter
+ * la composition réelle du foyer.
+ *
+ * Règles :
+ *   - +300 €/mois × nombre d'enfants (cap à 5)
+ *   - +50 % de la cible saisie si situation marié/pacsé ET aucun revenu
+ *     conjoint déclaré (le foyer aura besoin de financer 2 personnes)
+ *
+ * Hypothèse : si revenu_conjoint > 0, le conjoint contribue → pas de boost.
+ */
+export function adjustCibleFamille(p: Pick<ProfileInput,
+  'enfants' | 'situation_familiale' | 'revenu_conjoint' | 'revenu_passif_cible'>): number {
+  let delta = 0
+
+  const nbEnfants = normalizeEnfants(p.enfants)
+  if (nbEnfants > 0) delta += COUT_MENSUEL_PAR_ENFANT_EUR * nbEnfants
+
+  const situ = normalizeSituationFamiliale(p.situation_familiale)
+  const hasConjointRevenue = n(p.revenu_conjoint) > 0
+  const isCoupleEngage = situ === 'marie' || situ === 'pacse'
+  if (isCoupleEngage && !hasConjointRevenue) {
+    delta += QUOTIENT_COUPLE_SANS_CONJOINT_REVENU * Math.max(0, n(p.revenu_passif_cible))
+  }
+
+  return Math.round(delta)
+}
+
+/**
+ * Revenu passif mensuel cible AJUSTÉ à la composition du foyer.
+ * = revenu_passif_cible saisi + adjustCibleFamille(profile)
+ */
+export function revenuPassifCibleAjuste(p: Pick<ProfileInput,
+  'enfants' | 'situation_familiale' | 'revenu_conjoint' | 'revenu_passif_cible'>): number {
+  return Math.max(0, n(p.revenu_passif_cible)) + adjustCibleFamille(p)
 }
 
 /**
@@ -512,7 +689,12 @@ export interface ProfileMetrics {
   axes:            Axe[]
 }
 
-const n = (v: number | null | undefined): number => (typeof v === 'number' && isFinite(v) ? v : 0)
+// `n` est hoisté en function declaration pour être accessible depuis les
+// helpers définis plus tôt dans le fichier (normalizers, adjustCibleFamille…).
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+function n(v: number | null | undefined): number {
+  return typeof v === 'number' && isFinite(v) ? v : 0
+}
 
 /**
  * Calcule l'ensemble des métriques affichées sur la carte de profil.
