@@ -3,7 +3,7 @@ import {
   quizScore, quizLevel, riskScore, experienceScore, savingsRate,
   globalScore, fireTarget, fireYears, inferProfileType, riskLabel,
   computeAxes, computeProfileMetrics,
-  QUIZ_BOURSE, QUIZ_CRYPTO, QUIZ_IMMO,
+  QUIZ_BOURSE,
   normalizeFireType, normalizeStabiliteRevenus, normalizePriorite,
   normalizeSituationFamiliale, normalizeEnfants,
   swrMultiplier, fireTargetByType,

@@ -55,12 +55,17 @@ export interface PatrimoineActuelStress {
 
 export interface StressParams {
   scenario:          ScenarioStress
-  /** Résultat de la projection NORMALE (baseline pour comparaison). */
-  projectionBase:    ProjectionGlobaleResult
+  /** Résultat de la projection NORMALE (baseline pour comparaison).
+   *  Sprint 1 — I5 : sert aussi de point d'ancrage. Quand le scenario a un
+   *  impact strictement nul (tous les chocs a 0), on aligne directement
+   *  ageFireAvecStress sur baselineProjection.ageIndependanceCentral au
+   *  lieu de recalculer une trajectoire mensuelle qui diverge legerement
+   *  (algo mensuel vs annuel, pas d'amortissement crédit, etc.). */
+  baselineProjection: ProjectionGlobaleResult
   patrimoine_actuel: PatrimoineActuelStress
   age_actuel:        number
   age_cible:         number
-  /** Cible patrimoine FIRE (ajustée inflation, calculée dans projectionBase). */
+  /** Cible patrimoine FIRE (ajustée inflation, calculée dans baselineProjection). */
   cible_fire:        number
   /** Cible revenu passif mensuel (€/mois en € constants). */
   revenu_passif_cible: number
@@ -72,6 +77,11 @@ export interface StressParams {
   inflation_pct?:    number
   /** Horizon de simulation en années (défaut 35). */
   horizon_annees?:   number
+}
+
+/** @deprecated Compat pour appels qui passent encore `projectionBase`. */
+export type StressParamsLegacy = Omit<StressParams, 'baselineProjection'> & {
+  projectionBase: ProjectionGlobaleResult
 }
 
 export interface ResultatStress {
@@ -227,9 +237,13 @@ const INFLATION_DEFAUT = 2
  *   6. Détection âge FIRE : 1ère année où revenu_potentiel ≥ cible_indexée.
  *   7. Récupération : 1ère année où patrimoine total ≥ patrimoine_total_initial.
  */
-export function simulerStress(params: StressParams): ResultatStress {
+export function simulerStress(params: StressParams | StressParamsLegacy): ResultatStress {
+  // Accepte `baselineProjection` (nouveau) ou `projectionBase` (legacy).
+  const baseline = 'baselineProjection' in params
+    ? params.baselineProjection
+    : (params as StressParamsLegacy).projectionBase
   const {
-    scenario, projectionBase, patrimoine_actuel, age_actuel, age_cible,
+    scenario, patrimoine_actuel, age_actuel, age_cible,
     cible_fire, revenu_passif_cible, rendement_central_pct,
   } = params
 
@@ -304,14 +318,15 @@ export function simulerStress(params: StressParams): ResultatStress {
       courbeStressee.push({ age, valeur: total })
 
       // Détection âge FIRE :
-      //   revenu_potentiel_annuel = total × SWR + loyers_nets_annuels_courants
+      //   revenu_potentiel_annuel = total × SWR
       //   cible_annuelle_indexée  = revenu_passif_cible × 12 × (1 + inflation)^annee
+      //
+      // Sprint 1 — I6 : on ne re-ajoute PAS loyersAnnuelsNormaux ici. Les
+      // loyers sont deja capitalises dans `portefeuille` mois par mois
+      // (ligne 295) ; les compter aussi en flux SWR serait du double comptage
+      // → ageFireAvecStress artificiellement avance.
       const cibleAnnuelle    = revenu_passif_cible * 12 * Math.pow(1 + inflationPct / 100, annee)
-      // Loyers ANNUELS au mois courant — utilise loyers_base (post-récup tous
-      // les loyers sont restaurés). La règle SWR sur portefeuille capture la
-      // dégradation pendant le choc.
-      const loyersAnnuelsNormaux = patrimoine_actuel.revenu_loyers * 12
-      const revenuPotentielAnnuel = total * swrFraction + Math.max(0, loyersAnnuelsNormaux)
+      const revenuPotentielAnnuel = total * swrFraction
       if (ageFireAvecStress === null && revenuPotentielAnnuel >= cibleAnnuelle) {
         ageFireAvecStress = age
       }
@@ -330,7 +345,22 @@ export function simulerStress(params: StressParams): ResultatStress {
     (patrimoineAgeCible * swrFraction) / 12 + Math.max(0, patrimoine_actuel.revenu_loyers)
 
   // ── 4. Comparaison à la baseline ────────────────────────────────
-  const ageFireBaseline = projectionBase.ageIndependanceCentral
+  const ageFireBaseline = baseline.ageIndependanceCentral
+
+  // Sprint 1 — I5 : ancrage scenario neutre. Si tous les chocs sont a 0,
+  // on aligne directement sur la baseline pour eviter la divergence
+  // structurelle entre l'algo de stress (mensuel constant) et l'algo de
+  // projectionGlobale (annuel avec amortissement credit, croissance
+  // d'epargne, etc.). Garantit que stress(scenario_neutre) == baseline.
+  const isNeutralScenario =
+    imp.portefeuille_pct    === 0 &&
+    imp.loyers_pct          === 0 &&
+    imp.epargne_pct         === 0 &&
+    imp.rendement_delta_pct === 0
+  if (isNeutralScenario) {
+    ageFireAvecStress = ageFireBaseline
+  }
+
   let retardMois: number | null = null
   if (ageFireBaseline !== null && ageFireAvecStress !== null) {
     retardMois = Math.max(0, Math.round((ageFireAvecStress - ageFireBaseline) * 12))

@@ -18,7 +18,9 @@
  */
 
 import type { PatrimoineComplet } from '@/types/analyse'
+import { formatEur } from '@/lib/utils/format'
 import { BENCHMARK_CLASSES_PATRIMOINE } from './benchmarks'
+import type { OpportuniteFiscale } from './optimiseurFiscal'
 
 // ─────────────────────────────────────────────────────────────────
 // Seuils
@@ -40,13 +42,18 @@ export const DCA_SEUIL_JOURS = 60
 // Types publics
 // ─────────────────────────────────────────────────────────────────
 
-export type ActionMensuelleType = 'rebalance' | 'invest_cash' | 'dca_retard'
+export type ActionMensuelleType = 'rebalance' | 'invest_cash' | 'dca_retard' | 'fiscal'
+export type ActionPriorite       = 'haute' | 'moyenne' | 'info'
 
 export interface ActionMensuelle {
   id:          string
   type:        ActionMensuelleType
   titre:       string
   description: string
+  /** Sprint 1 — I3 : priorite affichee dans l'UI (badge couleur). Defaut
+   *  'moyenne' pour les 3 regles historiques, 'haute' pour les opportunites
+   *  fiscales injectees. */
+  priorite?:   ActionPriorite
   /** Montant suggéré en €, si applicable. */
   montant?:    number
   /** Classe d'actif source (rebalance) ou catégorie cash (invest_cash). */
@@ -63,6 +70,12 @@ export interface RecoMensuellesOptions {
   today?: Date
   /** Override du seuil cash (mois). Défaut CASH_SEUIL_MOIS. */
   cashSeuilMois?: number
+  /** Sprint 1 — I3 : top opportunites fiscales (issues de optimiseurFiscal).
+   *  Les 2 meilleures par gain annuel sont converties en ActionMensuelle
+   *  prioritaire. Doublons evites avec les regles drift/DCA. */
+  opportunitesFiscales?: ReadonlyArray<OpportuniteFiscale>
+  /** Plafond du nombre total d'actions retournees. Defaut 5. */
+  maxActions?: number
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -97,7 +110,55 @@ export function genererActionsMensuelles(
   const dcaAction = detectDcaRetard(p, opts.lastPositionAddedAt ?? null, today)
   if (dcaAction) out.push(dcaAction)
 
-  return out
+  // Sprint 1 — I3 : injection des top opportunites fiscales.
+  // On prend les 2 plus gros gains annuels parmi les applicables, en
+  // filtrant celles qui chevauchent une action drift/cash deja presente
+  // (ex : drift "actions vers obligations" + opportunite "ouvrir PEA"
+  // touchent la meme thematique).
+  const opportunites = opts.opportunitesFiscales ?? []
+  const topOpps = [...opportunites]
+    .filter((o) => o.applicable && o.gain_annuel_eur > 0)
+    .sort((a, b) => b.gain_annuel_eur - a.gain_annuel_eur)
+    .slice(0, 2)
+
+  for (const opp of topOpps) {
+    if (overlapsExistingAction(opp, out)) continue
+    out.push({
+      id:          `fiscal-${opp.id}`,
+      type:        'fiscal',
+      priorite:    'haute',
+      titre:       `${opp.titre} — gain ${formatEur(opp.gain_annuel_eur, { decimals: 0 })}/an`,
+      description: opp.action_concrete,
+      montant:     opp.gain_annuel_eur,
+    })
+  }
+
+  const max = opts.maxActions ?? 5
+  return out.slice(0, max)
+}
+
+/** Detecte si une opportunite fiscale fait doublon avec une action deja
+ *  presente. Heuristique : on cherche un mot-cle de la categorie de
+ *  l'opportunite (PEA, AV, PER, CTO, immo, ...) dans le titre/source d'une
+ *  action existante. */
+function overlapsExistingAction(
+  opp:     OpportuniteFiscale,
+  actions: ReadonlyArray<ActionMensuelle>,
+): boolean {
+  const keywords: string[] = []
+  if (opp.titre.toLowerCase().includes('pea'))                       keywords.push('pea')
+  if (opp.titre.toLowerCase().includes('assurance') ||
+      opp.titre.toLowerCase().includes('av '))                       keywords.push('assurance')
+  if (opp.titre.toLowerCase().includes('per'))                       keywords.push('per')
+  if (opp.categorie === 'immo' ||
+      opp.titre.toLowerCase().includes('immobil'))                   keywords.push('immobil')
+
+  if (keywords.length === 0) return false
+  for (const a of actions) {
+    const haystack = `${a.titre} ${a.source ?? ''} ${a.cible ?? ''}`.toLowerCase()
+    if (keywords.some((kw) => haystack.includes(kw))) return true
+  }
+  return false
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -119,8 +180,8 @@ function detectCashDormant(p: PatrimoineComplet, seuilMois: number): ActionMensu
   return {
     id:    'invest-cash-dormant',
     type:  'invest_cash',
-    titre: `${formatEur(aInvestir)} de cash dormant à mettre au travail`,
-    description: `Votre coussin couvre ${moisCouverts.toFixed(0)} mois de charges (seuil ${seuilMois}). Conservez ~6 mois sur Livret A et investissez ~${formatEur(aInvestir)} progressivement.`,
+    titre: `${formatEur(aInvestir, { decimals: 0 })} de cash dormant à mettre au travail`,
+    description: `Votre coussin couvre ${moisCouverts.toFixed(0)} mois de charges (seuil ${seuilMois}). Conservez ~6 mois sur Livret A et investissez ~${formatEur(aInvestir, { decimals: 0 })} progressivement.`,
     montant: aInvestir,
     source:  'cash',
   }
@@ -157,8 +218,8 @@ function detectDriftAllocation(p: PatrimoineComplet): ActionMensuelle | null {
   return {
     id:    'rebalance-classes',
     type:  'rebalance',
-    titre: `Rebalancer ${formatEur(montant)} de ${source.label} vers ${cible.label}`,
-    description: `${source.label} pèse ${source.pct.toFixed(0)} % (benchmark ${source.benchmark} %), ${cible.label} ${cible.pct.toFixed(0)} % (benchmark ${cible.benchmark} %). Un mouvement de ~${formatEur(montant)} réaligne votre allocation.`,
+    titre: `Rebalancer ${formatEur(montant, { decimals: 0 })} de ${source.label} vers ${cible.label}`,
+    description: `${source.label} pèse ${source.pct.toFixed(0)} % (benchmark ${source.benchmark} %), ${cible.label} ${cible.pct.toFixed(0)} % (benchmark ${cible.benchmark} %). Un mouvement de ~${formatEur(montant, { decimals: 0 })} réaligne votre allocation.`,
     montant,
     source: source.label,
     cible:  cible.label,
@@ -185,17 +246,8 @@ function detectDcaRetard(
     id:    'dca-retard',
     type:  'dca_retard',
     titre: `DCA en retard de ${diffJ} jour${diffJ > 1 ? 's' : ''}`,
-    description: `Vous n'avez ajouté/modifié aucune position depuis ${diffJ} jours (épargne mensuelle déclarée : ${formatEur(epargne)}). Pensez à investir votre DCA du mois.`,
+    description: `Vous n'avez ajouté/modifié aucune position depuis ${diffJ} jours (épargne mensuelle déclarée : ${formatEur(epargne, { decimals: 0 })}). Pensez à investir votre DCA du mois.`,
     montant: Math.round(epargne),
   }
 }
 
-// ─────────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────────
-
-function formatEur(n: number): string {
-  const sign = n < 0 ? '-' : ''
-  const abs = Math.abs(Math.round(n))
-  return `${sign}${abs.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} €`
-}

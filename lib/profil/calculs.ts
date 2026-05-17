@@ -691,7 +691,7 @@ export interface ProfileMetrics {
 
 // `n` est hoisté en function declaration pour être accessible depuis les
 // helpers définis plus tôt dans le fichier (normalizers, adjustCibleFamille…).
-// eslint-disable-next-line @typescript-eslint/no-redeclare
+ 
 function n(v: number | null | undefined): number {
   return typeof v === 'number' && isFinite(v) ? v : 0
 }

@@ -19,6 +19,7 @@
 
 import { createServerClient } from '@/lib/supabase/server'
 import { enrichISIN } from './isinEnricher'
+import { devLog } from '@/lib/utils/devLog'
 import type { ISINData, AnalyseAssetType } from '@/types/analyse'
 
 const BATCH_SIZE       = 5
@@ -84,10 +85,10 @@ export async function enrichMultipleISIN(isins: string[]): Promise<Map<string, I
 
   const missing = norm.filter((i) => !result.has(i))
   if (missing.length === 0) {
-    console.log(`[isinBatch] ${norm.length} ISIN, tous en cache`)
+    devLog(`[isinBatch] ${norm.length} ISIN, tous en cache`)
     return result
   }
-  console.log(`[isinBatch] ${norm.length} ISIN, ${missing.length} à enrichir`)
+  devLog(`[isinBatch] ${norm.length} ISIN, ${missing.length} à enrichir`)
 
   for (let i = 0; i < missing.length; i += BATCH_SIZE) {
     const slice = missing.slice(i, i + BATCH_SIZE)

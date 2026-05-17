@@ -54,12 +54,21 @@ async function fetchPatrimoine(): Promise<PatrimoineComplet> {
 
 /** Snapshot du patrimoine du jour — fire & forget, ne bloque ni n'erreurs
  *  vers l'UI. Aliments wealth_snapshots pour la courbe d'évolution.
- *  Pas de cron requis : si l'user consulte son analyse, le snapshot existe. */
-function fireAndForgetSnapshot(): void {
+ *  Pas de cron requis : si l'user consulte son analyse, le snapshot existe.
+ *
+ *  Sprint 1 — B8 : on passe le PatrimoineComplet deja calcule cote client
+ *  pour eviter une double agregation serveur. La route accepte un body vide
+ *  en fallback. Un anti-rebond 30 s cote serveur absorbe les rafales.
+ */
+function fireAndForgetSnapshot(patrimoine: PatrimoineComplet): void {
   // Promise non awaitée — on swallow toute erreur pour ne pas polluer l'UI.
   // La table est append-only par jour (UPSERT), un échec ponctuel = perte
   // d'un point dans la courbe historique, jamais un blocage.
-  fetch('/api/analyse/snapshot', { method: 'POST' }).catch(() => {})
+  fetch('/api/analyse/snapshot', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ patrimoineComplet: patrimoine }),
+  }).catch(() => {})
 }
 
 // Tables sources de la projection FIRE — abonnement realtime
@@ -91,7 +100,7 @@ export function usePatrimoineAnalyse(): UsePatrimoineResult {
       memCache = { data: fresh, expiresAt: Date.now() + CLIENT_CACHE_MS }
       setData(fresh)
       setLastUpdatedAt(Date.now())
-      fireAndForgetSnapshot()
+      fireAndForgetSnapshot(fresh)
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -109,7 +118,7 @@ export function usePatrimoineAnalyse(): UsePatrimoineResult {
       setData(fresh)
       setLastUpdatedAt(Date.now())
       setError(null)
-      fireAndForgetSnapshot()
+      fireAndForgetSnapshot(fresh)
     } catch (e) {
       setError((e as Error).message)
     }
@@ -163,7 +172,7 @@ export function usePatrimoineAnalyse(): UsePatrimoineResult {
       memCache = { data: fresh, expiresAt: Date.now() + CLIENT_CACHE_MS }
       setData(fresh)
       setLastUpdatedAt(Date.now())
-      fireAndForgetSnapshot()
+      fireAndForgetSnapshot(fresh)
     } catch (e) {
       setError((e as Error).message)
     } finally {

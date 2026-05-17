@@ -43,7 +43,7 @@ export const calculateSciIs: FiscalCalculator = (
 
   // Imputation du déficit reporté
   const carriedBefore = state.isDeficitCarried   // ≤ 0 (déficit) ou 0
-  let baseAfterCarry = fiscalResult + carriedBefore
+  const baseAfterCarry = fiscalResult + carriedBefore
 
   let newCarried = 0
   let taxableBase = 0

@@ -71,7 +71,8 @@ function formatTimeHM(ts: number): string {
 export function ProjectionFIRE({ patrimoine, lastUpdatedAt }: Props) {
   const fi = patrimoine.fireInputs
 
-  // Cas profil incomplet
+  // Cas profil incomplet — early return AVANT le composant Inner pour
+  // respecter les rules-of-hooks (les hooks vivent dans Inner).
   if (!fi.age || !fi.age_cible || fi.revenu_passif_cible <= 0) {
     return (
       <div className="card p-5">
@@ -81,6 +82,17 @@ export function ProjectionFIRE({ patrimoine, lastUpdatedAt }: Props) {
         </p>
       </div>
     )
+  }
+
+  return <ProjectionFIREInner patrimoine={patrimoine} lastUpdatedAt={lastUpdatedAt} />
+}
+
+function ProjectionFIREInner({ patrimoine, lastUpdatedAt }: Props) {
+  // Garanti par le early return du wrapper ProjectionFIRE : age et age_cible
+  // sont non-null et revenu_passif_cible > 0. On force le narrowing.
+  const fi = patrimoine.fireInputs as typeof patrimoine.fireInputs & {
+    age: number
+    age_cible: number
   }
 
   // ── État local sliders ──────────────────────────────────────────

@@ -10,7 +10,7 @@
 
 import Link from 'next/link'
 import {
-  RotateCw, Coffee, CalendarClock, ArrowRight, type LucideIcon,
+  RotateCw, Coffee, CalendarClock, Receipt, ArrowRight, type LucideIcon,
 } from 'lucide-react'
 import type { ActionMensuelle, ActionMensuelleType } from '@/lib/analyse/recoMensuelles'
 
@@ -22,6 +22,7 @@ const ICON_BY_TYPE: Record<ActionMensuelleType, LucideIcon> = {
   rebalance:   RotateCw,
   invest_cash: Coffee,
   dca_retard:  CalendarClock,
+  fiscal:      Receipt,
 }
 
 export function ActionsDuMois({ actions }: Props) {

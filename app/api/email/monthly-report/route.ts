@@ -22,7 +22,9 @@ import { createServiceClient, createServerClient } from '@/lib/supabase/server'
 import { ok, err } from '@/lib/utils/api'
 import { getPatrimoineComplet } from '@/lib/analyse/aggregateur'
 import { genererActionsMensuelles } from '@/lib/analyse/recoMensuelles'
+import { calculerOpportunitesFiscales } from '@/lib/analyse/optimiseurFiscal'
 import { sendEmail } from '@/lib/email/sendEmail'
+import { runInBatches } from '@/lib/email/batch'
 import {
   generateMonthlyReportHTML,
   type MonthlyReportData,
@@ -89,25 +91,29 @@ async function processAllUsers(): Promise<Response> {
 
   console.log(`[monthly-report] ${eligibles.length} user(s) eligibles sur ${profiles?.length ?? 0} total`)
 
-  const details: ReportResultDetail[] = []
-  let sent = 0
-  let errors = 0
+  // Sprint 1 — B7 : batching parallèle pour tenir dans le budget Edge Function.
+  // 10 users en parallèle × 100 ms de pause = ~100 users/s en regime de croisière,
+  // largement sous le quota Resend (100 req/s).
+  const summary = await runInBatches(
+    eligibles.map((p) => p.id as string),
+    (userId) => processOneUser(userId, { force: false }),
+    { batchSize: 10, delayMs: 100 },
+  )
 
-  for (const p of eligibles) {
-    try {
-      const r = await processOneUser(p.id as string, { force: false })
-      details.push(r)
-      if (r.success) sent++
-      else           errors++
-    } catch (e) {
-      errors++
-      const message = e instanceof Error ? e.message : String(e)
-      console.error(`[monthly-report] user=${p.id} exception:`, message)
-      details.push({ user_id: p.id as string, success: false, error: message })
-    }
-  }
+  const details: ReportResultDetail[] = summary.results.map((r) =>
+    r.ok
+      ? r.value
+      : { user_id: r.item, success: false, error: r.error },
+  )
+  const failedIds = details.filter((d) => !d.success).map((d) => d.user_id)
 
-  return ok({ processed: eligibles.length, sent, errors, details })
+  return ok({
+    total:     summary.total,
+    success:   summary.succeeded,
+    failed:    summary.failed,
+    failedIds,
+    details,
+  })
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -234,8 +240,12 @@ async function buildReportData(
     .limit(1)
     .maybeSingle()
 
+  // Sprint 1 — I3 : on enrichit les actions du mois avec les top opportunites
+  // fiscales pour que les emails et le dashboard restent coherents.
+  const opportunitesFiscales = calculerOpportunitesFiscales({ patrimoine }).opportunites
   const actions = genererActionsMensuelles(patrimoine, {
     lastPositionAddedAt: lastPos?.acquisition_date ?? null,
+    opportunitesFiscales,
   }).slice(0, 3).map((a) => ({ titre: a.titre, detail: a.description }))
 
   // ── Répartition (top 6 classes) ───────────────────────────────

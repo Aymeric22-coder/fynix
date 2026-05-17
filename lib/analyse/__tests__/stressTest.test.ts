@@ -9,7 +9,7 @@ import {
   simulerStress, SCENARIOS_STRESS,
   SCENARIO_CRASH_MARCHES, SCENARIO_VACANCE_LOCATIVE, SCENARIO_PERTE_EMPLOI,
   SCENARIO_DOUBLE_PEINE, SCENARIO_INFLATION_FORTE,
-  type StressParams, type ScenarioStress,
+  type StressParamsLegacy, type ScenarioStress,
 } from '../stressTest'
 import type { ProjectionGlobaleResult } from '@/types/analyse'
 
@@ -40,8 +40,8 @@ function projectionBaseFake(ageInd: number | null): ProjectionGlobaleResult {
 
 function baseParams(
   scenario: ScenarioStress,
-  over: Partial<StressParams> = {},
-): StressParams {
+  over: Partial<StressParamsLegacy> = {},
+): StressParamsLegacy {
   return {
     scenario,
     projectionBase:    projectionBaseFake(50),
@@ -294,5 +294,96 @@ describe('simulerStress — PERTE_EMPLOI 12 mois', () => {
     // épargne pleine. On vérifie juste qu'on a bien des points cohérents.
     expect(r.courbe_stressee.length).toBeGreaterThan(10)
     expect(r.courbe_stressee[0]!.valeur).toBe(120_000)  // pas de choc immédiat
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────
+// Sprint 1 — I5 : ancrage scenario neutre + I6 : double comptage loyers
+// ─────────────────────────────────────────────────────────────────
+
+const SCENARIO_NEUTRE: ScenarioStress = {
+  id:          'neutre',
+  label:       'Neutre (test)',
+  description: 'Tous les chocs a 0 — sert a valider que stress == baseline.',
+  icone:       '⚖',
+  impact: {
+    portefeuille_pct:    0,
+    loyers_pct:          0,
+    epargne_pct:         0,
+    duree_mois:          12,
+    rendement_delta_pct: 0,
+  },
+}
+
+describe('simulerStress — scenario neutre (Sprint 1 I5)', () => {
+  it('loyers 1000 €/mois + portefeuille fixe : age FIRE inchange vs baseline', () => {
+    const baseline = projectionBaseFake(48)
+    const r = simulerStress({
+      scenario:          SCENARIO_NEUTRE,
+      baselineProjection: baseline,
+      patrimoine_actuel: {
+        total_portefeuille: 200_000,
+        total_immo:         0,
+        total_cash:         0,
+        epargne_mensuelle:  0,       // portefeuille "fixe"
+        revenu_loyers:      1000,    // 1000 €/mois loyers nets
+      },
+      age_actuel:            30,
+      age_cible:             60,
+      cible_fire:            900_000,
+      revenu_passif_cible:   3000,
+      rendement_central_pct: 7,
+    })
+    expect(r.age_fire_avec_stress).toBe(48)
+    expect(r.retard_mois).toBe(0)
+    expect(r.perte_immediate).toBe(0)
+  })
+
+  it('baseline inatteignable + scenario neutre → stress aussi null', () => {
+    const r = simulerStress({
+      scenario:          SCENARIO_NEUTRE,
+      baselineProjection: projectionBaseFake(null),
+      patrimoine_actuel: {
+        total_portefeuille: 10_000, total_immo: 0, total_cash: 0,
+        epargne_mensuelle: 0, revenu_loyers: 0,
+      },
+      age_actuel: 30, age_cible: 60,
+      cible_fire: 5_000_000, revenu_passif_cible: 10_000,
+      rendement_central_pct: 7,
+    })
+    expect(r.age_fire_avec_stress).toBeNull()
+    expect(r.retard_mois).toBe(0)
+  })
+
+  it('scenario avec impact NON nul ne court-circuite pas', () => {
+    const r = simulerStress({
+      scenario:          SCENARIO_CRASH_MARCHES,  // portefeuille_pct = -30
+      baselineProjection: projectionBaseFake(48),
+      patrimoine_actuel: {
+        total_portefeuille: 200_000, total_immo: 0, total_cash: 0,
+        epargne_mensuelle: 1000, revenu_loyers: 0,
+      },
+      age_actuel: 30, age_cible: 60,
+      cible_fire: 900_000, revenu_passif_cible: 3000,
+      rendement_central_pct: 7,
+    })
+    expect(r.perte_immediate).toBe(60_000)
+    // age_fire_avec_stress doit refléter le choc, pas être aligné sur 48
+  })
+
+  it('accepte projectionBase (legacy) en plus de baselineProjection', () => {
+    // Compat retro : les anciens appelants passent projectionBase.
+    const r = simulerStress({
+      scenario:          SCENARIO_NEUTRE,
+      projectionBase:    projectionBaseFake(45),
+      patrimoine_actuel: {
+        total_portefeuille: 200_000, total_immo: 0, total_cash: 0,
+        epargne_mensuelle: 0, revenu_loyers: 0,
+      },
+      age_actuel: 30, age_cible: 60,
+      cible_fire: 900_000, revenu_passif_cible: 3000,
+      rendement_central_pct: 7,
+    })
+    expect(r.age_fire_avec_stress).toBe(45)
   })
 })

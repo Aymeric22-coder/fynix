@@ -1,7 +1,7 @@
 import { createServerClient } from '@/lib/supabase/server'
 import { ok, err, withAuth, parseBody } from '@/lib/utils/api'
 import type { User } from '@supabase/supabase-js'
-import { grossYield, netYield, propertyCashFlow, round2 } from '@/lib/finance/formulas'
+import { grossYield, netYield, round2 } from '@/lib/finance/formulas'
 
 type Ctx = { params: Promise<{ id: string }> }
 

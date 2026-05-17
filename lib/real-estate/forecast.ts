@@ -124,7 +124,7 @@ export function computeRevisedForecast(
     let source: RevisedProjectionYear['source']
     let cashFlowYear: number
     let estimatedValue: number = proj.estimatedValue
-    let remainingCapital: number = proj.remainingCapital
+    const remainingCapital: number = proj.remainingCapital
 
     if (calYear < pivotYear) {
       // ── Passé : on intègre le réel ──

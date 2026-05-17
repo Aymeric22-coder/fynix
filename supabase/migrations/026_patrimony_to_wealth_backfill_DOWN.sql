@@ -1,0 +1,13 @@
+-- Rollback migration 026 : impossible de "deferer" un backfill sans connaitre
+-- les lignes inserees par ce script vs celles natives de wealth_snapshots.
+--
+-- Approche : on supprime les lignes wealth_snapshots dont la created_at est
+-- anterieure a la date d'application de la migration 026, A CONDITION que
+-- l'utilisateur n'ait jamais consulte /analyse depuis (sinon il y a un melange).
+--
+-- En pratique, le rollback "vrai" consiste a accepter le doublon : laisser
+-- wealth_snapshots tel quel. Le re-jouer (026 up) est de toute facon idempotent.
+--
+-- Aucune action automatique ici pour eviter une suppression destructive
+-- non maitrisee.
+SELECT 1;  -- no-op

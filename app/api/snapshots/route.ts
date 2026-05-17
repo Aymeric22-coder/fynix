@@ -1,18 +1,46 @@
+/**
+ * GET / POST /api/snapshots — route legacy.
+ *
+ * Sprint 2 — I4 finalise : la table `patrimony_snapshots` est supprimee
+ * (migration 027). Ces handlers sont maintenant des proxies fins vers
+ * `wealth_snapshots` pour preserver la compat des clients existants.
+ *
+ * GET  → lit `wealth_snapshots`, mappe vers la shape historique
+ *        (total_net_value, total_gross_value, total_debt) pour ne pas
+ *        casser les consommateurs qui filtreraient sur ces colonnes.
+ * POST → delegue a /api/analyse/snapshot (qui ecrit dans wealth_snapshots
+ *        avec anti-rebond 30 s). Renvoie 201 pour compat retro.
+ */
 import { createServerClient } from '@/lib/supabase/server'
 import { ok, err, withAuth, getPagination } from '@/lib/utils/api'
 import type { User } from '@supabase/supabase-js'
-import { confidenceScore, round2 } from '@/lib/finance/formulas'
-import { computeRealEstatePortfolio } from '@/lib/real-estate/portfolio'
-import { format } from 'date-fns'
+import { getPatrimoineComplet } from '@/lib/analyse/aggregateur'
 
-// GET /api/snapshots — historique des snapshots
+interface LegacySnapshot {
+  user_id:           string
+  snapshot_date:     string
+  total_gross_value: number
+  total_net_value:   number
+  total_debt:        number
+  real_estate_value: number
+  financial_value:   number
+  cash_value:        number
+  scpi_value:        number     // toujours 0 — column legacy non maintenue dans wealth_snapshots
+  other_value:       number     // idem
+  monthly_cashflow:  number
+  confidence_score:  null       // jamais stocke dans wealth_snapshots
+  notes:             null
+  created_at:        string
+  id:                string
+}
+
 export const GET = withAuth(async (req: Request, user: User) => {
   const { searchParams } = new URL(req.url)
   const { from: rangeFrom, to: rangeTo } = getPagination(req.url)
   const supabase = await createServerClient()
 
   let query = supabase
-    .from('patrimony_snapshots')
+    .from('wealth_snapshots')
     .select('*', { count: 'exact' })
     .eq('user_id', user.id)
     .order('snapshot_date', { ascending: false })
@@ -27,139 +55,66 @@ export const GET = withAuth(async (req: Request, user: User) => {
   const { data, error, count } = await query
   if (error) return err(error.message, 500)
 
-  return ok({ items: data, total: count ?? 0 })
+  // Mapping wealth_snapshots → shape `patrimony_snapshots` historique pour
+  // ne pas casser un eventuel consommateur externe.
+  const items: LegacySnapshot[] = (data ?? []).map((s) => ({
+    id:                s.id              as string,
+    user_id:           s.user_id         as string,
+    snapshot_date:     s.snapshot_date   as string,
+    total_gross_value: Number(s.patrimoine_brut     ?? 0),
+    total_net_value:   Number(s.patrimoine_net      ?? 0),
+    total_debt:        Number(s.total_dettes        ?? 0),
+    real_estate_value: Number(s.total_immo          ?? 0),
+    financial_value:   Number(s.total_portefeuille  ?? 0),
+    cash_value:        Number(s.total_cash          ?? 0),
+    monthly_cashflow:  Number(s.revenu_passif_mensuel ?? 0),
+    scpi_value:        0,
+    other_value:       0,
+    confidence_score:  null,
+    notes:             null,
+    created_at:        s.created_at as string,
+  }))
+
+  return ok({ items, total: count ?? 0 })
 })
 
-// POST /api/snapshots — crée / met à jour le snapshot du jour
-// Met à jour capital_remaining sur toutes les dettes immobilières (calcul analytique).
-// Le monthly_cashflow utilise les simulations réelles (après impôts, vacance, etc.)
 export const POST = withAuth(async (_req: Request, user: User) => {
+  // Delegue a /api/analyse/snapshot (anti-rebond 30 s, ecriture wealth_snapshots).
+  // On execute la meme logique directement pour eviter un fetch interne.
   const supabase = await createServerClient()
-  const today = format(new Date(), 'yyyy-MM-dd')
+  const patrimoine = await getPatrimoineComplet(user.id)
 
-  // ── 1. Actifs actifs ──────────────────────────────────────────────────────
-  const { data: assets, error: assetsErr } = await supabase
-    .from('assets')
-    .select('id, asset_type, current_value, confidence')
-    .eq('user_id', user.id)
-    .eq('status', 'active')
+  const today = new Date()
+  const snapshotDate = `${today.getUTCFullYear()}-`
+                     + `${String(today.getUTCMonth() + 1).padStart(2, '0')}-`
+                     + `${String(today.getUTCDate()).padStart(2, '0')}`
 
-  if (assetsErr) return err(assetsErr.message, 500)
+  const cibleFire = (patrimoine.fireInputs.revenu_passif_cible ?? 0) * 12 * 25
+  const progressionFirePct = cibleFire > 0
+    ? Math.round((patrimoine.totalNet / cibleFire) * 100 * 10000) / 10000
+    : null
 
-  // ── 2. Simulations immobilières (CF + capital_remaining analytique) ───────
-  const portfolio = await computeRealEstatePortfolio(supabase, user.id)
-
-  // Mettre à jour capital_remaining sur chaque dette immobilière
-  // (opérations en parallèle, erreurs non bloquantes)
-  const capitalUpdates = portfolio.properties
-    .filter((p) => p.capitalRemaining > 0)
-    .map((p) =>
-      supabase
-        .from('debts')
-        .update({ capital_remaining: round2(p.capitalRemaining) })
-        .eq('asset_id', p.assetId)
-        .eq('user_id', user.id)
-        .eq('status', 'active'),
-    )
-  await Promise.allSettled(capitalUpdates)
-
-  // ── 3. Dettes NON immobilières (autres crédits : consommation, etc.) ──────
-  // On lit capital_remaining stocké (pas de simulation analytique pour eux en Phase 1)
-  const { data: otherDebts } = await supabase
-    .from('debts')
-    .select('asset_id, capital_remaining')
-    .eq('user_id', user.id)
-    .eq('status', 'active')
-    .not('asset_id', 'in', `(${portfolio.properties.map((p) => `"${p.assetId}"`).join(',') || '""'})`)
-
-  // ── 4. Cash-flow mensuel hors immobilier (lots loués non-simulation) ──────
-  // Pour les actifs sans simulation (SCPI, etc.) on garde l'ancienne méthode
-  const { data: scpiLots } = await supabase
-    .from('real_estate_lots')
-    .select('rent_amount, charges_amount, status')
-    .eq('user_id', user.id)
-    .eq('status', 'rented')
-
-  // ATTENTION : les lots immobiliers sont déjà dans les simulations.
-  // On ne les double-compte pas — on prend uniquement le CF simulation.
-  // Les SCPI et autres revenus fonciers (non couverts par la simulation) sont ignorés Phase 1.
-  // TODO Phase 2 : ajouter les revenus SCPI.
-  const simMonthlyCF = portfolio.totalMonthlyCFYear1
-
-  // Pour l'instant on garde quand même les loyers bruts des lots comme signal
-  // de cash-flow dans le cas où la simulation est incomplète (pas de régime, etc.)
-  const fallbackCF = (scpiLots ?? []).reduce(
-    (s, l) => s + (l.rent_amount ?? 0) - (l.charges_amount ?? 0),
-    0,
-  )
-
-  // Si au moins une simulation a réussi, on utilise le CF simulation
-  const hasSim = portfolio.properties.some((p) => !p.simulation.incompleteData)
-  const monthlyCashFlow = hasSim ? simMonthlyCF : fallbackCF
-
-  // ── 5. Agrégats par type d'actif ──────────────────────────────────────────
-  const byType: Record<string, number> = {
-    real_estate: 0, scpi: 0, stock: 0, etf: 0, crypto: 0, gold: 0, cash: 0, other: 0,
+  const row = {
+    user_id:                user.id,
+    snapshot_date:          snapshotDate,
+    patrimoine_brut:        round2(patrimoine.totalBrut),
+    patrimoine_net:         round2(patrimoine.totalNet),
+    total_portefeuille:     round2(patrimoine.totalPortefeuille),
+    total_immo:             round2(patrimoine.totalImmo),
+    total_cash:             round2(patrimoine.totalCash),
+    total_dettes:           round2(patrimoine.totalDettes),
+    revenu_passif_mensuel:  round2(patrimoine.revenuPassifActuel),
+    progression_fire_pct:   progressionFirePct,
   }
 
-  for (const a of assets ?? []) {
-    const v    = a.current_value ?? 0
-    const type = a.asset_type as string
-    if (type in byType) byType[type]! += v
-    else byType['other']! += v
-  }
-
-  const financialValue = (byType['stock'] ?? 0) + (byType['etf'] ?? 0) +
-                         (byType['crypto'] ?? 0) + (byType['gold'] ?? 0)
-
-  const totalGross = Object.values(byType).reduce((s, v) => s + v, 0)
-
-  // Total dette = immobilier (analytique) + autres crédits (stocké)
-  const reDebt    = portfolio.totalCapitalRemaining
-  const otherDebt = (otherDebts ?? []).reduce((s, d) => s + (d.capital_remaining ?? 0), 0)
-  const totalDebt = round2(reDebt + otherDebt)
-
-  const totalNet  = round2(totalGross - totalDebt)
-
-  const score = confidenceScore(
-    (assets ?? []).map((a) => ({
-      value:      a.current_value ?? 0,
-      confidence: a.confidence as 'high' | 'medium' | 'low',
-    })),
-  )
-
-  // ── 6. Upsert snapshot ────────────────────────────────────────────────────
-  const { data: snapshot, error: snapErr } = await supabase
-    .from('patrimony_snapshots')
-    .upsert(
-      {
-        user_id:           user.id,
-        snapshot_date:     today,
-        total_gross_value: round2(totalGross),
-        total_debt:        totalDebt,
-        total_net_value:   totalNet,
-        real_estate_value: round2(byType['real_estate'] ?? 0),
-        scpi_value:        round2(byType['scpi'] ?? 0),
-        financial_value:   round2(financialValue),
-        cash_value:        round2(byType['cash'] ?? 0),
-        other_value:       round2(byType['other'] ?? 0),
-        monthly_cashflow:  round2(monthlyCashFlow),
-        confidence_score:  round2(score),
-      },
-      { onConflict: 'user_id,snapshot_date' },
-    )
+  const { data, error } = await supabase
+    .from('wealth_snapshots')
+    .upsert(row, { onConflict: 'user_id,snapshot_date' })
     .select()
     .single()
 
-  if (snapErr) return err(snapErr.message, 500)
-
-  return ok({
-    snapshot,
-    simulation_summary: {
-      properties_simulated: portfolio.properties.filter((p) => !p.simulation.incompleteData).length,
-      properties_incomplete: portfolio.properties.filter((p) => p.simulation.incompleteData).length,
-      monthly_cf_simulation: round2(simMonthlyCF),
-      total_capital_remaining: round2(reDebt),
-    },
-  }, 201)
+  if (error) return err(error.message, 500)
+  return ok({ snapshot: data }, 201)
 })
+
+function round2(n: number): number { return Math.round(n * 100) / 100 }

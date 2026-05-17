@@ -1,9 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   detectBroker, detectDelimiter, parseNumberLoose, parseDateLoose, looksLikeISIN,
-  parseTradeRepublic, parseDegiro, parseBoursorama, parseLynxIbkr, parseFortuneo,
-  parseLinxeaAV, parseGeneric, parseBrokerCsv, parseRawCsv,
-  aggregateToPositions, decodeCsvBytes,
+  parseBrokerCsv, aggregateToPositions, decodeCsvBytes,
 } from '../csvImport'
 
 describe('csvImport — helpers bas niveau', () => {

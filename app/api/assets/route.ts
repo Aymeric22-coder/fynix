@@ -1,4 +1,3 @@
-import { type NextRequest } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { ok, err, withAuth, getPagination, parseBody } from '@/lib/utils/api'
 import type { User } from '@supabase/supabase-js'

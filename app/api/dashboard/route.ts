@@ -44,9 +44,14 @@ export const GET = withAuth(async (_req: Request, user: User) => {
       .select('rent_amount, charges_amount, status')
       .eq('user_id', user.id),
 
+    // Sprint 2 — finalisation I4 : route migree sur wealth_snapshots.
+    // confidence_score etait selectionne mais jamais utilise (recalcule
+    // a la volee depuis assets.confidence ligne 137). On normalise la
+    // shape downstream pour preserver les champs total_net_value /
+    // total_gross_value / total_debt attendus par les consommateurs.
     supabase
-      .from('patrimony_snapshots')
-      .select('snapshot_date, total_net_value, total_gross_value, total_debt, confidence_score')
+      .from('wealth_snapshots')
+      .select('snapshot_date, patrimoine_net, patrimoine_brut, total_dettes')
       .eq('user_id', user.id)
       .order('snapshot_date', { ascending: false })
       .limit(13), // 12 mois + 1 pour le CAGR
@@ -63,7 +68,14 @@ export const GET = withAuth(async (_req: Request, user: User) => {
   const assets = assetsResult.data ?? []
   const debts = debtsResult.data ?? []
   const lots = lotsResult.data ?? []
-  const snapshots = snapshotsResult.data ?? []
+  // Normalise wealth_snapshots → shape historique (total_net_value, etc.)
+  // pour minimiser le diff downstream (timeline, CAGR).
+  const snapshots = (snapshotsResult.data ?? []).map((s) => ({
+    snapshot_date:     s.snapshot_date as string,
+    total_net_value:   Number(s.patrimoine_net ?? 0),
+    total_gross_value: Number(s.patrimoine_brut ?? 0),
+    total_debt:        Number(s.total_dettes ?? 0),
+  }))
 
   // ── KPIs ────────────────────────────────────────────────────────────────────
   const grossValue = assets.reduce((s, a) => s + (a.current_value ?? 0), 0)

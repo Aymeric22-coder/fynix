@@ -1,0 +1,5 @@
+echo "▶ tsc..."
+npx tsc --noEmit || exit 1
+echo "▶ vitest..."
+npx vitest run || exit 1
+echo "✅ pre-push OK"

@@ -3,8 +3,7 @@
  *
  * Charge les positions, instruments, prix et envelopes d'un utilisateur,
  * puis appelle le moteur de valorisation pur. Les analytics historiques
- * sont calculées à partir des `patrimony_snapshots` (à brancher en Phase 5
- * avec un snapshot par classe d'actif).
+ * sont calculées à partir de `wealth_snapshots` (depuis Sprint 2, I4 finalise).
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'

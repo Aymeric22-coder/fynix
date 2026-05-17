@@ -24,6 +24,7 @@
 
 import yahooFinance from 'yahoo-finance2'
 import { createServerClient } from '@/lib/supabase/server'
+import { devLog } from '@/lib/utils/devLog'
 import { resolveFigi, selectBestMatch, type FigiMatch } from '@/lib/portfolio/providers/openfigi'
 import {
   fetchYahooEnrichment, quoteTypeToAssetType, type YahooEnrichment,
@@ -198,29 +199,29 @@ export async function enrichISIN(isin: string): Promise<ISINData> {
   // 1. Cache hit
   const cached = await getCachedIsin(norm)
   if (cached) {
-    console.log(`[isinEnricher] cache HIT  ${norm}`)
+    devLog(`[isinEnricher] cache HIT  ${norm}`)
     return cached
   }
-  console.log(`[isinEnricher] cache MISS ${norm}`)
+  devLog(`[isinEnricher] cache MISS ${norm}`)
 
   // 2. OpenFIGI
   const figiMatches = await resolveFigi('ID_ISIN', norm).catch(() => null)
   const figi        = figiMatches ? selectBestMatch(figiMatches) : null
-  if (figi) console.log(`[isinEnricher] FIGI ${norm} → ${figi.ticker} (${figi.exchCode ?? '—'}) ${figi.securityType ?? ''}`)
+  if (figi) devLog(`[isinEnricher] FIGI ${norm} → ${figi.ticker} (${figi.exchCode ?? '—'}) ${figi.securityType ?? ''}`)
 
   // 3. Yahoo : on tente d'abord le symbole déduit du FIGI, sinon yf.search(isin).
   let yahooSymbol: string | null = figi ? figiToYahooSymbol(figi) : null
   let yahoo:       YahooEnrichment | null = null
   if (yahooSymbol) {
     yahoo = await fetchYahooEnrichment(yahooSymbol)
-    if (yahoo) console.log(`[isinEnricher] Yahoo ${yahooSymbol} ✓ (${yahoo.quoteType})`)
+    if (yahoo) devLog(`[isinEnricher] Yahoo ${yahooSymbol} ✓ (${yahoo.quoteType})`)
   }
   if (!yahoo) {
     const fallbackSym = await searchYahooSymbolByIsin(norm)
     if (fallbackSym && fallbackSym !== yahooSymbol) {
       yahooSymbol = fallbackSym
       yahoo       = await fetchYahooEnrichment(fallbackSym)
-      if (yahoo) console.log(`[isinEnricher] Yahoo fallback ${fallbackSym} ✓`)
+      if (yahoo) devLog(`[isinEnricher] Yahoo fallback ${fallbackSym} ✓`)
     }
   }
 

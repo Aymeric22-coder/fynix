@@ -9,6 +9,7 @@
  */
 'use client'
 
+import Link from 'next/link'
 import { Bitcoin, AlertCircle, TrendingUp, TrendingDown, Info } from 'lucide-react'
 import { cn } from '@/lib/utils/format'
 import { formatCurrency, formatPercent } from '@/lib/utils/format'
@@ -151,7 +152,7 @@ export function CryptoSummary({ cryptoTotal, cryptoCostTotal, cryptoBreakdown, p
         La crypto est analysée séparément car ce n&apos;est ni un secteur d&apos;activité ni une
         exposition pays. Elle n&apos;influence pas les analyses sectorielle et géographique du
         portefeuille financier. Le détail par actif (PRU, prix, P&amp;L) est dans la section{' '}
-        <a href="/portefeuille" className="text-accent underline">Portefeuille</a>.
+        <Link href="/portefeuille" className="text-accent underline">Portefeuille</Link>.
       </p>
     </div>
   )

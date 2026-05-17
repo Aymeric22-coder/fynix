@@ -63,7 +63,7 @@ export function makeFoncierReelCalculator(tmiPct: number): FiscalCalculator {
       // c'est-à-dire la part de déficit due aux charges après imputation par les loyers.
       const deficitTotal = -fiscalResult  // positif
       const deficitHorsInterest = Math.max(0, deductibleCharges - inputs.netRent)
-      const deficitDuToInterest = deficitTotal - deficitHorsInterest
+      const _deficitDuToInterest = deficitTotal - deficitHorsInterest
 
       const onGlobalIncome = Math.min(deficitHorsInterest, FONCIER_DEFICIT_GLOBAL_CAP)
       const onFoncierFuture = deficitTotal - onGlobalIncome   // tout le reste (intérêts + excédent)

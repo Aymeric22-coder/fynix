@@ -1,7 +1,6 @@
 import { createServerClient } from '@/lib/supabase/server'
 import { ok, err, withAuth, parseBody } from '@/lib/utils/api'
 import type { User } from '@supabase/supabase-js'
-import type { CashAccountInsert } from '@/types/database.types'
 
 interface CreateCashBody {
   name: string

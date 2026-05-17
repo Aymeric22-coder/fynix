@@ -12,10 +12,8 @@ const nextConfig: NextConfig = {
   },
   // Yahoo Finance uses Node.js APIs — mark as external for Edge compatibility
   serverExternalPackages: ['yahoo-finance2'],
-  // Ignore ESLint errors during production build (apostrophes françaises, unused vars)
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
+  // Sprint 2 — D2 : ESLint actif en build. 0 erreur, warnings restent
+  // pour signal (unused vars, debug). Le build echoue sur les erreurs.
   // En-tetes HTTP : empeche les navigateurs et CDN intermediaires de cacher
   // les pages applicatives (au-dela du JS asset hashe que Vercel gere bien).
   // Garantit qu'un nouveau deploiement est immediatement visible sans devoir

@@ -557,3 +557,85 @@ export interface FutureAcquisitionRow {
 
 export type FutureAcquisitionInsert = Omit<FutureAcquisitionRow, 'id' | 'created_at' | 'updated_at'>
 export type FutureAcquisitionUpdate = Partial<Omit<FutureAcquisitionInsert, 'user_id'>>
+
+// ─── Sprint 2 — D5 : tables manquantes ajoutees manuellement ─────────────────
+// (a regenerer via `npx supabase gen types typescript --local > types/database.types.ts`
+// quand la CLI sera configuree).
+
+/** Migration 020 — Snapshots quotidiens du patrimoine global. */
+export interface WealthSnapshot {
+  id:                     string
+  user_id:                string
+  snapshot_date:          string                  // YYYY-MM-DD
+  patrimoine_brut:        number
+  patrimoine_net:         number
+  total_portefeuille:     number
+  total_immo:             number
+  total_cash:             number
+  total_dettes:           number
+  revenu_passif_mensuel:  number
+  progression_fire_pct:   number | null
+  created_at:             string
+}
+export type WealthSnapshotInsert = Omit<WealthSnapshot, 'id' | 'created_at'>
+
+/** Migration 021 — Erreurs de signup loguees par fn_handle_new_user. */
+export interface SignupError {
+  id:             string
+  user_id:        string | null
+  error_message:  string
+  sqlstate:       string | null
+  created_at:     string
+}
+
+/** Migration 022/023 — Logs d'envois email (rapport mensuel). */
+export interface EmailLog {
+  id:             string
+  user_id:        string
+  email_type:     string
+  sent_at:        string
+  success:        boolean
+  error_message:  string | null
+  message_id:     string | null
+}
+export type EmailLogInsert = Omit<EmailLog, 'id' | 'sent_at'> & { sent_at?: string }
+
+/** Migration 016 — Cache global ISIN → metadonnees. Lecture/ecriture authentifiee. */
+export interface IsinCache {
+  isin:               string
+  name:               string | null
+  asset_type:         string | null
+  ticker:             string | null
+  exchange:           string | null
+  currency:           string | null
+  sector:             string | null
+  geography:          string | null
+  source:             string | null
+  confidence:         string | null
+  fetched_at:         string
+  cache_expires_at:   string
+}
+
+/** Migration 011 — Snapshots du portefeuille financier uniquement. */
+export interface PortfolioSnapshot {
+  id:                     string
+  user_id:                string
+  snapshot_date:          string
+  total_market_value:     number
+  total_cost_basis:       number
+  total_unrealized_pnl:   number | null
+  positions_count:        number
+  freshness_ratio:        number | null
+  created_at:             string
+}
+
+/** Sprint 1 — Migration 025 : dedup imports CSV par SHA-256. */
+export interface ImportHistory {
+  id:           string
+  user_id:      string
+  file_hash:    string
+  imported_at:  string
+  row_count:    number
+  broker_hint:  string | null
+}
+export type ImportHistoryInsert = Omit<ImportHistory, 'id' | 'imported_at'> & { imported_at?: string }

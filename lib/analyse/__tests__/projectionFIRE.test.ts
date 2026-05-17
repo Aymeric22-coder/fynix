@@ -63,6 +63,45 @@ describe('simulerBienExistant', () => {
     expect(traj[0]?.equity).toBe(traj[0]?.valeur)
     expect(traj[5]?.mensualite).toBe(0)
   })
+
+  // Sprint 1 — B6 : propagation du cashflow net fiscal
+  describe('cashflow net fiscal (Sprint 1 B6)', () => {
+    // Bien : loyer 1000/mois (12 000/an), 0 charges, 0 credit → cashflow brut = 12 000
+    // Si cashflowNetFiscalAnnuel = 8 000, impot = 4 000 → ratio impot/loyer = 33.33 %
+    const bienSimple = (): BienImmo => bien({
+      valeur: 100000, loyer_mensuel: 1000,
+      credit_restant: 0, mensualite_credit: 0, duree_restante_mois: 0,
+      charges_annuelles: 0,
+    })
+
+    it('A — utilise le cashflow net fiscal fourni a l\'annee 0', () => {
+      const traj = simulerBienExistant(bienSimple(), 5, 0, 0, 8000)
+      expect(traj[0]?.cashflow_annuel).toBe(8000)
+    })
+
+    it('A — applique le ratio impot/loyer constant aux annees suivantes', () => {
+      // Inflation loyers 10 %/an : a y=1 le loyer = 13 200, impot 33.33 % = 4 400
+      // → cashflow = 13 200 - 0 - 4 400 = 8 800
+      const traj = simulerBienExistant(bienSimple(), 5, 0, 10, 8000)
+      expect(traj[1]?.cashflow_annuel).toBe(8800)
+    })
+
+    it('A — un impot nul (cashflow net = cashflow brut) donne le brut', () => {
+      const traj = simulerBienExistant(bienSimple(), 3, 0, 0, 12000)
+      expect(traj[0]?.cashflow_annuel).toBe(12000)
+    })
+
+    it('B — fallback cashflow brut quand cashflowNetFiscalAnnuel absent', () => {
+      const traj = simulerBienExistant(bienSimple(), 3, 0, 0)
+      // Pas d'impot deduit → cashflow brut = 12 000
+      expect(traj[0]?.cashflow_annuel).toBe(12000)
+    })
+
+    it('B — fallback aussi quand cashflowNetFiscalAnnuel = NaN', () => {
+      const traj = simulerBienExistant(bienSimple(), 3, 0, 0, NaN)
+      expect(traj[0]?.cashflow_annuel).toBe(12000)
+    })
+  })
 })
 
 describe('simulerAcquisitionFuture', () => {

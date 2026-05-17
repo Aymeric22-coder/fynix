@@ -80,7 +80,6 @@ export function QuickActualsEntry({
   const [loanAmount, setLoanAmount] = useState(monthlyPaymentSuggested ?? 0)
 
   // ── État charges annuelles ──
-  const lastYear = (existingCharges[0]?.year ?? now.getFullYear() - 1) + 1
   const [chargesYear, setChargesYear] = useState<number>(now.getFullYear())
   const existing = existingCharges.find((c) => c.year === chargesYear)
   // Pré-remplit avec les valeurs existantes en base si disponibles, sinon

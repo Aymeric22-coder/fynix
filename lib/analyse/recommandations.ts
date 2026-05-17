@@ -12,6 +12,7 @@
  */
 
 import { calculerImpactEpargne } from './projectionFIRE'
+import { formatEur } from '@/lib/utils/format'
 import type { PatrimoineComplet, Recommandation, ScoresComplets } from '@/types/analyse'
 import { normalizePriorite, type PrioriteId } from '../profil/calculs'
 
@@ -116,7 +117,7 @@ export function genererRecommandations(
       categorie:    'diversification',
       titre:        `Surpondération ${sectMax.secteur} vs marché mondial`,
       description:  `Votre exposition ${sectMax.secteur} atteint ${sectMax.pourcentage.toFixed(0)} %${sourcesTxt}, soit +${sectMax.deviation.toFixed(0)} points au-delà du benchmark MSCI World (${sectMax.benchmark.toFixed(0)} % attendu). Un choc sur ce secteur amplifierait l'impact sur votre portefeuille.`,
-      impact_estime: `Réduire votre exposition ${sectMax.secteur} de ${sectMax.deviation.toFixed(0)} points → ~${formatEur(eurosADeplacer)} à rééquilibrer.`,
+      impact_estime: `Réduire votre exposition ${sectMax.secteur} de ${sectMax.deviation.toFixed(0)} points → ~${formatEur(eurosADeplacer, { decimals: 0 })} à rééquilibrer.`,
       gain_estime_eur:   eurosADeplacer,
       gain_estime_label: ' à rééquilibrer',
       action:       'Diversifiez vers les secteurs sous-représentés du MSCI World pour vous rapprocher d\'une allocation neutre marché.',
@@ -138,7 +139,7 @@ export function genererRecommandations(
       categorie:    'diversification',
       titre:        `Surpondération ${zoneMax.zone} vs marché mondial`,
       description:  `Vous êtes exposé à ${zoneMax.pourcentage.toFixed(0)} % sur ${zoneMax.zone}${paysExtra}, soit +${zoneMax.deviation.toFixed(0)} points au-delà du benchmark MSCI ACWI (${zoneMax.benchmark.toFixed(0)} % attendu). ${isHomeBias ? 'Cela reflète un biais home country classique.' : ''}`.trim(),
-      impact_estime: `Réduire votre exposition ${zoneMax.zone} de ${zoneMax.deviation.toFixed(0)} points → ~${formatEur(eurosADeplacer)} à rééquilibrer.`,
+      impact_estime: `Réduire votre exposition ${zoneMax.zone} de ${zoneMax.deviation.toFixed(0)} points → ~${formatEur(eurosADeplacer, { decimals: 0 })} à rééquilibrer.`,
       gain_estime_eur:   eurosADeplacer,
       gain_estime_label: ' à rééquilibrer',
       action:       'Rééquilibrez vers les zones sous-représentées (Amérique du Nord, Asie développée) pour vous aligner sur la capitalisation boursière mondiale.',
@@ -215,8 +216,8 @@ export function genererRecommandations(
       priorite:     'haute',
       categorie:    'fiscalite',
       titre:        'Ouvrez un PEA maintenant',
-      description:  `Vous détenez ${formatEur(valActions)} d\'actions/ETF sans enveloppe fiscale optimisée. Le délai fiscal de 5 ans démarre à l'ouverture.`,
-      impact_estime: `Économie estimée ~${formatEur(economieAnnuelle)}/an de prélèvements sociaux après 5 ans (sur la base d\'un rendement annuel de 7 %).`,
+      description:  `Vous détenez ${formatEur(valActions, { decimals: 0 })} d\'actions/ETF sans enveloppe fiscale optimisée. Le délai fiscal de 5 ans démarre à l'ouverture.`,
+      impact_estime: `Économie estimée ~${formatEur(economieAnnuelle, { decimals: 0 })}/an de prélèvements sociaux après 5 ans (sur la base d\'un rendement annuel de 7 %).`,
       gain_estime_eur:   economieAnnuelle,
       gain_estime_label: '/an économisés après 5 ans',
       action:       'Ouvrez un PEA chez un courtier en ligne (Boursorama, Fortuneo, BforBank…) pour faire courir le délai d\'exonération.',
@@ -336,10 +337,3 @@ export function genererRecommandations(
 // Helpers locaux
 // ─────────────────────────────────────────────────────────────────
 
-/** Formate un montant en € avec séparateur d'espaces. Pas de décimale.
- *  Ex: 12345 → "12 345 €". */
-function formatEur(n: number): string {
-  const sign = n < 0 ? '-' : ''
-  const abs = Math.abs(Math.round(n))
-  return `${sign}${abs.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} €`
-}

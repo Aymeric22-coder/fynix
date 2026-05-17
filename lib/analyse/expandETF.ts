@@ -38,6 +38,7 @@
 import { translateSector } from './sectorMapping'
 import { geoZone } from './geoMapping'
 import { getEtfComposition, getEtfCompositionByName } from './etfCompositions'
+import { devLog } from '@/lib/utils/devLog'
 import type { EnrichedPosition, BienImmo } from '@/types/analyse'
 
 /** Une exposition unitaire après expansion : un secteur + une valeur €. */
@@ -197,7 +198,7 @@ export function expandPositions(
       if (fb) {
         compo = fb.composition
         nameFallbackLabel = fb.matchedLabel
-        console.log(`[expandETF] fallback par nom: "${pos.name}" → composition ${fb.matchedLabel}`)
+        devLog(`[expandETF] fallback par nom: "${pos.name}" → composition ${fb.matchedLabel}`)
       }
     }
 
