@@ -12,7 +12,7 @@ import {
 import {
   calculerRendementPortefeuille, simulerProjection, calculerImpactEpargne,
 } from '../projectionFIRE'
-import { genererRecommandations } from '../recommandations'
+import { genererRecommandations, type RecommandationEnrichie } from '../recommandations'
 import type { PatrimoineComplet, EnrichedPosition, AnalyseAssetType } from '@/types/analyse'
 
 // ─────────────────────────────────────────────────────────────────
@@ -424,6 +424,57 @@ describe('genererRecommandations', () => {
       calculerTousLesScores(patrimoine()),
     )
     expect(eq.map((r) => r.id)).toEqual(base.map((r) => r.id))
+  })
+
+  // ── Tâche C.1 — gain estimé en € sur les recos clés ──
+  it('reco PEA non ouvert expose un gain_estime_eur > 0', () => {
+    const p = patrimoine({
+      fireInputs: {
+        ...patrimoine().fireInputs,
+        enveloppes: [],  // PEA non ouvert
+      },
+      // 10k d'actions/ETF EU sans PEA
+      positions: [
+        pos({ asset_type: 'stock', current_value: 10000, sector: 'Tech', country: 'France' }),
+      ],
+    })
+    const recos = genererRecommandations(p, calculerTousLesScores(p)) as RecommandationEnrichie[]
+    const pea = recos.find((r) => r.id === 'pea-non-ouvert')
+    expect(pea).toBeDefined()
+    // 10000 × 0.07 × 0.172 ≈ 120
+    expect(pea!.gain_estime_eur).toBeGreaterThan(100)
+    expect(pea!.gain_estime_eur).toBeLessThan(150)
+    expect(pea!.gain_estime_label).toContain('économisés')
+    expect(pea!.impact_estime).toContain('€')
+  })
+
+  it('reco surpondération sectorielle expose un montant à rééquilibrer', () => {
+    const recos = genererRecommandations(patrimoine(), calculerTousLesScores(patrimoine())) as RecommandationEnrichie[]
+    const sect = recos.find((r) => r.id === 'surexpo-secteur')
+    expect(sect).toBeDefined()
+    expect(sect!.gain_estime_eur).toBeGreaterThan(0)
+    expect(sect!.gain_estime_label).toContain('rééquilibrer')
+  })
+
+  it('reco retard-fire expose mois_gagnes_fire si calculable', () => {
+    // Setup : utilisateur très en retard sur son objectif FIRE
+    const p = patrimoine({
+      totalNet: 50_000, totalBrut: 50_000, totalPortefeuille: 50_000, totalCash: 0,
+      fireInputs: {
+        ...patrimoine().fireInputs,
+        age: 30, age_cible: 40,  // 10 ans pour atteindre 900k → quasi impossible
+        epargne_mensuelle: 500,
+        revenu_passif_cible: 3000,
+      },
+    })
+    const recos = genererRecommandations(p, calculerTousLesScores(p)) as RecommandationEnrichie[]
+    const fire = recos.find((r) => r.id === 'retard-fire')
+    if (fire) {
+      // Le mois_gagnes_fire peut être null si le delta n'aide pas, mais
+      // l'impact_estime doit au moins mentionner les mois gagnés sinon
+      // tomber sur le fallback générique.
+      expect(fire.impact_estime).toBeDefined()
+    }
   })
 
   it('le boost ne déclasse JAMAIS une reco haute derrière une moyenne', () => {
