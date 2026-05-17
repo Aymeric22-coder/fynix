@@ -370,6 +370,14 @@ interface ProfileRow {
   tmi_rate: number | null
   risk_1: string | null; risk_2: string | null; risk_3: string | null; risk_4: string | null
   quiz_bourse: number[] | null; quiz_crypto: number[] | null; quiz_immo: number[] | null
+  // Champs profil exploites par les scores et recos (Tache A) — voir
+  // lib/profil/calculs.ts pour les normalizers et lib/analyse/scores.ts +
+  // lib/analyse/recommandations.ts pour les regles qui les consomment.
+  situation_familiale: string | null
+  enfants:             string | null
+  fire_type:           string | null
+  priorite:            string | null
+  stabilite_revenus:   string | null
 }
 
 interface ProfileLoaded {
@@ -384,6 +392,13 @@ interface ProfileLoaded {
   risk_score:           number
   enveloppes:           string[]
   tmi_rate:             number | null
+  // Cibles des helpers de la lib profil (normalises a la consommation,
+  // pas ici — on garde les libelles bruts pour traçabilite).
+  situation_familiale:  string | null
+  enfants:              string | null
+  fire_type:            string | null
+  priorite:             string | null
+  stabilite_revenus:    string | null
 }
 
 async function loadProfile(userId: string): Promise<ProfileLoaded> {
@@ -396,7 +411,8 @@ async function loadProfile(userId: string): Promise<ProfileLoaded> {
       loyer, autres_credits, charges_fixes, depenses_courantes,
       enveloppes, tmi_rate,
       risk_1, risk_2, risk_3, risk_4,
-      quiz_bourse, quiz_crypto, quiz_immo
+      quiz_bourse, quiz_crypto, quiz_immo,
+      situation_familiale, enfants, fire_type, priorite, stabilite_revenus
     `)
     .eq('id', userId)
     .maybeSingle()
@@ -406,6 +422,8 @@ async function loadProfile(userId: string): Promise<ProfileLoaded> {
       age: null, age_cible: null,
       epargne_mensuelle: 0, revenu_passif_cible: 0, revenu_mensuel_total: 0,
       charges_mensuelles: 0, risk_score: 50, enveloppes: [], tmi_rate: null,
+      situation_familiale: null, enfants: null, fire_type: null,
+      priorite: null, stabilite_revenus: null,
     }
   }
   const p = data as unknown as ProfileRow
@@ -434,6 +452,11 @@ async function loadProfile(userId: string): Promise<ProfileLoaded> {
     risk_score:          risk,
     enveloppes:          p.enveloppes ?? [],
     tmi_rate:            p.tmi_rate,
+    situation_familiale: p.situation_familiale,
+    enfants:             p.enfants,
+    fire_type:           p.fire_type,
+    priorite:            p.priorite,
+    stabilite_revenus:   p.stabilite_revenus,
   }
 }
 
@@ -707,6 +730,12 @@ export async function getPatrimoineComplet(userId: string): Promise<PatrimoineCo
       && geoZone(p.country) === 'Europe')
     .reduce((s, p) => s + p.current_value, 0)
 
+  // Les 5 champs profil ci-dessous (stabilite_revenus, priorite, fire_type,
+  // situation_familiale, enfants) ne sont pas dans le type PatrimoineComplet
+  // ['fireInputs'] de types/analyse.ts. Ils sont consommes via cast par
+  // lib/analyse/scores.ts (Solidite +5/-15 selon stabilite) et
+  // lib/analyse/recommandations.ts (re-tri selon priorite de vie). Champs
+  // optionnels : si absents le comportement reste celui pre-Tache A.
   const fireInputs = {
     age:                  profile.age,
     age_cible:            profile.age_cible,
@@ -718,6 +747,11 @@ export async function getPatrimoineComplet(userId: string): Promise<PatrimoineCo
     enveloppes:           profile.enveloppes,
     tmi_rate:             profile.tmi_rate,
     actions_eu_value:     actionsEuValue,
+    stabilite_revenus:    profile.stabilite_revenus,
+    priorite:             profile.priorite,
+    fire_type:            profile.fire_type,
+    situation_familiale:  profile.situation_familiale,
+    enfants:              profile.enfants,
   }
 
   // Construction temporaire pour calculer scores + recos (besoin de l'objet
