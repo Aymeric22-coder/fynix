@@ -19,12 +19,17 @@ import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ReferenceLine, ResponsiveContainer, CartesianGrid, Legend,
 } from 'recharts'
 import { Plus, Sparkles, Target, TrendingUp, Wallet, Building2, Check, Loader2, Radio } from 'lucide-react'
-import { projectionGlobale, projectionFIREIntervalle, calculerImpactAcquisition, calculerRendementPortefeuille } from '@/lib/analyse/projectionFIRE'
+import {
+  projectionGlobale, projectionFIREIntervalle, calculerImpactAcquisition,
+  calculerRendementPortefeuille, estimerTauxFiscalitePortefeuille,
+  SWR_DEFAUT_PCT, INFLATION_DEFAUT_PCT,
+} from '@/lib/analyse/projectionFIRE'
+import { normalizeFireType } from '@/lib/profil/calculs'
 import { formatCurrency } from '@/lib/utils/format'
 import { Button } from '@/components/ui/button'
 import { AcquisitionFutureForm } from './AcquisitionFutureForm'
 import { useFutureAcquisitions } from '@/hooks/use-future-acquisitions'
-import type { PatrimoineComplet, AcquisitionFuture } from '@/types/analyse'
+import type { PatrimoineComplet, AcquisitionFuture, JalonFIRE } from '@/types/analyse'
 
 interface Props {
   patrimoine: PatrimoineComplet
@@ -37,6 +42,14 @@ const COLOR_FIN  = '#10b981'   // emerald
 const COLOR_IMMO = '#E8B84B'   // or
 const COLOR_ACQ  = '#3b82f6'   // bleu
 const COLOR_CASH = '#71717a'   // muted
+
+/** Couleurs des jalons sur le graphique (Sprint 3 Tâche 5). */
+const JALON_COLOR: Record<JalonFIRE['type'], string> = {
+  fire:       '#10b981',   // emerald — atteinte FIRE
+  lean_fire:  '#84cc16',   // lime — Lean FIRE (70 % cible)
+  debt:       '#3b82f6',   // bleu — crédit soldé
+  milestone:  '#9ca3af',   // gris — paliers patrimoine 100k/500k/1M
+}
 
 function defaultAcquisitionPayload(): Omit<AcquisitionFuture, 'id'> {
   return {
@@ -71,11 +84,24 @@ export function ProjectionFIRE({ patrimoine, lastUpdatedAt }: Props) {
 
   // ── État local sliders ──────────────────────────────────────────
   const rendementDefaut = Math.max(3, Math.min(12, calculerRendementPortefeuille(patrimoine) || 7))
+  // SWR défaut selon fire_type du profil (lean/fat = 3.5 %, sinon 4 %)
+  const swrDefaut = (() => {
+    const t = normalizeFireType((fi as { fire_type?: string | null }).fire_type)
+    if (t === 'lean' || t === 'fat') return 3.5
+    return SWR_DEFAUT_PCT
+  })()
+  // Taux fiscalité portefeuille déduit des enveloppes (PEA / AV / CTO).
+  const tauxFiscalDefaut = estimerTauxFiscalitePortefeuille(fi.enveloppes)
+
   const [epargne,           setEpargne]           = useState<number>(fi.epargne_mensuelle)
   const [rendement,         setRendement]         = useState<number>(rendementDefaut)
   const [revenuCible,       setRevenuCible]       = useState<number>(fi.revenu_passif_cible)
   const [appreciationImmo,  setAppreciationImmo]  = useState<number>(2)
   const [inflationLoyers,   setInflationLoyers]   = useState<number>(1.5)
+  // Sprint 3 sliders
+  const [inflationGenerale, setInflationGenerale] = useState<number>(INFLATION_DEFAUT_PCT)
+  const [swr,               setSwr]               = useState<number>(swrDefaut)
+  const [epargneCroissance, setEpargneCroissance] = useState<number>(2)
 
   // Acquisitions persistees en DB (hook + realtime).
   const {
@@ -97,14 +123,18 @@ export function ProjectionFIRE({ patrimoine, lastUpdatedAt }: Props) {
     rendementCentral:          rendement,
     appreciationImmoPct:       appreciationImmo,
     inflationLoyersPct:        inflationLoyers,
-    inflationPct:              2,
+    inflationPct:              inflationGenerale,
+    swrPct:                    swr,
+    epargneCroissanceAnnuellePct:  epargneCroissance,
+    tauxFiscalitePortefeuillePct:  tauxFiscalDefaut,
     patrimoineFinancierActuel: patrimoine.totalPortefeuille,
     cashActuel:                patrimoine.totalCash,
     biensExistants:            patrimoine.biens,
     acquisitionsFutures:       acquisitions,
   }), [
     fi.age, fi.age_cible, revenuCible, epargne, rendement,
-    appreciationImmo, inflationLoyers, patrimoine, acquisitions,
+    appreciationImmo, inflationLoyers, inflationGenerale, swr, epargneCroissance,
+    tauxFiscalDefaut, patrimoine, acquisitions,
   ])
   const result   = useMemo(() => projectionGlobale(baseInputs),       [baseInputs])
   const interval = useMemo(() => projectionFIREIntervalle(baseInputs), [baseInputs])
@@ -132,7 +162,8 @@ export function ProjectionFIRE({ patrimoine, lastUpdatedAt }: Props) {
 
   const intervalTooltip =
     `Hypothèses : rendement médian ${rendement.toFixed(1)} %/an, optimiste +1,5 %, pessimiste −1,5 %. `
-    + `Cible indexée sur 2 %/an d'inflation. Les performances passées ne préjugent pas des performances futures.`
+    + `Cible indexée sur ${inflationGenerale.toFixed(1)} %/an d'inflation, SWR ${swr.toFixed(1)} %. `
+    + `Les performances passées ne préjugent pas des performances futures.`
 
   return (
     <div className="card p-5">
@@ -165,23 +196,38 @@ export function ProjectionFIRE({ patrimoine, lastUpdatedAt }: Props) {
           label={`Patrimoine à ${fi.age_cible} ans`}
           value={formatCurrency(result.patrimoineAgeCible, 'EUR', { compact: true })}
           sub={`fin ${formatCurrency(result.detailsAgeCible.financier, 'EUR', { compact: true })} · immo ${formatCurrency(result.detailsAgeCible.equityImmoExistant + result.detailsAgeCible.equityImmoFuture, 'EUR', { compact: true })}`}
+          details={[
+            { label: `Cible avec SWR ${swr.toFixed(1)} %`,
+              value: formatCurrency(result.ciblePatrimoineAjusteeInflation, 'EUR', { compact: true }) },
+          ]}
+          footnote={`Cible ajustée à l'inflation ${inflationGenerale.toFixed(1)} %/an`}
         />
         {(() => {
-          const loyersNetsM   = Math.max(0, result.detailsAgeCible.loyersNetsMensuels)
-          const portefeuilleM = result.detailsAgeCible.financier * 0.04 / 12
-          const totalM        = loyersNetsM + portefeuilleM
+          // Sprint 3 Tâche 2 : on affiche NET en valeur principale,
+          // brut en sous-texte. Comparaison cible vs net = vrai signal.
+          const netM   = result.revenuPassifNetProjete
+          const brutM  = result.revenuPassifBrutProjete
+          const cibleM = result.cibleRevenuMensuelEnEurosFuturs
+          const objectifAtteint = netM >= cibleM
+          const delta = cibleM - netM
           return (
             <SummaryCard
               icon={<Target size={12} className="text-accent" />}
               label={`Revenu passif à ${fi.age_cible} ans`}
-              subLabel={`Projection à ${fi.age_cible} ans — pas votre revenu actuel`}
-              value={formatCurrency(totalM, 'EUR', { decimals: 0 }) + '/m'}
-              accent={totalM >= revenuCible ? 'success' : 'warning'}
+              subLabel="net après impôts estimés"
+              value={formatCurrency(netM, 'EUR', { decimals: 0 }) + '/m'}
+              accent={objectifAtteint ? 'success' : 'warning'}
               details={[
-                { label: 'Loyers nets projetés',    value: formatCurrency(loyersNetsM,   'EUR', { decimals: 0 }) + '/m' },
-                { label: 'Portefeuille (règle 4 %)', value: formatCurrency(portefeuilleM, 'EUR', { decimals: 0 }) + '/m' },
-                { label: 'Cible',                    value: formatCurrency(revenuCible,   'EUR', { decimals: 0 }) + '/m' },
+                { label: 'Brut avant impôts',
+                  value: formatCurrency(brutM, 'EUR', { decimals: 0 }) + '/m' },
+                { label: `Pression fiscale estimée`,
+                  value: `${result.tauxPressionFiscaleEstime.toFixed(1)} %` },
+                { label: `Cible (€ futurs)`,
+                  value: formatCurrency(cibleM, 'EUR', { decimals: 0 }) + '/m' },
               ]}
+              footnote={objectifAtteint
+                ? '✓ Objectif atteint en net'
+                : `Manque ${formatCurrency(delta, 'EUR', { decimals: 0 })}/m pour atteindre la cible`}
             />
           )
         })()}
@@ -212,6 +258,27 @@ export function ProjectionFIRE({ patrimoine, lastUpdatedAt }: Props) {
             />
           )
         })()}
+      </div>
+
+      {/* ─── Info inflation (Sprint 3 Tâche 1) ───
+          Affiche ce que représente la cible saisie en euros futurs à
+          l'âge cible, pour rendre tangible l'effet de l'inflation. */}
+      <div className="mb-4 bg-surface-2 border border-border rounded-lg px-3.5 py-2 flex items-center gap-2 flex-wrap">
+        <span className="text-xs text-secondary">
+          Cible ajustée à l&apos;inflation :
+        </span>
+        <span className="text-xs text-primary financial-value font-medium">
+          {formatCurrency(result.cibleRevenuMensuelEnEurosFuturs, 'EUR', { decimals: 0 })}/m
+        </span>
+        <span className="text-xs text-muted">
+          en euros {fi.age_cible} (vous saisissez {formatCurrency(revenuCible, 'EUR', { decimals: 0 })}/m en €&nbsp;d&apos;aujourd&apos;hui)
+        </span>
+        <span
+          className="cursor-help select-none text-muted text-xs ml-auto"
+          title={`Avec ${inflationGenerale.toFixed(1)} % d'inflation/an pendant ${Math.max(0, (fi.age_cible ?? 0) - (fi.age ?? 0))} ans, ${formatCurrency(revenuCible, 'EUR', { decimals: 0 })} d'aujourd'hui équivalent à ${formatCurrency(result.cibleRevenuMensuelEnEurosFuturs, 'EUR', { decimals: 0 })} en euros futurs (même pouvoir d'achat).`}
+        >
+          ⓘ
+        </span>
       </div>
 
       {/* ─── Graphique stacked area ─── */}
@@ -252,9 +319,43 @@ export function ProjectionFIRE({ patrimoine, lastUpdatedAt }: Props) {
             <Area type="monotone" stackId="1" dataKey="equityImmoFuture"    name="Acquisitions"     stroke={COLOR_ACQ}  fill="url(#gAcq)"  strokeWidth={1.5} />
             <Area type="monotone" stackId="1" dataKey="cash"                name="Cash"             stroke={COLOR_CASH} fill="url(#gCash)" strokeWidth={1.5} />
             <ReferenceLine x={fi.age_cible} stroke="#71717a" strokeDasharray="3 3" label={{ value: 'Âge cible', fill: '#71717a', fontSize: 11, position: 'top' }} />
+            {/* Sprint 3 Tâche 5 — jalons détectés automatiquement */}
+            {result.jalons.map((j, i) => (
+              <ReferenceLine
+                key={`${j.type}-${j.age}-${i}`}
+                x={j.age}
+                stroke={JALON_COLOR[j.type]}
+                strokeDasharray={j.type === 'fire' ? '0' : '4 4'}
+                strokeWidth={j.type === 'fire' ? 2 : 1}
+                label={{
+                  value: j.label,
+                  fill: JALON_COLOR[j.type],
+                  fontSize: 10,
+                  position: 'insideTopLeft',
+                }}
+              />
+            ))}
           </AreaChart>
         </ResponsiveContainer>
       </div>
+
+      {/* Timeline horizontale des jalons sous le graphique */}
+      {result.jalons.length > 0 && (
+        <div className="mt-3 flex items-center gap-2 flex-wrap text-xs">
+          <span className="text-secondary uppercase tracking-widest text-[10px]">Jalons</span>
+          {result.jalons.map((j, i) => (
+            <span
+              key={`tl-${j.type}-${j.age}-${i}`}
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-surface-2 border border-border"
+              style={{ borderColor: `${JALON_COLOR[j.type]}40` }}
+              title={`${j.label} à ${j.age} ans (dans ${j.age - (fi.age ?? 0)} ans)`}
+            >
+              <span style={{ color: JALON_COLOR[j.type] }} className="font-medium">{j.label}</span>
+              <span className="text-muted financial-value">{j.age}&thinsp;ans</span>
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* ─── Warnings éventuels ─── */}
       {result.warnings.length > 0 && (
@@ -267,7 +368,7 @@ export function ProjectionFIRE({ patrimoine, lastUpdatedAt }: Props) {
         </div>
       )}
 
-      {/* ─── 5 sliders ─── */}
+      {/* ─── Sliders (5 legacy + 3 Sprint 3) ─── */}
       <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <Slider label="Épargne mensuelle DCA"  value={epargne}          min={0}    max={5000}  step={50}
                 format={(v) => formatCurrency(v, 'EUR', { decimals: 0 })} onChange={setEpargne} />
@@ -279,6 +380,16 @@ export function ProjectionFIRE({ patrimoine, lastUpdatedAt }: Props) {
                 format={(v) => `${v.toFixed(1)} %`} onChange={setAppreciationImmo} />
         <Slider label="Inflation loyers"       value={inflationLoyers}  min={0}    max={4}     step={0.5}
                 format={(v) => `${v.toFixed(1)} %`} onChange={setInflationLoyers} />
+        {/* Sprint 3 — 3 nouveaux sliders */}
+        <Slider label="Inflation générale"     value={inflationGenerale} min={0}    max={5}    step={0.1}
+                format={(v) => `${v.toFixed(1)} %`} onChange={setInflationGenerale}
+                tooltip="Inflation moyenne attendue. Indexe votre cible de revenu passif : 3 000 €/mois aujourd'hui vaudront moins en pouvoir d'achat dans 20 ans." />
+        <Slider label="Taux de retrait (SWR)"  value={swr}              min={2.5}  max={5}     step={0.1}
+                format={(v) => `${v.toFixed(1)} %`} onChange={setSwr}
+                tooltip="Le taux de retrait annuel sécurisé sur votre patrimoine. 4 % = règle des 25× (Trinity Study). Plus conservateur (3-3,5 %) = patrimoine cible plus élevé." />
+        <Slider label="Progression épargne/an" value={epargneCroissance} min={0}    max={8}    step={0.5}
+                format={(v) => `${v.toFixed(1)} %`} onChange={setEpargneCroissance}
+                tooltip="Augmentation annuelle de votre capacité d'épargne (évolution de carrière, baisse des charges, enfants qui grandissent…). 0 % = épargne constante." />
       </div>
 
       {/* ─── Simulateur acquisitions futures ─── */}
@@ -325,19 +436,7 @@ export function ProjectionFIRE({ patrimoine, lastUpdatedAt }: Props) {
               <AcquisitionWithImpact
                 key={a.id}
                 acquisition={a}
-                baseInputs={{
-                  ageActuel:                 fi.age!,
-                  ageCible:                  fi.age_cible!,
-                  revenuPassifCible:         revenuCible,
-                  epargneMensuelle:          epargne,
-                  rendementCentral:          rendement,
-                  appreciationImmoPct:       appreciationImmo,
-                  inflationLoyersPct:        inflationLoyers,
-                  patrimoineFinancierActuel: patrimoine.totalPortefeuille,
-                  cashActuel:                patrimoine.totalCash,
-                  biensExistants:            patrimoine.biens,
-                  acquisitionsFutures:       acquisitions,
-                }}
+                baseInputs={baseInputs}
                 onChange={(updated) => { void updateAcquisition(updated) }}
                 onDelete={() => { void removeAcquisition(a.id) }}
               />
@@ -396,14 +495,23 @@ function SummaryCard({ icon, label, value, sub, accent, subLabel, details, footn
   )
 }
 
-function Slider({ label, value, min, max, step, format, onChange }: {
+function Slider({ label, value, min, max, step, format, onChange, tooltip }: {
   label: string; value: number; min: number; max: number; step: number;
   format: (v: number) => string; onChange: (v: number) => void
+  tooltip?: string
 }) {
   return (
     <div>
-      <div className="flex justify-between items-baseline mb-1.5">
-        <label className="text-xs text-secondary">{label}</label>
+      <div className="flex justify-between items-baseline mb-1.5 gap-1">
+        <label className="text-xs text-secondary inline-flex items-center gap-1">
+          {label}
+          {tooltip && (
+            <span
+              className="cursor-help select-none text-muted"
+              title={tooltip}
+            >ⓘ</span>
+          )}
+        </label>
         <span className="text-xs text-accent financial-value">{format(value)}</span>
       </div>
       <input

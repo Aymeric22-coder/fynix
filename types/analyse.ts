@@ -151,8 +151,40 @@ export interface ProjectionGlobaleResult {
     valeurBruteImmo:     number   // valeur de marché projetée (après appréciation)
     creditRestantImmo:   number   // capital restant dû à l'âge cible (tous biens)
   }
+  /** Cible revenu passif EN EUROS FUTURS à l'âge cible (= cible saisie ×
+   *  (1 + inflation)^N). Pouvoir d'achat équivalent — Sprint 3 Tâche 1. */
+  cibleRevenuMensuelEnEurosFuturs: number
+  /** Cible patrimoine ajustée inflation, calculée avec le SWR utilisé
+   *  = cibleRevenuMensuelEnEurosFuturs × 12 / swr. Sprint 3 Tâches 1+3. */
+  ciblePatrimoineAjusteeInflation: number
+  /** SWR (taux de retrait sécurisé) effectivement appliqué (%). Sprint 3 Tâche 3. */
+  swrUtilise:              number
+  /** Inflation générale appliquée (%). Sprint 3 Tâche 1. */
+  inflationUtilisee:       number
+  /** Revenu passif BRUT mensuel projeté à l'âge cible. Sprint 3 Tâche 2. */
+  revenuPassifBrutProjete:  number
+  /** Revenu passif NET mensuel projeté à l'âge cible (après impôts estimés).
+   *  Sprint 3 Tâche 2. */
+  revenuPassifNetProjete:   number
+  /** Taux de pression fiscale estimé (= 1 - net/brut) ×100. 0 si brut = 0.
+   *  Sprint 3 Tâche 2. */
+  tauxPressionFiscaleEstime: number
+  /** Jalons détectés automatiquement (Sprint 3 Tâche 5). */
+  jalons:                  JalonFIRE[]
   /** Warnings (ex : "apport insuffisant en année N"). */
   warnings: string[]
+}
+
+/** Jalon détecté automatiquement dans la projection FIRE (Sprint 3 Tâche 5). */
+export interface JalonFIRE {
+  /** Âge auquel le jalon est atteint (= ageActuel + année). */
+  age:    number
+  /** Libellé court à afficher (ex: "100k€", "🎯 FIRE", "🏠 Crédit soldé"). */
+  label:  string
+  /** Catégorie du jalon — pilote la couleur de la ReferenceLine. */
+  type:   'milestone' | 'fire' | 'lean_fire' | 'debt'
+  /** Valeur numérique associée (patrimoine, montant remboursé, etc.). */
+  valeur: number
 }
 
 /** Inputs requis par la projection globale. */
@@ -168,6 +200,18 @@ export interface ProjectionInputs {
    *  Défaut 2 % (cible BCE). Indépendant de l'inflation des loyers
    *  (IRL ≈ 1,5 %), qui suit son propre paramètre. */
   inflationPct?:            number
+  /** Taux de retrait sécurisé sur le patrimoine financier (%). Défaut 4
+   *  (règle des 25× / Trinity Study). lean/fat FIRE typiquement 3,5 %.
+   *  Sprint 3 Tâche 3. */
+  swrPct?:                  number
+  /** Croissance annuelle de la capacité d'épargne (%). Défaut 0 (épargne
+   *  constante = comportement legacy). Modélise les augmentations de
+   *  salaire et la baisse des charges au fil du temps. Sprint 3 Tâche 4. */
+  epargneCroissanceAnnuellePct?: number
+  /** Taux d'imposition estimé sur la part PORTEFEUILLE des revenus passifs
+   *  retirés (%). Si non fourni, calculé depuis la répartition des
+   *  enveloppes du profil (PEA 17,2 %, AV 7,5 %, CTO 30 %). Sprint 3 Tâche 2. */
+  tauxFiscalitePortefeuillePct?: number
   patrimoineFinancierActuel: number     // totalPortefeuille
   cashActuel:               number      // totalCash
   biensExistants:           BienImmo[]

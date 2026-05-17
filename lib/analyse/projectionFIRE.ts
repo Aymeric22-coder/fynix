@@ -26,8 +26,62 @@
 import type {
   PatrimoineComplet, EnrichedPosition, AnalyseAssetType, BienImmo,
   AcquisitionFuture, AnneeProjection, ProjectionGlobaleResult, ProjectionInputs,
-  ProjectionPoint, ProjectionResult,
+  ProjectionPoint, ProjectionResult, JalonFIRE,
 } from '@/types/analyse'
+
+// ─────────────────────────────────────────────────────────────────
+// Constantes Sprint 3 — paramètres FIRE ajustables
+// ─────────────────────────────────────────────────────────────────
+
+/** SWR par défaut (règle des 25× / Trinity Study). */
+export const SWR_DEFAUT_PCT = 4
+
+/** Inflation générale par défaut (cible BCE). */
+export const INFLATION_DEFAUT_PCT = 2
+
+/** Taux PFU (Flat Tax) sur les revenus du capital en CTO. */
+const PFU_CTO_PCT = 30
+
+/** Prélèvements sociaux uniquement (PEA après 5 ans, AV). */
+const PS_PEA_AV_PCT = 17.2
+
+/** Fiscalité Assurance-Vie (PFL 7,5 % + PS 17,2 %) après 8 ans, en simplifié. */
+const FISCALITE_AV_LONG_TERME_PCT = 24.7
+
+/**
+ * Estime un taux de pression fiscale moyen sur les revenus du PORTEFEUILLE
+ * (dividendes + retraits) selon la répartition des enveloppes déclarées
+ * par l'utilisateur dans le profil.
+ *
+ * Heuristique simplifiée : on suppose que les enveloppes pèsent à parts
+ * égales si plusieurs sont déclarées, et on prend une moyenne pondérée
+ * de leur fiscalité respective.
+ *   - PEA (après 5 ans)         : 17,2 % (PS seulement)
+ *   - Assurance-vie (8 ans)     : ~24,7 % (PFL + PS)
+ *   - CTO                       : 30 % (PFU)
+ *   - PER                       : 30 % (au retrait — simplification)
+ *   - Livret A / LDDS / LEP     : 0 % (exonérés)
+ *
+ * Si aucune enveloppe n'est déclarée, on retombe sur le PFU (30 %).
+ */
+export function estimerTauxFiscalitePortefeuille(enveloppes: ReadonlyArray<string> | null | undefined): number {
+  if (!enveloppes || enveloppes.length === 0) return PFU_CTO_PCT
+
+  let total = 0
+  let count = 0
+  for (const env of enveloppes) {
+    const e = env.toLowerCase()
+    if (e.includes('pea'))                         { total += PS_PEA_AV_PCT;            count++ }
+    else if (e.includes('assurance') || e === 'av'){ total += FISCALITE_AV_LONG_TERME_PCT; count++ }
+    else if (e.includes('cto'))                    { total += PFU_CTO_PCT;              count++ }
+    else if (e.includes('per'))                    { total += PFU_CTO_PCT;              count++ }
+    else if (e.includes('livret') || e.includes('ldds') || e.includes('lep')) {
+      total += 0; count++
+    }
+  }
+  if (count === 0) return PFU_CTO_PCT
+  return Math.round((total / count) * 10) / 10
+}
 
 const RENDEMENT_PAR_CLASSE: Record<AnalyseAssetType, number> = {
   stock:   7,
@@ -240,6 +294,10 @@ export function simulerAcquisitionFuture(
  * Simule l'évolution du patrimoine financier année par année.
  * Inclut le cashflow immo annuel (peut être négatif → réduit l'épargne
  * effective) et l'apport éventuel d'une acquisition future à l'année N.
+ *
+ * Sprint 3 Tâche 4 : l'épargne mensuelle croît annuellement de
+ * `epargneCroissanceAnnuellePct` pour modéliser les augmentations de
+ * salaire (compound : épargne(n) = épargne_base × (1 + g)^n).
  */
 function simulerFinancier(
   patrimoineInitial: number,
@@ -248,8 +306,10 @@ function simulerFinancier(
   cashflowImmoAnnuelParAnnee: number[],   // index = année
   apportsParAnnee: number[],              // index = année (montant sorti à cette année)
   horizon: number,
+  epargneCroissanceAnnuellePct: number = 0,
 ): number[] {
   const r = rendementAnnuelPct / 100 / 12
+  const g = epargneCroissanceAnnuellePct / 100
   const points: number[] = []
   let capital = patrimoineInitial
   points.push(Math.round(capital))
@@ -261,8 +321,10 @@ function simulerFinancier(
 
     // Cashflow immo annuel injecté (positif = renfort, négatif = effort)
     const cfAnn = cryptoSafe(cashflowImmoAnnuelParAnnee[y]) ?? 0
-    // Épargne effective mensuelle = DCA + cashflow immo / 12
-    const epargneEffectiveMensuelle = epargneMensuelle + cfAnn / 12
+    // Épargne mensuelle ajustée pour la croissance annuelle (carrière).
+    // À y=1 : épargne × (1 + g)^1, à y=2 : épargne × (1 + g)^2, etc.
+    const epargneAjustee = epargneMensuelle * Math.pow(1 + g, y)
+    const epargneEffectiveMensuelle = epargneAjustee + cfAnn / 12
 
     // 12 mois de composition
     for (let m = 0; m < 12; m++) {
@@ -346,7 +408,7 @@ export function projectionGlobale(inputs: ProjectionInputs): ProjectionGlobaleRe
     apportsParAnnee[y] = (apportsParAnnee[y] ?? 0) + acq.apport
   }
 
-  // 5. Simulation du patrimoine financier
+  // 5. Simulation du patrimoine financier (avec croissance d'épargne — Tâche 4)
   const trajFinancier = simulerFinancier(
     inputs.patrimoineFinancierActuel,
     inputs.epargneMensuelle,
@@ -354,6 +416,7 @@ export function projectionGlobale(inputs: ProjectionInputs): ProjectionGlobaleRe
     cashflowImmoParAnnee,
     apportsParAnnee,
     horizon,
+    inputs.epargneCroissanceAnnuellePct ?? 0,
   )
 
   // 6. Simulation cash
@@ -370,20 +433,41 @@ export function projectionGlobale(inputs: ProjectionInputs): ProjectionGlobaleRe
     }
   }
 
-  // 8. Construction des points + détection âge indépendance
+  // 8. Construction des points + détection âge indépendance + jalons
   // La cible est indexée sur l'inflation : à l'année y, la cible mensuelle
   // doit être revenu_passif_cible × (1 + inflation)^y pour préserver le
-  // pouvoir d'achat. Le patrimoine FIRE requis suit la règle des 25× sur
-  // cette cible indexée.
-  const inflationAnnuelle = (inputs.inflationPct ?? 2) / 100
+  // pouvoir d'achat. Le patrimoine FIRE requis suit le SWR utilisateur
+  // (Sprint 3 Tâche 3, défaut 4 % = règle des 25×).
+  const inflationPct      = inputs.inflationPct ?? INFLATION_DEFAUT_PCT
+  const inflationAnnuelle = inflationPct / 100
+  const swrPct            = Math.max(0.5, inputs.swrPct ?? SWR_DEFAUT_PCT)
+  const swrFraction       = swrPct / 100
   const cibleAnnuelleBase = inputs.revenuPassifCible * 12  // €/an, base aujourd'hui
   let ageInd: number | null = null
+  let ageLeanFire: number | null = null
   let patrimoineAgeCible    = 0
   let detailsAgeCible       = {
     financier: 0, equityImmoExistant: 0, equityImmoFuture: 0, cash: 0,
     loyersNetsMensuels: 0, mensualitesSortantes: 0, valeurBruteImmo: 0,
     creditRestantImmo: 0,
   }
+
+  // Jalons patrimoine (1ère année où on franchit chaque seuil)
+  const MILESTONES_PATRIMOINE = [100_000, 500_000, 1_000_000]
+  const milestonesAtteints = new Set<number>()
+  const jalons: JalonFIRE[] = []
+
+  // Pour les jalons crédit : on détecte la 1ère année où credit_restant = 0
+  // pour chaque bien (existant ou futur) ayant initialement un crédit.
+  const creditsActifsBiens: Array<{ nom: string; index: number; etait_actif: boolean; soldé: boolean }> = []
+  inputs.biensExistants.forEach((b, i) => {
+    creditsActifsBiens.push({ nom: b.nom, index: i, etait_actif: (b.credit_restant ?? 0) > 0, soldé: false })
+  })
+  // Acquisitions futures : on traque aussi
+  const creditsAcquisitions: Array<{ nom: string; index: number; debut: number; soldé: boolean }> = []
+  inputs.acquisitionsFutures.forEach((a, i) => {
+    creditsAcquisitions.push({ nom: a.nom, index: i, debut: a.dans_combien_annees, soldé: false })
+  })
 
   const points: AnneeProjection[] = []
   for (let y = 0; y <= horizon; y++) {
@@ -428,11 +512,52 @@ export function projectionGlobale(inputs: ProjectionInputs): ProjectionGlobaleRe
       effortMensuel,
     })
 
-    // Indépendance : on considère 4 % de retrait sur le patrimoine
+    // Indépendance : on considère le SWR utilisateur sur le patrimoine
     // total + loyers nets directs ≥ cible annuelle indexée à l'année y.
-    const cibleAnnuelle = cibleAnnuelleBase * Math.pow(1 + inflationAnnuelle, y)
-    const revenuPotentielAnnuel = total * 0.04 + Math.max(0, cfTotal)
-    if (ageInd === null && revenuPotentielAnnuel >= cibleAnnuelle) ageInd = age
+    const cibleAnnuelle    = cibleAnnuelleBase * Math.pow(1 + inflationAnnuelle, y)
+    const revenuPotentiel  = total * swrFraction + Math.max(0, cfTotal)
+    if (ageInd === null && revenuPotentiel >= cibleAnnuelle) {
+      ageInd = age
+      jalons.push({ age, label: '🎯 FIRE', type: 'fire', valeur: total })
+    }
+    // Lean FIRE : 70 % de la cible (mode de vie réduit)
+    if (ageLeanFire === null && revenuPotentiel >= cibleAnnuelle * 0.7) {
+      ageLeanFire = age
+      // N'ajoute pas si FIRE déjà atteint à la même année (évite doublon)
+      if (ageInd === null || ageLeanFire < ageInd) {
+        jalons.push({ age, label: '🌱 Lean FIRE', type: 'lean_fire', valeur: total })
+      }
+    }
+
+    // Jalons patrimoine
+    for (const seuil of MILESTONES_PATRIMOINE) {
+      if (!milestonesAtteints.has(seuil) && total >= seuil) {
+        milestonesAtteints.add(seuil)
+        const label = seuil >= 1_000_000 ? '💰 1 M€'
+                    : seuil >= 500_000   ? '💰 500 k€'
+                    : '💰 100 k€'
+        jalons.push({ age, label, type: 'milestone', valeur: seuil })
+      }
+    }
+
+    // Jalons crédit immo soldé (biens existants)
+    for (const c of creditsActifsBiens) {
+      if (c.soldé || !c.etait_actif) continue
+      const pt = trajExistants[c.index]?.[y]
+      if (pt && pt.credit_restant === 0 && y > 0) {
+        c.soldé = true
+        jalons.push({ age, label: `🏠 ${c.nom} soldé`, type: 'debt', valeur: 0 })
+      }
+    }
+    // Jalons crédit acquisitions futures
+    for (const c of creditsAcquisitions) {
+      if (c.soldé || y <= c.debut) continue
+      const pt = trajFutures[c.index]?.[y]
+      if (pt && pt.credit_restant === 0 && pt.valeur > 0) {
+        c.soldé = true
+        jalons.push({ age, label: `🏠 ${c.nom} soldé`, type: 'debt', valeur: 0 })
+      }
+    }
 
     // Détail à l'âge cible
     if (age === inputs.ageCible) {
@@ -452,6 +577,57 @@ export function projectionGlobale(inputs: ProjectionInputs): ProjectionGlobaleRe
 
   const ecart = ageInd !== null ? ageInd - inputs.ageCible : null
 
+  // ─── Cible inflation-adjusted à l'âge cible (Tâche 1) ─────────────
+  const anneesJusquAgeCible        = Math.max(0, inputs.ageCible - inputs.ageActuel)
+  const cibleRevenuMensuelFuturs   = inputs.revenuPassifCible * Math.pow(1 + inflationAnnuelle, anneesJusquAgeCible)
+  const ciblePatrimoineAjustee     = swrFraction > 0
+    ? (cibleRevenuMensuelFuturs * 12) / swrFraction
+    : 0
+
+  // ─── Revenu passif net projeté à l'âge cible (Tâche 2) ────────────
+  // Loyers nets : on applique l'impôt foncier réel via calculerImpotFoncier
+  // sur chaque bien (existants seulement — les acquisitions futures n'ont
+  // pas de fiscal_regime persisté). Approximation conservatrice.
+  // Portefeuille : on suppose un retrait au SWR sur le patrimoine financier,
+  // imposé au taux estimé depuis les enveloppes (PFU/PEA/AV).
+  const tauxFiscalPortefeuille = inputs.tauxFiscalitePortefeuillePct ?? null
+
+  const loyersBrutsAnnuelsCible  = Math.max(0, detailsAgeCible.loyersNetsMensuels * 12)
+  let impotLoyersAnnuelEstime    = 0
+  if (loyersBrutsAnnuelsCible > 0 && inputs.biensExistants.length > 0) {
+    // On estime le taux fiscal moyen sur les biens existants en prenant la
+    // moyenne pondérée par loyer initial des taux_effort_fiscal calculés.
+    let totalLoyerInitial = 0
+    let totalImpotInitial = 0
+    for (const b of inputs.biensExistants) {
+      const loyer = b.loyer_mensuel * 12
+      if (loyer <= 0) continue
+      totalLoyerInitial += loyer
+      totalImpotInitial += b.impot_mensuel_estime * 12
+    }
+    const tauxEffectifMoyen = totalLoyerInitial > 0
+      ? totalImpotInitial / totalLoyerInitial
+      : 0
+    impotLoyersAnnuelEstime = loyersBrutsAnnuelsCible * tauxEffectifMoyen
+  }
+
+  const revenuPortefeuilleBrutMensuel = (detailsAgeCible.financier * swrFraction) / 12
+  const tauxFiscalPortefeuilleFinal   = tauxFiscalPortefeuille !== null
+    ? tauxFiscalPortefeuille
+    : estimerTauxFiscalitePortefeuille(null)  // fallback PFU
+  const impotPortefeuilleMensuel      = revenuPortefeuilleBrutMensuel * (tauxFiscalPortefeuilleFinal / 100)
+
+  const revenuPassifBrutMensuel = Math.max(0, detailsAgeCible.loyersNetsMensuels)
+                                + revenuPortefeuilleBrutMensuel
+  const revenuPassifNetMensuel  = Math.max(0, detailsAgeCible.loyersNetsMensuels - impotLoyersAnnuelEstime / 12)
+                                + (revenuPortefeuilleBrutMensuel - impotPortefeuilleMensuel)
+  const tauxPressionFiscale     = revenuPassifBrutMensuel > 0
+    ? Math.round((1 - revenuPassifNetMensuel / revenuPassifBrutMensuel) * 1000) / 10
+    : 0
+
+  // Tri des jalons par âge
+  jalons.sort((a, b) => a.age - b.age)
+
   return {
     points,
     ageIndependanceCentral: ageInd,
@@ -459,9 +635,18 @@ export function projectionGlobale(inputs: ProjectionInputs): ProjectionGlobaleRe
     patrimoineAgeCible:     Math.round(patrimoineAgeCible),
     rendementUtilise:       inputs.rendementCentral,
     detailsAgeCible,
+    cibleRevenuMensuelEnEurosFuturs: Math.round(cibleRevenuMensuelFuturs),
+    ciblePatrimoineAjusteeInflation: Math.round(ciblePatrimoineAjustee),
+    swrUtilise:                      swrPct,
+    inflationUtilisee:               inflationPct,
+    revenuPassifBrutProjete:         Math.round(revenuPassifBrutMensuel),
+    revenuPassifNetProjete:          Math.round(revenuPassifNetMensuel),
+    tauxPressionFiscaleEstime:       tauxPressionFiscale,
+    jalons,
     warnings,
   }
 }
+
 
 /** Écart de rendement appliqué aux scénarios pessimiste / optimiste vs central. */
 export const FIRE_SCENARIO_DELTA_PCT = 1.5

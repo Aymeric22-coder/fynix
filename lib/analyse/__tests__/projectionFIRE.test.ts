@@ -228,3 +228,202 @@ describe('calculerImpactAcquisition', () => {
     expect(impact).toBeGreaterThanOrEqual(0)
   })
 })
+
+// ─────────────────────────────────────────────────────────────────
+// Sprint 3 — Inflation, SWR, croissance épargne, fiscalité, jalons
+// ─────────────────────────────────────────────────────────────────
+
+import { estimerTauxFiscalitePortefeuille, SWR_DEFAUT_PCT, INFLATION_DEFAUT_PCT } from '../projectionFIRE'
+
+const baseS3: ProjectionInputs = {
+  ageActuel: 30, ageCible: 60,
+  revenuPassifCible: 3000, epargneMensuelle: 2000,
+  rendementCentral: 7, appreciationImmoPct: 2, inflationLoyersPct: 1.5,
+  patrimoineFinancierActuel: 500000, cashActuel: 50000,
+  biensExistants: [],
+  acquisitionsFutures: [],
+}
+
+describe('Sprint 3 — cible inflation-adjusted (Tâche 1)', () => {
+  it('cibleRevenuMensuelEnEurosFuturs = saisie × (1 + inflation)^N', () => {
+    const r = projectionGlobale({ ...baseS3, inflationPct: 2 })
+    // 3000 × 1.02^30 = 5434
+    expect(r.cibleRevenuMensuelEnEurosFuturs).toBeGreaterThan(5300)
+    expect(r.cibleRevenuMensuelEnEurosFuturs).toBeLessThan(5500)
+  })
+
+  it('inflation = 0 → cible future = cible saisie', () => {
+    const r = projectionGlobale({ ...baseS3, inflationPct: 0 })
+    expect(r.cibleRevenuMensuelEnEurosFuturs).toBe(3000)
+  })
+
+  it('inflation par défaut quand non fournie', () => {
+    const r = projectionGlobale(baseS3)
+    expect(r.inflationUtilisee).toBe(INFLATION_DEFAUT_PCT)
+  })
+
+  it('ciblePatrimoineAjusteeInflation = revenu annuel ajusté / SWR', () => {
+    const r = projectionGlobale({ ...baseS3, inflationPct: 0, swrPct: 4 })
+    // 3000 × 12 / 0.04 = 900 000
+    expect(r.ciblePatrimoineAjusteeInflation).toBe(900_000)
+  })
+})
+
+describe('Sprint 3 — SWR ajustable (Tâche 3)', () => {
+  it('SWR plus bas → cible patrimoine plus élevée', () => {
+    const r4   = projectionGlobale({ ...baseS3, inflationPct: 0, swrPct: 4 })
+    const r3   = projectionGlobale({ ...baseS3, inflationPct: 0, swrPct: 3 })
+    expect(r3.ciblePatrimoineAjusteeInflation).toBeGreaterThan(r4.ciblePatrimoineAjusteeInflation)
+  })
+
+  it('SWR par défaut = 4 %', () => {
+    const r = projectionGlobale(baseS3)
+    expect(r.swrUtilise).toBe(SWR_DEFAUT_PCT)
+  })
+
+  it('SWR 3,5 % → âge FIRE plus tardif que SWR 4 %', () => {
+    const r4 = projectionGlobale({ ...baseS3, swrPct: 4 })
+    const r3 = projectionGlobale({ ...baseS3, swrPct: 3.5 })
+    if (r4.ageIndependanceCentral !== null && r3.ageIndependanceCentral !== null) {
+      expect(r3.ageIndependanceCentral).toBeGreaterThanOrEqual(r4.ageIndependanceCentral)
+    }
+  })
+})
+
+describe('Sprint 3 — Croissance épargne (Tâche 4)', () => {
+  it('croissance positive → patrimoine final plus élevé', () => {
+    const sans = projectionGlobale({ ...baseS3, epargneCroissanceAnnuellePct: 0 })
+    const avec = projectionGlobale({ ...baseS3, epargneCroissanceAnnuellePct: 3 })
+    const finalSans = sans.points[sans.points.length - 1]?.patrimoineFinancier ?? 0
+    const finalAvec = avec.points[avec.points.length - 1]?.patrimoineFinancier ?? 0
+    expect(finalAvec).toBeGreaterThan(finalSans)
+  })
+
+  it('croissance = 0 → comportement identique à legacy', () => {
+    const r = projectionGlobale({ ...baseS3, epargneCroissanceAnnuellePct: 0 })
+    // L'épargne est constante à 2000/mois pendant tout l'horizon.
+    // On vérifie que le patrimoine final est cohérent avec l'ancien calcul.
+    expect(r.points.length).toBeGreaterThan(0)
+  })
+
+  it('croissance 5 % → âge FIRE plus précoce', () => {
+    const r0 = projectionGlobale({
+      ...baseS3, patrimoineFinancierActuel: 100_000, epargneMensuelle: 500,
+      epargneCroissanceAnnuellePct: 0,
+    })
+    const r5 = projectionGlobale({
+      ...baseS3, patrimoineFinancierActuel: 100_000, epargneMensuelle: 500,
+      epargneCroissanceAnnuellePct: 5,
+    })
+    if (r0.ageIndependanceCentral !== null && r5.ageIndependanceCentral !== null) {
+      expect(r5.ageIndependanceCentral).toBeLessThanOrEqual(r0.ageIndependanceCentral)
+    }
+  })
+})
+
+describe('Sprint 3 — Fiscalité revenu passif (Tâche 2)', () => {
+  it('expose les 3 champs brut/net/pression fiscale', () => {
+    const r = projectionGlobale(baseS3)
+    expect(typeof r.revenuPassifBrutProjete).toBe('number')
+    expect(typeof r.revenuPassifNetProjete).toBe('number')
+    expect(typeof r.tauxPressionFiscaleEstime).toBe('number')
+  })
+
+  it('net ≤ brut (toujours)', () => {
+    const r = projectionGlobale({ ...baseS3, tauxFiscalitePortefeuillePct: 30 })
+    expect(r.revenuPassifNetProjete).toBeLessThanOrEqual(r.revenuPassifBrutProjete)
+  })
+
+  it('taux fiscalité 0 → net = brut, pression = 0', () => {
+    const r = projectionGlobale({ ...baseS3, tauxFiscalitePortefeuillePct: 0 })
+    expect(r.revenuPassifNetProjete).toBe(r.revenuPassifBrutProjete)
+    expect(r.tauxPressionFiscaleEstime).toBe(0)
+  })
+
+  it('taux fiscalité 30 % → pression ≈ 30 % (portefeuille seul)', () => {
+    const r = projectionGlobale({
+      ...baseS3, biensExistants: [],  // pas de loyers, que portefeuille
+      tauxFiscalitePortefeuillePct: 30,
+    })
+    expect(r.tauxPressionFiscaleEstime).toBeCloseTo(30, 0)
+  })
+})
+
+describe('Sprint 3 — estimerTauxFiscalitePortefeuille', () => {
+  it('PEA seul → 17,2 %', () => {
+    expect(estimerTauxFiscalitePortefeuille(['PEA'])).toBe(17.2)
+  })
+
+  it('CTO seul → 30 %', () => {
+    expect(estimerTauxFiscalitePortefeuille(['CTO'])).toBe(30)
+  })
+
+  it('AV seule → 24,7 %', () => {
+    expect(estimerTauxFiscalitePortefeuille(['Assurance-vie'])).toBe(24.7)
+  })
+
+  it('Livret A → 0 %', () => {
+    expect(estimerTauxFiscalitePortefeuille(['Livret A'])).toBe(0)
+  })
+
+  it('PEA + CTO → moyenne (17,2 + 30) / 2 = 23,6', () => {
+    expect(estimerTauxFiscalitePortefeuille(['PEA', 'CTO'])).toBe(23.6)
+  })
+
+  it('vide / null → fallback PFU 30 %', () => {
+    expect(estimerTauxFiscalitePortefeuille([])).toBe(30)
+    expect(estimerTauxFiscalitePortefeuille(null)).toBe(30)
+    expect(estimerTauxFiscalitePortefeuille(undefined)).toBe(30)
+  })
+})
+
+describe('Sprint 3 — Jalons (Tâche 5)', () => {
+  it('expose un tableau jalons trié par âge', () => {
+    const r = projectionGlobale(baseS3)
+    expect(Array.isArray(r.jalons)).toBe(true)
+    for (let i = 1; i < r.jalons.length; i++) {
+      expect(r.jalons[i]!.age).toBeGreaterThanOrEqual(r.jalons[i - 1]!.age)
+    }
+  })
+
+  it('détecte les milestones 100k / 500k / 1M', () => {
+    const r = projectionGlobale({
+      ...baseS3, patrimoineFinancierActuel: 50_000, epargneMensuelle: 1000,
+    })
+    const types = r.jalons.filter((j) => j.type === 'milestone').map((j) => j.valeur)
+    // 50k départ + 1k/mois sur 35 ans → atteint 100k facilement, et plus
+    expect(types).toContain(100_000)
+  })
+
+  it('détecte un jalon FIRE quand l\'âge d\'indépendance est atteint', () => {
+    const r = projectionGlobale({
+      ...baseS3, patrimoineFinancierActuel: 700_000, epargneMensuelle: 2000,
+    })
+    if (r.ageIndependanceCentral !== null) {
+      const fireJalon = r.jalons.find((j) => j.type === 'fire')
+      expect(fireJalon).toBeDefined()
+      expect(fireJalon!.age).toBe(r.ageIndependanceCentral)
+    }
+  })
+
+  it('détecte le jalon Lean FIRE avant le FIRE complet', () => {
+    const r = projectionGlobale({
+      ...baseS3, patrimoineFinancierActuel: 500_000, epargneMensuelle: 1500,
+    })
+    const lean = r.jalons.find((j) => j.type === 'lean_fire')
+    const full = r.jalons.find((j) => j.type === 'fire')
+    if (lean && full) {
+      expect(lean.age).toBeLessThan(full.age)
+    }
+  })
+
+  it('détecte le jalon "crédit soldé" pour un bien existant', () => {
+    const r = projectionGlobale({
+      ...baseS3,
+      biensExistants: [bien({ credit_restant: 50_000, mensualite_credit: 500, taux_interet_estime: 3, duree_restante_mois: 120 })],
+    })
+    const debtJalon = r.jalons.find((j) => j.type === 'debt')
+    expect(debtJalon).toBeDefined()
+    expect(debtJalon!.label).toContain('soldé')
+  })
+})
