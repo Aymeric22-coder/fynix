@@ -124,28 +124,52 @@ export function ProjectionFIRE({ patrimoine }: Props) {
           value={formatCurrency(result.patrimoineAgeCible, 'EUR', { compact: true })}
           sub={`fin ${formatCurrency(result.detailsAgeCible.financier, 'EUR', { compact: true })} · immo ${formatCurrency(result.detailsAgeCible.equityImmoExistant + result.detailsAgeCible.equityImmoFuture, 'EUR', { compact: true })}`}
         />
-        <SummaryCard
-          icon={<Target size={12} className="text-accent" />}
-          label="Revenu passif"
-          value={formatCurrency(
-            result.detailsAgeCible.loyersNetsMensuels + result.detailsAgeCible.financier * 0.04 / 12,
-            'EUR', { decimals: 0 },
-          ) + '/m'}
-          sub={`cible ${formatCurrency(revenuCible, 'EUR', { decimals: 0 })}/m`}
-          accent={result.detailsAgeCible.loyersNetsMensuels + result.detailsAgeCible.financier * 0.04 / 12 >= revenuCible ? 'success' : 'warning'}
-        />
+        {(() => {
+          const loyersNetsM   = Math.max(0, result.detailsAgeCible.loyersNetsMensuels)
+          const portefeuilleM = result.detailsAgeCible.financier * 0.04 / 12
+          const totalM        = loyersNetsM + portefeuilleM
+          return (
+            <SummaryCard
+              icon={<Target size={12} className="text-accent" />}
+              label={`Revenu passif à ${fi.age_cible} ans`}
+              subLabel={`Projection à ${fi.age_cible} ans — pas votre revenu actuel`}
+              value={formatCurrency(totalM, 'EUR', { decimals: 0 }) + '/m'}
+              accent={totalM >= revenuCible ? 'success' : 'warning'}
+              details={[
+                { label: 'Loyers nets projetés',    value: formatCurrency(loyersNetsM,   'EUR', { decimals: 0 }) + '/m' },
+                { label: 'Portefeuille (règle 4 %)', value: formatCurrency(portefeuilleM, 'EUR', { decimals: 0 }) + '/m' },
+                { label: 'Cible',                    value: formatCurrency(revenuCible,   'EUR', { decimals: 0 }) + '/m' },
+              ]}
+            />
+          )
+        })()}
         <SummaryCard
           icon={<TrendingUp size={12} className="text-secondary" />}
           label="Effort mensuel"
           value={formatCurrency(epargne + patrimoine.mensualitesImmoTotal, 'EUR', { decimals: 0 }) + '/m'}
           sub={`DCA ${formatCurrency(epargne, 'EUR', { decimals: 0 })} + immo ${formatCurrency(patrimoine.mensualitesImmoTotal, 'EUR', { decimals: 0 })}`}
         />
-        <SummaryCard
-          icon={<Building2 size={12} className="text-amber-400" />}
-          label="Levier immo"
-          value={formatCurrency(result.detailsAgeCible.valeurBruteImmo, 'EUR', { compact: true })}
-          sub={`equity ${formatCurrency(result.detailsAgeCible.equityImmoExistant + result.detailsAgeCible.equityImmoFuture, 'EUR', { compact: true })}`}
-        />
+        {(() => {
+          const valeur       = result.detailsAgeCible.valeurBruteImmo
+          const credit       = result.detailsAgeCible.creditRestantImmo
+          const equity       = result.detailsAgeCible.equityImmoExistant + result.detailsAgeCible.equityImmoFuture
+          const ansCredit    = Math.max(0, fi.age_cible! - fi.age!)
+          return (
+            <SummaryCard
+              icon={<Building2 size={12} className="text-amber-400" />}
+              label={`Immo à ${fi.age_cible} ans`}
+              subLabel="Patrimoine immo projeté"
+              value={formatCurrency(equity, 'EUR', { compact: true })}
+              accent={equity > 0 ? 'success' : undefined}
+              details={[
+                { label: 'Valeur projetée', value: formatCurrency(valeur, 'EUR', { compact: true }) },
+                { label: 'Capital restant', value: formatCurrency(credit, 'EUR', { compact: true }) },
+                { label: 'Equity nette',    value: formatCurrency(equity, 'EUR', { compact: true }) },
+              ]}
+              footnote={valeur > 0 ? `Le crédit a travaillé pour vous pendant ${ansCredit} ans` : undefined}
+            />
+          )
+        })()}
       </div>
 
       {/* ─── Graphique stacked area ─── */}
@@ -275,8 +299,12 @@ export function ProjectionFIRE({ patrimoine }: Props) {
 // Sous-composants
 // ─────────────────────────────────────────────────────────────────
 
-function SummaryCard({ icon, label, value, sub, accent }: {
-  icon: React.ReactNode; label: string; value: string; sub: string;
+function SummaryCard({ icon, label, value, sub, accent, subLabel, details, footnote }: {
+  icon: React.ReactNode; label: string; value: string;
+  sub?: string
+  subLabel?: string
+  details?: { label: string; value: string }[]
+  footnote?: string
   accent?: 'success' | 'warning'
 }) {
   const color = accent === 'success' ? 'text-accent' : accent === 'warning' ? 'text-warning' : 'text-primary'
@@ -285,8 +313,21 @@ function SummaryCard({ icon, label, value, sub, accent }: {
       <div className="flex items-center gap-1.5 text-xs text-secondary uppercase tracking-widest">
         {icon}<span className="truncate">{label}</span>
       </div>
+      {subLabel && <p className="text-[9px] text-muted italic mt-0.5 leading-tight">{subLabel}</p>}
       <p className={`text-base font-semibold financial-value mt-1.5 ${color}`}>{value}</p>
-      <p className="text-[10px] text-muted truncate">{sub}</p>
+      {details ? (
+        <div className="mt-1.5 space-y-0.5">
+          {details.map((d, i) => (
+            <div key={i} className="flex justify-between text-[10px] text-muted gap-2">
+              <span className="truncate">{d.label}</span>
+              <span className="financial-value text-secondary whitespace-nowrap">{d.value}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        sub && <p className="text-[10px] text-muted truncate">{sub}</p>
+      )}
+      {footnote && <p className="text-[10px] text-muted italic mt-1.5 leading-tight">{footnote}</p>}
     </div>
   )
 }

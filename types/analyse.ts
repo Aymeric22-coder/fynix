@@ -137,7 +137,8 @@ export interface ProjectionGlobaleResult {
     cash:                number
     loyersNetsMensuels:  number
     mensualitesSortantes: number
-    valeurBruteImmo:     number  // pour la carte "levier immobilier"
+    valeurBruteImmo:     number   // valeur de marché projetée (après appréciation)
+    creditRestantImmo:   number   // capital restant dû à l'âge cible (tous biens)
   }
   /** Warnings (ex : "apport insuffisant en année N"). */
   warnings: string[]

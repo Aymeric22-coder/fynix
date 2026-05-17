@@ -299,8 +299,29 @@ export function projectionGlobale(inputs: ProjectionInputs): ProjectionGlobaleRe
   const horizon = Math.max(5, Math.min(50, inputs.horizonAnnees ?? 35))
   const warnings: string[] = []
 
-  // 1. Simulation des biens existants
-  const trajExistants = inputs.biensExistants.map((b) =>
+  // 1. Validation des biens existants
+  //    - valeur manquante / nulle → bien ignoré + warning
+  //    - credit_restant null/undefined → traité comme 0
+  //    - equity initiale < 1000 € avec crédit > 0 → warning de cohérence
+  const biensValides: BienImmo[] = []
+  for (const b of inputs.biensExistants) {
+    const valeur        = b.valeur
+    const creditRestant = b.credit_restant ?? 0
+    if (valeur === null || valeur === undefined || valeur <= 0) {
+      warnings.push(`Bien "${b.nom}" ignoré : valeur manquante.`)
+      continue
+    }
+    const equityInit = valeur - creditRestant
+    if (equityInit < 1000 && creditRestant > 0) {
+      warnings.push(
+        `Vérifiez les données de "${b.nom}" — equity initiale anormalement basse (${Math.round(equityInit).toLocaleString('fr-FR')} €) pour un crédit de ${Math.round(creditRestant).toLocaleString('fr-FR')} €.`,
+      )
+    }
+    biensValides.push({ ...b, credit_restant: creditRestant })
+  }
+
+  // 2. Simulation des biens existants validés
+  const trajExistants = biensValides.map((b) =>
     simulerBienExistant(b, horizon, inputs.appreciationImmoPct, inputs.inflationLoyersPct),
   )
 
@@ -356,30 +377,33 @@ export function projectionGlobale(inputs: ProjectionInputs): ProjectionGlobaleRe
   let detailsAgeCible       = {
     financier: 0, equityImmoExistant: 0, equityImmoFuture: 0, cash: 0,
     loyersNetsMensuels: 0, mensualitesSortantes: 0, valeurBruteImmo: 0,
+    creditRestantImmo: 0,
   }
 
   const points: AnneeProjection[] = []
   for (let y = 0; y <= horizon; y++) {
     const fin   = trajFinancier[y] ?? 0
     const cash  = trajCash[y]      ?? 0
-    let equityE = 0, equityF = 0, valeurBrute = 0
+    let equityE = 0, equityF = 0, valeurBrute = 0, creditRestant = 0
     let cfTotal = 0, mensuTotal = 0
     for (const t of trajExistants) {
       const pt = t[y]
       if (pt) {
-        equityE     += pt.equity
-        valeurBrute += pt.valeur
-        cfTotal     += pt.cashflow_annuel
-        mensuTotal  += pt.mensualite * 12
+        equityE       += pt.equity
+        valeurBrute   += pt.valeur
+        creditRestant += pt.credit_restant
+        cfTotal       += pt.cashflow_annuel
+        mensuTotal    += pt.mensualite * 12
       }
     }
     for (const t of trajFutures) {
       const pt = t[y]
       if (pt) {
-        equityF     += pt.equity
-        valeurBrute += pt.valeur
-        cfTotal     += pt.cashflow_annuel
-        mensuTotal  += pt.mensualite * 12
+        equityF       += pt.equity
+        valeurBrute   += pt.valeur
+        creditRestant += pt.credit_restant
+        cfTotal       += pt.cashflow_annuel
+        mensuTotal    += pt.mensualite * 12
       }
     }
     const total = fin + equityE + equityF + cash
@@ -415,6 +439,7 @@ export function projectionGlobale(inputs: ProjectionInputs): ProjectionGlobaleRe
         loyersNetsMensuels:  cfTotal / 12,
         mensualitesSortantes: mensuTotal / 12,
         valeurBruteImmo:     valeurBrute,
+        creditRestantImmo:   creditRestant,
       }
     }
   }
