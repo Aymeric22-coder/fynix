@@ -517,3 +517,29 @@ export type PositionInsert = Omit<Position, 'id' | 'created_at' | 'updated_at'>
 export type PositionUpdate = Partial<Omit<PositionInsert, 'user_id' | 'instrument_id'>>
 
 export type InstrumentPriceInsert = Omit<InstrumentPrice, 'id' | 'created_at'>
+
+// ─── Migration 017 — Acquisitions immobilieres futures simulees ──────────────
+
+export type FutureAcquisitionType = 'locatif' | 'RP'
+
+export interface FutureAcquisitionRow {
+  id:                          string
+  user_id:                     string
+  nom:                         string
+  dans_combien_annees:         number
+  prix_achat:                  number
+  frais_notaire_pct:           number
+  apport:                      number
+  taux_interet:                number
+  duree_credit_ans:            number
+  type:                        FutureAcquisitionType
+  loyer_brut_mensuel:          number
+  taux_vacance_pct:            number
+  charges_mensuelles:          number
+  appreciation_annuelle_pct:   number
+  created_at:                  string
+  updated_at:                  string
+}
+
+export type FutureAcquisitionInsert = Omit<FutureAcquisitionRow, 'id' | 'created_at' | 'updated_at'>
+export type FutureAcquisitionUpdate = Partial<Omit<FutureAcquisitionInsert, 'user_id'>>

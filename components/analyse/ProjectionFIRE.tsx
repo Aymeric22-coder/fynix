@@ -18,15 +18,19 @@ import { useMemo, useState } from 'react'
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ReferenceLine, ResponsiveContainer, CartesianGrid, Legend,
 } from 'recharts'
-import { Plus, Sparkles, Target, TrendingUp, Wallet, Building2 } from 'lucide-react'
+import { Plus, Sparkles, Target, TrendingUp, Wallet, Building2, Check, Loader2, Radio } from 'lucide-react'
 import { projectionGlobale, calculerImpactAcquisition, calculerRendementPortefeuille } from '@/lib/analyse/projectionFIRE'
 import { formatCurrency } from '@/lib/utils/format'
 import { Button } from '@/components/ui/button'
 import { AcquisitionFutureForm } from './AcquisitionFutureForm'
+import { useFutureAcquisitions } from '@/hooks/use-future-acquisitions'
 import type { PatrimoineComplet, AcquisitionFuture } from '@/types/analyse'
 
 interface Props {
   patrimoine: PatrimoineComplet
+  /** Horodatage du dernier refresh patrimoine (epoch ms) — affiche le
+   *  badge "En direct • HH:MM" en haut de la section quand fourni. */
+  lastUpdatedAt?: number | null
 }
 
 const COLOR_FIN  = '#10b981'   // emerald
@@ -34,12 +38,8 @@ const COLOR_IMMO = '#E8B84B'   // or
 const COLOR_ACQ  = '#3b82f6'   // bleu
 const COLOR_CASH = '#71717a'   // muted
 
-let uid = 0
-const newId = () => `acq_${Date.now()}_${++uid}`
-
-function defaultAcquisition(): AcquisitionFuture {
+function defaultAcquisitionPayload(): Omit<AcquisitionFuture, 'id'> {
   return {
-    id: newId(),
     nom: 'Nouvelle acquisition',
     dans_combien_annees: 3,
     prix_achat: 180000, frais_notaire_pct: 8, apport: 36000,
@@ -49,7 +49,12 @@ function defaultAcquisition(): AcquisitionFuture {
   }
 }
 
-export function ProjectionFIRE({ patrimoine }: Props) {
+function formatTimeHM(ts: number): string {
+  const d = new Date(ts)
+  return d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+}
+
+export function ProjectionFIRE({ patrimoine, lastUpdatedAt }: Props) {
   const fi = patrimoine.fireInputs
 
   // Cas profil incomplet
@@ -72,7 +77,16 @@ export function ProjectionFIRE({ patrimoine }: Props) {
   const [appreciationImmo,  setAppreciationImmo]  = useState<number>(2)
   const [inflationLoyers,   setInflationLoyers]   = useState<number>(1.5)
 
-  const [acquisitions, setAcquisitions] = useState<AcquisitionFuture[]>([])
+  // Acquisitions persistees en DB (hook + realtime).
+  const {
+    acquisitions,
+    loading: loadingAcquisitions,
+    saving:  savingAcquisitions,
+    error:   acquisitionsError,
+    add:     addAcquisition,
+    update:  updateAcquisition,
+    remove:  removeAcquisition,
+  } = useFutureAcquisitions()
 
   // ── Projection globale ─────────────────────────────────────────
   const result = useMemo(() => projectionGlobale({
@@ -104,9 +118,17 @@ export function ProjectionFIRE({ patrimoine }: Props) {
 
   return (
     <div className="card p-5">
-      <div className="mb-4">
-        <p className="text-xs text-secondary uppercase tracking-widest">Projection FIRE</p>
-        <p className="text-xs text-muted mt-0.5">4 composantes — financier, immo existant, acquisitions futures, cash</p>
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs text-secondary uppercase tracking-widest">Projection FIRE</p>
+          <p className="text-xs text-muted mt-0.5">4 composantes — financier, immo existant, acquisitions futures, cash</p>
+        </div>
+        {lastUpdatedAt != null && (
+          <div className="flex items-center gap-1.5 text-[10px] text-muted whitespace-nowrap">
+            <Radio size={11} className="text-accent animate-pulse" />
+            <span>En direct · {formatTimeHM(lastUpdatedAt)}</span>
+          </div>
+        )}
       </div>
 
       {/* ─── 5 cartes résumé ─── */}
@@ -244,17 +266,38 @@ export function ProjectionFIRE({ patrimoine }: Props) {
         <div className="flex items-center justify-between">
           <div>
             <p className="text-xs text-secondary uppercase tracking-widest">Acquisitions futures simulées</p>
-            <p className="text-xs text-muted mt-0.5">Stockage local — non sauvegardé</p>
+            <p className="text-[10px] text-muted mt-0.5 flex items-center gap-1">
+              {savingAcquisitions ? (
+                <>
+                  <Loader2 size={10} className="animate-spin" />
+                  Sauvegarde…
+                </>
+              ) : (
+                <>
+                  <Check size={10} className="text-accent" />
+                  Sauvegardé automatiquement
+                </>
+              )}
+            </p>
           </div>
           {acquisitions.length < 5 && (
             <Button variant="secondary" icon={Plus}
-              onClick={() => setAcquisitions((prev) => [...prev, defaultAcquisition()])}>
+              disabled={loadingAcquisitions}
+              onClick={() => { void addAcquisition(defaultAcquisitionPayload()) }}>
               Ajouter
             </Button>
           )}
         </div>
 
-        {acquisitions.length === 0 ? (
+        {acquisitionsError && (
+          <p className="text-xs text-warning bg-warning-muted border border-warning/30 rounded-lg px-3 py-1.5">
+            ⚠ Erreur de sauvegarde : {acquisitionsError}
+          </p>
+        )}
+
+        {loadingAcquisitions ? (
+          <p className="text-xs text-muted">Chargement des acquisitions…</p>
+        ) : acquisitions.length === 0 ? (
           <p className="text-xs text-muted">Aucune acquisition simulée. Ajoutez-en pour voir l&apos;impact sur votre courbe FIRE.</p>
         ) : (
           <div className="space-y-4">
@@ -275,9 +318,8 @@ export function ProjectionFIRE({ patrimoine }: Props) {
                   biensExistants:            patrimoine.biens,
                   acquisitionsFutures:       acquisitions,
                 }}
-                onChange={(updated) => setAcquisitions((prev) =>
-                  prev.map((x) => x.id === updated.id ? updated : x))}
-                onDelete={() => setAcquisitions((prev) => prev.filter((x) => x.id !== a.id))}
+                onChange={(updated) => { void updateAcquisition(updated) }}
+                onDelete={() => { void removeAcquisition(a.id) }}
               />
             ))}
           </div>

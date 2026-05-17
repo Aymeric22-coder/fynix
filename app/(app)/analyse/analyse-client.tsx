@@ -28,7 +28,7 @@ import { ScoresProjectionAnalyse }  from '@/components/analyse/tabs/ScoresProjec
 import { Recommandations }          from '@/components/analyse/Recommandations'
 
 export function AnalyseClient() {
-  const { data, isLoading, error, refresh, refreshing } = usePatrimoineAnalyse()
+  const { data, isLoading, error, refresh, refreshing, lastUpdatedAt } = usePatrimoineAnalyse()
 
   // Construit la liste des onglets visibles (sauf si data nulle)
   const tabs: TabItem[] = useMemo(() => {
@@ -46,12 +46,12 @@ export function AnalyseClient() {
     if (data.comptes.length > 0) {
       out.push({ id: 'cash', label: 'Cash', content: <CashAnalyse data={data} /> })
     }
-    out.push({ id: 'scores', label: 'Scores & Projection', content: <ScoresProjectionAnalyse data={data} /> })
+    out.push({ id: 'scores', label: 'Scores & Projection', content: <ScoresProjectionAnalyse data={data} lastUpdatedAt={lastUpdatedAt} /> })
     out.push({ id: 'recos',  label: 'Recommandations',
                badge: data.recommandations.length > 0 ? <Badge variant="warning">{data.recommandations.length}</Badge> : undefined,
                content: <Recommandations recos={data.recommandations} /> })
     return out
-  }, [data])
+  }, [data, lastUpdatedAt])
 
   // ── Chargement initial ────────────────────────────────────────────
   if (isLoading && !data) {
