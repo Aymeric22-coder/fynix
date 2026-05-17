@@ -131,10 +131,30 @@ supabase/migrations/ 16 migrations versionnées (avec DOWN)
 
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY` (côté serveur pour FX cache)
+- `SUPABASE_SERVICE_ROLE_KEY` (côté serveur pour FX cache + emails)
 - `OPENFIGI_API_KEY` (optionnel — 25 req/min sans clé, 250 avec)
 - `MARKET_PRICE_TTL_SECONDS` (optionnel, défaut 900)
 - `FX_RATE_TTL_SECONDS` (optionnel, défaut 3600)
+- `RESEND_API_KEY` (Sprint 6 — envoi rapports mensuels via Resend)
+- `CRON_SECRET` (Sprint 6 — secret partagé pour authentifier les appels
+  cron depuis l'Edge Function vers `/api/email/monthly-report`)
+- `NEXT_PUBLIC_APP_URL` (optionnel — défaut `https://fynix-mu.vercel.app`,
+  utilisé dans les liens des emails et l'unsubscribe public)
+
+### Variables Supabase Edge Functions
+
+À configurer dans **Supabase Dashboard → Edge Functions → Secrets** :
+- `APP_URL` (ex: `https://fynix-mu.vercel.app`)
+- `CRON_SECRET` (même valeur que Vercel)
+
+### Cron Supabase (Sprint 6)
+
+L'Edge Function `monthly-report` est planifiée via **Supabase Dashboard
+→ Edge Functions → monthly-report → Schedule** :
+- Cron expression : `0 7 1 * *` (le 1er du mois à 07:00 UTC ≈ 08:00 Paris en hiver)
+- L'Edge Function se contente d'appeler `POST /api/email/monthly-report`
+  avec le header `Authorization: Bearer <CRON_SECRET>` — toute la
+  logique métier vit côté Next.js (`app/api/email/monthly-report/route.ts`).
 
 ## Process
 

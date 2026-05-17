@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Save, User, Percent, Globe } from 'lucide-react'
+import { Save, User, Percent, Globe, Mail, Send } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { createClient } from '@/lib/supabase/client'
 import type { Profile } from '@/types/database.types'
@@ -21,6 +21,67 @@ export default function ParametresForm({ profile, userEmail }: Props) {
   const [fiscalSituation, setFiscalSituation] = useState(profile?.fiscal_situation ?? 'single')
   const [saving,          setSaving]          = useState(false)
   const [saved,           setSaved]           = useState(false)
+
+  // Sprint 6 — préférences email
+  const [emailMonthly,    setEmailMonthly]    = useState(profile?.email_monthly_report ?? true)
+  const [emailToggleBusy, setEmailToggleBusy] = useState(false)
+  const [sendingTest,     setSendingTest]     = useState(false)
+  const [testStatus,      setTestStatus]      = useState<string | null>(null)
+
+  /** Toggle opt-in mensuel (PATCH unsubscribe / POST resubscribe). */
+  async function handleEmailToggle(nextValue: boolean) {
+    setEmailToggleBusy(true)
+    setTestStatus(null)
+    try {
+      if (nextValue) {
+        // Réactivation : POST /api/email/resubscribe (régénère le token)
+        const res = await fetch('/api/email/resubscribe', { method: 'POST' })
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        setEmailMonthly(true)
+      } else {
+        // Désactivation : update direct (l'utilisateur est connecté ici,
+        // pas besoin du lien public unsubscribe — on patch profiles)
+        const supabase = createClient()
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) throw new Error('Non authentifié')
+        const { error } = await supabase
+          .from('profiles')
+          .update({ email_monthly_report: false })
+          .eq('id', user.id)
+        if (error) throw error
+        setEmailMonthly(false)
+      }
+    } catch (e) {
+      setTestStatus(`Erreur : ${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      setEmailToggleBusy(false)
+    }
+  }
+
+  /** Envoie un rapport de test à l'utilisateur courant. */
+  async function handleSendTest() {
+    setSendingTest(true)
+    setTestStatus(null)
+    try {
+      const res  = await fetch('/api/email/monthly-report', { method: 'POST' })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok || json.error) {
+        throw new Error(json.error ?? `HTTP ${res.status}`)
+      }
+      const success = json.data?.success
+      if (success) {
+        setTestStatus(`✓ Email envoyé à ${userEmail}`)
+      } else {
+        setTestStatus(`Échec : ${json.data?.error ?? 'erreur inconnue'}`)
+      }
+    } catch (e) {
+      setTestStatus(`Erreur : ${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      setSendingTest(false)
+      // Auto-clear le message au bout de 6 s
+      setTimeout(() => setTestStatus(null), 6000)
+    }
+  }
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
@@ -133,6 +194,63 @@ export default function ParametresForm({ profile, userEmail }: Props) {
           <Badge className="ml-auto">Défaut</Badge>
         </div>
         <p className="text-xs text-secondary">Support multi-devise (USD, GBP…) disponible en Phase 2.</p>
+      </div>
+
+      {/* Notifications email (Sprint 6) */}
+      <div className={SECTION}>
+        <div className="flex items-center gap-2 mb-2">
+          <Mail size={15} className="text-muted" />
+          <h2 className="text-sm font-medium text-primary">Notifications</h2>
+        </div>
+
+        <div className="flex items-start justify-between gap-4 bg-surface-2 rounded-lg p-4">
+          <div className="flex-1 min-w-0">
+            <p className="text-sm text-primary font-medium">Rapport mensuel par email</p>
+            <p className="text-xs text-secondary mt-1 leading-relaxed">
+              Recevez chaque 1er du mois un récap de votre patrimoine et vos 3 actions prioritaires.
+              Envoyé à <span className="text-primary">{userEmail}</span>.
+            </p>
+            {profile?.last_monthly_report_sent_at && (
+              <p className="text-[11px] text-muted mt-2">
+                Dernier envoi : {new Date(profile.last_monthly_report_sent_at).toLocaleDateString('fr-FR', { dateStyle: 'medium' })}
+              </p>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => handleEmailToggle(!emailMonthly)}
+            disabled={emailToggleBusy}
+            aria-pressed={emailMonthly}
+            aria-label={emailMonthly ? 'Désactiver le rapport mensuel' : 'Activer le rapport mensuel'}
+            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 ${
+              emailMonthly ? 'bg-accent' : 'bg-border'
+            }`}
+          >
+            <span
+              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition-transform ${
+                emailMonthly ? 'translate-x-5' : 'translate-x-0'
+              }`}
+            />
+          </button>
+        </div>
+
+        <div className="flex items-center gap-3 flex-wrap">
+          <Button
+            type="button"
+            variant="secondary"
+            icon={Send}
+            loading={sendingTest}
+            onClick={handleSendTest}
+            disabled={sendingTest}
+          >
+            Recevoir un rapport test maintenant
+          </Button>
+          {testStatus && (
+            <span className={`text-sm ${testStatus.startsWith('✓') ? 'text-accent' : 'text-warning'}`}>
+              {testStatus}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Submit */}

@@ -94,6 +94,14 @@ export interface Profile {
    *  0 = jamais commence, 8 = wizard termine. Utilise pour proposer
    *  "Reprendre a l etape X" quand l utilisateur revient sans avoir fini. */
   wizard_step_completed: number
+
+  // ── Migration 022 — Préférences email ────────────────────────────
+  /** Opt-in rapport patrimonial mensuel par email (default true). */
+  email_monthly_report:        boolean
+  /** Token unique utilisé dans le lien public de désinscription. */
+  email_unsubscribe_token:     string
+  /** Date du dernier rapport mensuel envoyé avec succès. */
+  last_monthly_report_sent_at: string | null
 }
 
 export interface Asset {
