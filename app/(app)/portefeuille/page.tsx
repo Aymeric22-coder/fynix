@@ -23,6 +23,7 @@ import { PortefeuilleActions }    from '@/components/pages/portefeuille-actions'
 import { PositionRowActions }     from '@/components/pages/position-row-actions'
 import { RefreshPricesButton }    from '@/components/pages/refresh-prices-button'
 import { PortfolioEvolutionChart, type SnapshotPoint } from '@/components/portfolio/evolution-chart'
+import { normalizeSnapshotSeries, checkSeriesMatchesLive } from '@/lib/portfolio/normalize-snapshots'
 import type { PositionInitialData } from '@/components/forms/add-position-form'
 import type { AssetClass, CurrencyCode } from '@/types/database.types'
 
@@ -72,12 +73,34 @@ export default async function PortefeuillePage({ searchParams }: Props) {
     .eq('user_id', user!.id)
     .order('snapshot_date', { ascending: false })
     .limit(90)
-  const snapshots: SnapshotPoint[] = (snapshotRows ?? []).slice().reverse().map((r) => ({
+  const rawSnapshots: SnapshotPoint[] = (snapshotRows ?? []).slice().reverse().map((r) => ({
     snapshot_date:      r.snapshot_date as string,
     total_market_value: Number(r.total_market_value),
     total_cost_basis:   Number(r.total_cost_basis),
     total_pnl:          Number(r.total_pnl),
   }))
+
+  // Réaligne la série historique avec les KPI affichés juste au-dessus :
+  // injecte un point "live" du jour basé sur summary, force la monotonie du
+  // capital investi et recalcule le PnL = MV − CB. Sans ça les snapshots
+  // figés divergent visuellement des cartes (fallback cost_basis sur position
+  // sans prix au moment du snapshot puis arrivée d'un prix plus bas, ou
+  // positions ajoutées après le 1er snapshot, etc.).
+  const snapshots: SnapshotPoint[] = normalizeSnapshotSeries(rawSnapshots, {
+    totalMarketValue:   fullResult.summary.totalMarketValue,
+    totalCostBasis:     fullResult.summary.totalCostBasis,
+    totalUnrealizedPnL: fullResult.summary.totalUnrealizedPnL,
+    referenceCurrency:  fullResult.summary.referenceCurrency,
+  })
+
+  if (process.env.NODE_ENV !== 'production') {
+    const drift = checkSeriesMatchesLive(snapshots, {
+      totalMarketValue:   fullResult.summary.totalMarketValue,
+      totalCostBasis:     fullResult.summary.totalCostBasis,
+      totalUnrealizedPnL: fullResult.summary.totalUnrealizedPnL,
+    })
+    if (drift) console.warn('[portefeuille] graphique / KPI désynchronisés :', drift)
+  }
 
   // Cash flows depuis les transactions liées au portefeuille (achats/ventes)
   const { data: txRows } = await supabase
@@ -89,8 +112,10 @@ export default async function PortefeuillePage({ searchParams }: Props) {
 
   const cashFlows = transactionsToCashFlows(txRows ?? [])
 
-  // Analytics historiques (TWR, MWR, drawdown, vol, sharpe) sur la timeline
-  const historicalAnalytics = computeHistoricalAnalytics(snapshots, cashFlows)
+  // Analytics historiques (TWR, MWR, drawdown, vol, sharpe) — on utilise la
+  // série BRUTE non normalisée car ces métriques doivent refléter l'historique
+  // réel (rendement, drawdown sur faits passés, pas sur série lissée).
+  const historicalAnalytics = computeHistoricalAnalytics(rawSnapshots, cashFlows)
 
   // Charge les positions brutes + ISIN pour le formulaire d'édition
   const { data: rawPositions } = await supabase
@@ -250,7 +275,14 @@ export default async function PortefeuillePage({ searchParams }: Props) {
                   </span>
                 </div>
               </div>
-              <PortfolioEvolutionChart data={snapshots} />
+              <PortfolioEvolutionChart
+                data={snapshots}
+                live={{
+                  totalMarketValue:   fullResult.summary.totalMarketValue,
+                  totalCostBasis:     fullResult.summary.totalCostBasis,
+                  totalUnrealizedPnL: fullResult.summary.totalUnrealizedPnL,
+                }}
+              />
             </div>
           )}
 

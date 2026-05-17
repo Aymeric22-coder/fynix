@@ -14,9 +14,18 @@ export interface SnapshotPoint {
   total_pnl:          number
 }
 
+/** Valeurs des cartes KPI affichées au-dessus du graphique. Permet à
+ *  l'assertion dev de détecter une désynchronisation entre les deux. */
+export interface LiveKpisProp {
+  totalMarketValue:   number
+  totalCostBasis:     number
+  totalUnrealizedPnL: number | null
+}
+
 interface Props {
   data:     SnapshotPoint[]
   currency?: string
+  live?:    LiveKpisProp
 }
 
 function CustomTooltip({ active, payload, label }: {
@@ -60,12 +69,29 @@ function formatPnlAxis(value: number): string {
   return `${sign}${abs}`
 }
 
-export function PortfolioEvolutionChart({ data }: Props) {
+export function PortfolioEvolutionChart({ data, live }: Props) {
   // Recharts plante parfois pendant l'hydratation (ResponsiveContainer mesure
   // le DOM). On reporte le rendu après le premier mount pour éviter ce
   // problème connu.
   const [mounted, setMounted] = useState(false)
   useEffect(() => { setMounted(true) }, [])
+
+  // Assertion dev : le dernier point du graphique doit correspondre aux KPI
+  // affichés dans les cartes au-dessus, sinon l'utilisateur voit deux
+  // chiffres différents pour la même chose. Tolérance 1€ pour les arrondis.
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'production' || !live || data.length === 0) return
+    const last = data[data.length - 1]!
+    const dMv  = Math.abs(last.total_market_value - live.totalMarketValue)
+    const dCb  = Math.abs(last.total_cost_basis   - live.totalCostBasis)
+    if (dMv > 1 || dCb > 1) {
+      console.warn(
+        '[evolution-chart] INCOHÉRENCE graphique / KPI :',
+        `mv Δ${dMv.toFixed(2)} / cb Δ${dCb.toFixed(2)}`,
+        { lastPoint: last, live },
+      )
+    }
+  }, [data, live])
 
   // Couleur dominante du PnL (vert si dernier point > 0, rouge sinon) — sert
   // a colorer la ligne unique du PnL latent puisque Recharts ne supporte pas
