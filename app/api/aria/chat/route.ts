@@ -1,5 +1,5 @@
 /**
- * POST /api/aria/chat — endpoint Phase 1 (non-streaming).
+ * POST /api/aria/chat — endpoint Phase 2 (streaming SSE).
  *
  * Body attendu :
  *   {
@@ -8,31 +8,35 @@
  *     conversation_id?: string,        // null/absent => nouvelle conversation
  *   }
  *
- * Reponse :
- *   { content: string, conversation_id: string, message_id: string, usage: {...} }
+ * Reponse : flux Server-Sent Events (text/event-stream). Chaque ligne
+ * commence par "data: " et contient un JSON avec un champ `type` :
+ *   { type: 'meta',  conversation_id }            // emis en premier
+ *   { type: 'delta', delta }                      // un token / chunk de texte
+ *   { type: 'done',  message_id, usage }          // fin du stream
+ *   { type: 'error', message }                    // erreur (terminal)
  *
  * Workflow :
  *   1. Auth via withAuth.
- *   2. Cree la conversation si conversation_id absent.
- *   3. Persiste le message user dans aria_messages.
- *   4. Construit le live context (buildLiveContext) en parallele.
- *   5. Appelle Claude (messages.create non-streaming).
- *   6. Persiste la reponse assistant.
- *   7. Met a jour aria_conversations.last_message_at.
+ *   2. Validation body.
+ *   3. Cree la conversation si conversation_id absent.
+ *   4. Persiste le message user dans aria_messages.
+ *   5. Construit le live context (buildLiveContext).
+ *   6. Ouvre un stream Anthropic, retourne immediatement un ReadableStream
+ *      SSE. Le message assistant final est persiste DANS le start() de
+ *      ce stream, juste avant l'evenement done.
  *
- * Aucune logique metier patrimoniale ici : tout passe par lib/aria/
- * qui s'appuie sur lib/analyse/aggregateur (regle #1, pas de duplication).
+ * Aucune logique metier patrimoniale ici : tout passe par lib/aria/.
  */
 
+import { NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createServerClient } from '@/lib/supabase/server'
-import { err, ok, withAuth } from '@/lib/utils/api'
+import { err, withAuth } from '@/lib/utils/api'
 import { buildLiveContext } from '@/lib/aria'
+import { encodeSSEFrame, type AriaSSEEvent } from '@/lib/aria/sse'
 import type { User } from '@supabase/supabase-js'
 
 // Modele par defaut — surchargeable via env ARIA_MODEL.
-// Le spec FYNIX cible claude-sonnet-4 (May 2024). On laisse env override
-// pour permettre la migration vers Sonnet 4.6/Opus 4.7 sans toucher au code.
 const DEFAULT_MODEL = 'claude-sonnet-4-20250514'
 const MAX_TOKENS = 1024
 const MAX_HISTORY_MESSAGES = 30
@@ -57,8 +61,43 @@ function isClientMessage(m: unknown): m is { role: 'user' | 'assistant'; content
     && obj.content.length > 0
 }
 
+// ─────────────────────────────────────────────────────────────────
+// Helpers SSE
+// ─────────────────────────────────────────────────────────────────
+
+function sseEncode(payload: AriaSSEEvent): Uint8Array {
+  return encodeSSEFrame(payload)
+}
+
+/**
+ * Construit un Response SSE qui renvoie immediatement une seule frame
+ * d'erreur puis ferme. Sert aux echecs survenus AVANT l'ouverture du
+ * stream Anthropic (validation, auth, persistance initiale).
+ */
+function sseErrorResponse(message: string, status: number): NextResponse {
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(sseEncode({ type: 'error', message }))
+      controller.close()
+    },
+  })
+  return new NextResponse(stream, {
+    status,
+    headers: {
+      'Content-Type':  'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Connection':    'keep-alive',
+      'X-Accel-Buffering': 'no',
+    },
+  })
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Handler
+// ─────────────────────────────────────────────────────────────────
+
 export const POST = withAuth(async (req: Request, user: User) => {
-  // 1. Parse + validation body
+  // 1. Parse body
   let body: ChatBody
   try {
     body = await req.json() as ChatBody
@@ -68,18 +107,14 @@ export const POST = withAuth(async (req: Request, user: User) => {
 
   const messagesRaw = body.messages ?? []
   const messages = messagesRaw.filter(isClientMessage)
-  if (messages.length === 0) {
-    return err('Au moins un message est requis', 400)
-  }
+  if (messages.length === 0) return err('Au moins un message est requis', 400)
   const lastMessage = messages[messages.length - 1]
   if (!lastMessage || lastMessage.role !== 'user') {
     return err('Le dernier message doit avoir le role "user"', 400)
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY
-  if (!apiKey) {
-    return err('ANTHROPIC_API_KEY non configuree', 500)
-  }
+  if (!apiKey) return err('ANTHROPIC_API_KEY non configuree', 500)
 
   // 2. Conversation : creer si absente
   const supabase = await createServerClient()
@@ -94,8 +129,6 @@ export const POST = withAuth(async (req: Request, user: User) => {
     if (error || !data) return err(`Creation conversation: ${error?.message ?? 'inconnue'}`, 500)
     conversationId = data.id as string
   } else {
-    // verifie que la conversation appartient bien a l'utilisateur (RLS le ferait
-    // mais on prefere un 404 explicite plutot qu'un INSERT echoue ensuite).
     const { data, error } = await supabase
       .from('aria_conversations')
       .select('id')
@@ -119,73 +152,119 @@ export const POST = withAuth(async (req: Request, user: User) => {
     })
   if (insertUserErr) return err(`Persistance message user: ${insertUserErr.message}`, 500)
 
-  // 4. Live context + appel Claude (sequentiel : on a besoin du context d'abord)
+  // 4. Live context
   let systemPrompt: string
   try {
     const built = await buildLiveContext({ supabase, userId: user.id, ui: uiContext })
     systemPrompt = built.systemPrompt
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
-    return err(`Construction du contexte: ${msg}`, 500)
+    return sseErrorResponse(`Construction du contexte: ${msg}`, 500)
   }
 
+  // 5. Stream Anthropic + relais SSE
   const client = new Anthropic({ apiKey })
   const model  = process.env.ARIA_MODEL || DEFAULT_MODEL
+  const trimmed = messages.slice(-MAX_HISTORY_MESSAGES).map((m) => ({ role: m.role, content: m.content }))
+  const finalConversationId = conversationId
 
-  // Limite l'historique aux N derniers messages pour controler les tokens.
-  const trimmed = messages.slice(-MAX_HISTORY_MESSAGES)
+  const responseStream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      // En premier : meta avec conversation_id pour que le client sache
+      // ou rattacher la conversation des le premier byte.
+      controller.enqueue(sseEncode({ type: 'meta', conversation_id: finalConversationId }))
 
-  let claudeResponse
-  try {
-    claudeResponse = await client.messages.create({
-      model,
-      max_tokens: MAX_TOKENS,
-      system:     systemPrompt,
-      messages:   trimmed.map((m) => ({ role: m.role, content: m.content })),
-    })
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    return err(`Appel Claude: ${msg}`, 502)
-  }
+      let stream: Awaited<ReturnType<typeof client.messages.stream>>
+      try {
+        stream = client.messages.stream({
+          model,
+          max_tokens: MAX_TOKENS,
+          system:     systemPrompt,
+          messages:   trimmed,
+        })
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        controller.enqueue(sseEncode({ type: 'error', message: `Appel Claude: ${msg}` }))
+        controller.close()
+        return
+      }
 
-  // Extrait le texte de la reponse (concatene les blocs text).
-  const responseText = claudeResponse.content
-    .filter((b): b is Extract<typeof b, { type: 'text' }> => b.type === 'text')
-    .map((b) => b.text)
-    .join('\n')
-    .trim()
+      let fullText = ''
+      try {
+        for await (const event of stream) {
+          if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+            const delta = event.delta.text
+            fullText += delta
+            controller.enqueue(sseEncode({ type: 'delta', delta }))
+          }
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        controller.enqueue(sseEncode({ type: 'error', message: `Stream Claude: ${msg}` }))
+        controller.close()
+        return
+      }
 
-  // 5. Persiste la reponse assistant
-  const { data: assistantRow, error: insertAssistantErr } = await supabase
-    .from('aria_messages')
-    .insert({
-      conversation_id: conversationId,
-      user_id:         user.id,
-      role:            'assistant',
-      content:         responseText,
-      ui_context:      uiContext,
-    })
-    .select('id')
-    .single()
-  if (insertAssistantErr || !assistantRow) {
-    return err(`Persistance message assistant: ${insertAssistantErr?.message ?? 'inconnue'}`, 500)
-  }
+      // Persiste la reponse assistant + met a jour last_message_at
+      const finalText = fullText.trim()
+      const { data: assistantRow, error: insertErr } = await supabase
+        .from('aria_messages')
+        .insert({
+          conversation_id: finalConversationId,
+          user_id:         user.id,
+          role:            'assistant',
+          content:         finalText,
+          ui_context:      uiContext,
+        })
+        .select('id')
+        .single()
 
-  // 6. Met a jour last_message_at
-  await supabase
-    .from('aria_conversations')
-    .update({ last_message_at: new Date().toISOString() })
-    .eq('id', conversationId)
-    .eq('user_id', user.id)
+      if (insertErr || !assistantRow) {
+        controller.enqueue(sseEncode({
+          type:    'error',
+          message: `Persistance message assistant: ${insertErr?.message ?? 'inconnue'}`,
+        }))
+        controller.close()
+        return
+      }
 
-  return ok({
-    content:         responseText,
-    conversation_id: conversationId,
-    message_id:      assistantRow.id as string,
-    usage: {
-      input_tokens:  claudeResponse.usage.input_tokens,
-      output_tokens: claudeResponse.usage.output_tokens,
+      await supabase
+        .from('aria_conversations')
+        .update({ last_message_at: new Date().toISOString() })
+        .eq('id', finalConversationId)
+        .eq('user_id', user.id)
+
+      // Recupere les usage tokens depuis le message final
+      let usage: { input_tokens: number; output_tokens: number } | null = null
+      try {
+        const finalMsg = await stream.finalMessage()
+        usage = { input_tokens: finalMsg.usage.input_tokens, output_tokens: finalMsg.usage.output_tokens }
+      } catch {
+        // pas bloquant
+      }
+
+      controller.enqueue(sseEncode({
+        type:       'done',
+        message_id: assistantRow.id as string,
+        usage,
+        model,
+      }))
+      controller.close()
     },
-    model,
+
+    cancel() {
+      // Si le client coupe la connexion, on n'a rien de plus a faire :
+      // les messages user + assistant peuvent etre incomplets, c'est
+      // accepte (Phase 2). La Phase 5 ajoutera un retry / completion.
+    },
+  })
+
+  return new NextResponse(responseStream, {
+    headers: {
+      'Content-Type':      'text/event-stream; charset=utf-8',
+      'Cache-Control':     'no-cache, no-store, must-revalidate',
+      'Connection':        'keep-alive',
+      'X-Accel-Buffering': 'no',
+    },
   })
 })

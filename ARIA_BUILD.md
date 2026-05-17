@@ -90,6 +90,71 @@ curl -X POST http://localhost:3000/api/aria/chat \
 
 Réponse attendue : un JSON `{ content, conversation_id, message_id, usage, model }`. Le `content` doit mentionner les vrais chiffres de l'utilisateur.
 
+---
+
+## Phase 2 — Streaming SSE ✅
+
+**Date :** 2026-05-18
+**Périmètre :** conversion de la route en Server-Sent Events pour que les réponses arrivent token par token, hook React `useAriaStream`, helpers SSE partagés.
+
+### Fichiers ajoutés/modifiés
+
+| Fichier | Rôle |
+|---|---|
+| `lib/aria/sse.ts` (nouveau) | Helpers SSE partagés : `encodeSSEFrame`, `parseSSEFrame`, `createSSEParser`. Types `AriaSSEEvent` (meta/delta/done/error). |
+| `app/api/aria/chat/route.ts` (modifié) | Convertie en `ReadableStream<Uint8Array>` + `NextResponse` avec headers SSE. Emet `meta` → `delta`* → `done` (ou `error`). Persistance du message assistant à la fin du stream, juste avant `done`. |
+| `hooks/use-aria-stream.ts` (nouveau) | Hook React client. État `{ messages, conversationId, isStreaming, lastError }`, méthodes `sendMessage`, `cancel`, `reset`. Consomme le SSE via `fetch + getReader + createSSEParser`. Abort sur unmount. |
+| `lib/aria/__tests__/sse.test.ts` (nouveau) | 22 tests : encode, parse, parser streaming (chunks fragmentés / multi-frames / flush). |
+| `app/api/aria/chat/route.test.ts` (nouveau) | 6 tests d'intégration : mocke Anthropic SDK + Supabase, vérifie ordre des frames + persistance user/assistant + cas d'erreur. |
+
+### Protocole SSE
+
+Format des évènements (préfixés `data: ` puis `\n\n`) :
+
+```
+data: {"type":"meta","conversation_id":"..."}                       ← émis en premier
+data: {"type":"delta","delta":"..."}                                ← un par token/chunk
+data: {"type":"done","message_id":"...","usage":{...},"model":"..."} ← terminal succès
+data: {"type":"error","message":"..."}                               ← terminal erreur
+```
+
+Le champ standard `event:` n'est pas utilisé : on reste compatible avec `fetch + getReader` (EventSource ne supporte pas POST).
+
+### Validation Phase 2
+
+```
+✓ npx vitest run     → 883/883 tests passent (+29 nouveaux pour Phase 2)
+✓ npx tsc --noEmit   → silence
+✓ npx eslint . --max-warnings 0 → silence
+```
+
+### Comment tester en local
+
+```bash
+# Streaming via curl (les chunks arrivent au fil de l'eau)
+curl -N -X POST http://localhost:3000/api/aria/chat \
+  -H 'Content-Type: application/json' \
+  -H 'Cookie: <session cookies>' \
+  -d '{"messages":[{"role":"user","content":"Salut"}]}'
+```
+
+Côté React :
+
+```tsx
+'use client'
+import { useAriaStream } from '@/hooks/use-aria-stream'
+
+function ChatDemo() {
+  const { messages, sendMessage, isStreaming } = useAriaStream({ ui: { section: 'dashboard' } })
+  return (
+    <>
+      {messages.map((m, i) => <div key={i}>{m.role}: {m.content}</div>)}
+      <button onClick={() => sendMessage('Salut ARIA')} disabled={isStreaming}>Envoyer</button>
+    </>
+  )
+}
+```
+
 ### Prochaine étape
 
-**Phase 2 — Streaming SSE** : convertir la route en `ReadableStream` pour que les réponses arrivent token par token. Nécessite aussi un hook React `useAriaStream`. **À démarrer après validation utilisateur.**
+**Phase 3 — Tool calls** : ARIA pourra appeler des fonctions de l'app (`simulerNouveauDCA`, `simulerStressTest`, `chercherPosition`, etc.). Chaque executor importera les fonctions canoniques existantes. **À démarrer après validation utilisateur.**
