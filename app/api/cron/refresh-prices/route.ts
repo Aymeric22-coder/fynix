@@ -50,11 +50,15 @@ interface PriceInsertRow {
 
 export async function GET(req: Request) {
   // ── Auth ────────────────────────────────────────────────────────────────
-  if (CRON_SECRET) {
-    const auth = req.headers.get('authorization')
-    if (auth !== `Bearer ${CRON_SECRET}`) {
-      return new Response('Unauthorized', { status: 401 })
-    }
+  // Fail closed : si CRON_SECRET n'est pas configure, on refuse tout appel
+  // pour eviter qu'une route publique declenche des fetchs Yahoo massifs
+  // et des ecritures cross-users via service role.
+  if (!CRON_SECRET) {
+    return new Response('Server misconfigured', { status: 500 })
+  }
+  const auth = req.headers.get('authorization')
+  if (auth !== `Bearer ${CRON_SECRET}`) {
+    return new Response('Unauthorized', { status: 401 })
   }
 
   if (!SERVICE_URL || !SERVICE_KEY) {

@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { translateAuthError } from '@/lib/auth/errorMessages'
+
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? process.env.NEXT_PUBLIC_SITE_URL ?? 'https://fynix-mu.vercel.app'
 
 export async function POST(req: NextRequest) {
   try {
@@ -14,16 +17,15 @@ export async function POST(req: NextRequest) {
     if (password) {
       // Password login
       const { error } = await supabase.auth.signInWithPassword({ email, password })
-      if (error) return NextResponse.json({ error: error.message }, { status: 401 })
+      if (error) return NextResponse.json({ error: translateAuthError(error.message) }, { status: 401 })
       return NextResponse.json({ ok: true })
     } else {
       // Magic link
-      const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://fynix-mu.vercel.app'
       const { error } = await supabase.auth.signInWithOtp({
         email,
-        options: { emailRedirectTo: `${siteUrl}/dashboard` },
+        options: { emailRedirectTo: `${APP_URL}/dashboard` },
       })
-      if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+      if (error) return NextResponse.json({ error: translateAuthError(error.message) }, { status: 400 })
       return NextResponse.json({ ok: true, magic: true })
     }
   } catch {

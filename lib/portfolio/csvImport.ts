@@ -755,11 +755,16 @@ export function parseBrokerCsv(csv: string, hint?: BrokerFormat): ParseResult {
  *
  * Les dividendes sont ignorés dans l'agrégation (ils ne créent pas de position).
  */
-export function aggregateToPositions(txs: NormalizedTransaction[]): AggregatedPosition[] {
+export function aggregateToPositions(
+  txs: NormalizedTransaction[],
+  excludedKeys: ReadonlyArray<string> = [],
+): AggregatedPosition[] {
+  const exclude = new Set(excludedKeys.map((k) => k.toUpperCase()))
   const groups = new Map<string, NormalizedTransaction[]>()
   for (const t of txs) {
     if (t.transaction_type === 'dividend') continue
     const key = (t.isin ?? t.ticker ?? t.name).toUpperCase()
+    if (exclude.has(key)) continue
     const arr = groups.get(key) ?? []
     arr.push(t)
     groups.set(key, arr)

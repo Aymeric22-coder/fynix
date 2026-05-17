@@ -26,6 +26,7 @@
  *   }
  */
 
+import { createHash } from 'node:crypto'
 import { createServerClient } from '@/lib/supabase/server'
 import { ok, err, withAuth } from '@/lib/utils/api'
 import type { User } from '@supabase/supabase-js'
@@ -58,31 +59,62 @@ const ASSET_CLASS_MAP: Record<AssetClassNormalized, AssetClass> = {
 
 // ─────────────────────────────────────────────────────────────────────
 
-async function readCsv(req: Request): Promise<{ csv: string | null; brokerHint?: BrokerFormat }> {
+async function readCsv(req: Request): Promise<{ csv: string | null; brokerHint?: BrokerFormat; excludedKeys: string[] }> {
   const contentType = req.headers.get('content-type') ?? ''
   if (contentType.includes('multipart/form-data')) {
     const fd = await req.formData()
     const file = fd.get('file')
-    if (!(file instanceof File)) return { csv: null }
+    if (!(file instanceof File)) return { csv: null, excludedKeys: [] }
     const bytes = await file.arrayBuffer()
     const csv = decodeCsvBytes(bytes)
     const hint = fd.get('broker') as BrokerFormat | null
-    return { csv, brokerHint: hint && hint !== 'unknown' ? hint : undefined }
+    const rawExcl = fd.get('excludedIds')
+    const excludedKeys = typeof rawExcl === 'string'
+      ? rawExcl.split(',').map((s) => s.trim()).filter(Boolean)
+      : []
+    return { csv, brokerHint: hint && hint !== 'unknown' ? hint : undefined, excludedKeys }
   }
   try {
-    const json = await req.json() as { csv?: string; broker?: BrokerFormat }
-    return { csv: json.csv ?? null, brokerHint: json.broker }
+    const json = await req.json() as { csv?: string; broker?: BrokerFormat; excludedIds?: string[]; _exclusions?: string[] }
+    const excludedKeys = Array.isArray(json.excludedIds)
+      ? json.excludedIds
+      : Array.isArray(json._exclusions) ? json._exclusions : []
+    return { csv: json.csv ?? null, brokerHint: json.broker, excludedKeys }
   } catch {
-    return { csv: null }
+    return { csv: null, excludedKeys: [] }
   }
 }
 
 export const POST = withAuth(async (req: Request, user: User) => {
-  const { csv, brokerHint } = await readCsv(req)
+  const { csv, brokerHint, excludedKeys } = await readCsv(req)
   if (!csv || csv.trim().length === 0) return err('Fichier CSV manquant', 400)
 
+  // Hash SHA-256 du contenu : la dedup tient compte des exclusions pour
+  // que l'utilisateur puisse re-importer le meme fichier avec une selection
+  // differente (ex : il avait exclu a tort une position).
+  const hashInput = csv + '|excl=' + [...excludedKeys].sort().join(',')
+  const fileHash = createHash('sha256').update(hashInput).digest('hex')
+
+  const supabase = await createServerClient()
+
+  // Dedup : si le meme (user, hash) existe deja, on refuse l'import.
+  {
+    const { data: existing } = await supabase
+      .from('import_history')
+      .select('id, imported_at, row_count')
+      .eq('user_id', user.id)
+      .eq('file_hash', fileHash)
+      .maybeSingle()
+    if (existing) {
+      return err(
+        `Ce fichier a deja ete importe le ${new Date(existing.imported_at as string).toLocaleString('fr-FR')} (${existing.row_count} positions). Si tu veux le re-importer, exclus ou ajoute au moins une position differente.`,
+        409,
+      )
+    }
+  }
+
   const parsed = parseBrokerCsv(csv, brokerHint)
-  const positions = aggregateToPositions(parsed.transactions)
+  const positions = aggregateToPositions(parsed.transactions, excludedKeys)
 
   const summary: ImportSummary = {
     broker_detected:    parsed.broker,
@@ -96,8 +128,6 @@ export const POST = withAuth(async (req: Request, user: User) => {
   }
 
   if (positions.length === 0) return ok(summary)
-
-  const supabase = await createServerClient()
 
   // ── 1) Pré-fetch des instruments existants par ISIN
   const isinsToResolve = positions
@@ -241,6 +271,24 @@ export const POST = withAuth(async (req: Request, user: User) => {
       }
     } catch (e) {
       summary.errors.push({ isin: pos.isin ?? undefined, reason: (e as Error).message })
+    }
+  }
+
+  // ── 4) Enregistre le hash pour bloquer les futurs imports identiques.
+  //       En cas d'echec (race condition, autre client a deja insere),
+  //       on log mais on ne fait pas echouer l'import.
+  const totalImported = summary.positions_imported + summary.positions_updated
+  if (totalImported > 0) {
+    const { error: he } = await supabase
+      .from('import_history')
+      .insert({
+        user_id:     user.id,
+        file_hash:   fileHash,
+        row_count:   totalImported,
+        broker_hint: parsed.broker,
+      })
+    if (he && process.env.NODE_ENV !== 'production') {
+      console.warn('[import] history insert failed:', he.message)
     }
   }
 

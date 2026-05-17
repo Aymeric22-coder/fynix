@@ -42,8 +42,19 @@ export function PatrimoineEvolutionChart({ cibleFire }: Props) {
   const [snapshots, setSnapshots] = useState<SnapshotRow[] | null>(null)
   const [error,     setError]     = useState<string | null>(null)
   const [mounted,   setMounted]   = useState(false)
+  // breakpoint md = 768px : sous ce seuil on reduit la largeur de l'axe Y
+  // pour donner plus de place a la courbe sur mobile (375px).
+  const [yAxisWidth, setYAxisWidth] = useState(56)
 
-  useEffect(() => { setMounted(true) }, [])
+  useEffect(() => {
+    setMounted(true)
+    if (typeof window === 'undefined') return
+    const mq = window.matchMedia('(max-width: 767px)')
+    const apply = () => setYAxisWidth(mq.matches ? 40 : 56)
+    apply()
+    mq.addEventListener('change', apply)
+    return () => mq.removeEventListener('change', apply)
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -63,7 +74,7 @@ export function PatrimoineEvolutionChart({ cibleFire }: Props) {
     return (
       <section className="card p-6">
         <Header />
-        <div className="h-64 skeleton" />
+        <div className="h-48 md:h-64 skeleton" />
       </section>
     )
   }
@@ -102,7 +113,8 @@ export function PatrimoineEvolutionChart({ cibleFire }: Props) {
     <section className="card p-6">
       <Header lastDate={snapshots[snapshots.length - 1]!.snapshot_date} count={snapshots.length} />
       {mounted && (
-        <ResponsiveContainer width="100%" height={260}>
+        <div className="h-48 md:h-64 w-full">
+        <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={snapshots} margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
             <defs>
               <linearGradient id="wealth-net" x1="0" y1="0" x2="0" y2="1">
@@ -129,7 +141,7 @@ export function PatrimoineEvolutionChart({ cibleFire }: Props) {
               tickFormatter={formatYAxis}
               axisLine={{ stroke: 'rgba(255,255,255,0.05)' }}
               tickLine={false}
-              width={56}
+              width={yAxisWidth}
             />
             <Tooltip content={<CustomTooltip />} />
             {/* Cible FIRE : ligne pointillée horizontale dorée */}
@@ -178,6 +190,7 @@ export function PatrimoineEvolutionChart({ cibleFire }: Props) {
             />
           </ComposedChart>
         </ResponsiveContainer>
+        </div>
       )}
     </section>
   )

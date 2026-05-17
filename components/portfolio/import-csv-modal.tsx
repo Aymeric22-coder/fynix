@@ -122,27 +122,13 @@ export function PortfolioImportCSVModal({ open, onClose }: Props) {
     if (!csv || !parseResult) return
     setImporting(true); setError(null)
     try {
-      // On envoie le CSV brut + le broker détecté ; le serveur refait
-      // l'agrégation. Pour exclure des positions, on filtre les transactions
-      // côté client AVANT envoi : on rebuild un CSV minimal n'est pas
-      // possible, donc on envoie les transactions normalisées en JSON.
-      const keptTxs = parseResult.transactions.filter((t) => {
-        const k = (t.isin ?? t.ticker ?? t.name).toUpperCase()
-        return !excluded.has(k)
-      })
       const res = await fetch('/api/portfolio/import', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({
           csv,
-          broker: parseResult.broker,
-          // Hint exclusions : envoyé en passant un CSV partiel via le champ csv ne
-          // marche pas → on accepte que toutes les positions seront importées.
-          // À ce stade le client peut au moins voir ce qu'il importe ; pour
-          // exclure, l'utilisateur peut désactiver des cases pour la lecture
-          // visuelle, mais la requête envoie le CSV complet et le serveur
-          // ignore aussi les positions clôturées.
-          _exclusions: Array.from(excluded),
+          broker:      parseResult.broker,
+          excludedIds: Array.from(excluded),
         }),
       })
       const json = await res.json()
@@ -168,7 +154,7 @@ export function PortfolioImportCSVModal({ open, onClose }: Props) {
   return (
     <Modal open={open} onClose={handleClose} title="Importer un export broker" size="lg">
       {/* Stepper visuel */}
-      <div className="flex items-center gap-2 mb-5 text-[10px] text-muted uppercase tracking-widest">
+      <div className="flex flex-wrap items-center gap-2 mb-5 text-[10px] text-muted uppercase tracking-widest">
         {['Fichier', 'Détection', 'Aperçu', 'Résultat'].map((label, i) => {
           const active = i + 1 === stepIndex
           const done   = i + 1 <  stepIndex
