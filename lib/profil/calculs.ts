@@ -246,11 +246,11 @@ export interface FireTypeDef {
 }
 
 export const FIRE_TYPES: ReadonlyArray<FireTypeDef> = [
-  { id: 'lean',    name: 'Lean FIRE',    desc: 'Frugalité maximale, liberté totale, budget minimal' },
-  { id: 'classic', name: 'Classic FIRE', desc: 'Indépendance confortable, dépenses raisonnables' },
-  { id: 'fat',     name: 'Fat FIRE',     desc: 'Liberté sans compromis, train de vie élevé' },
-  { id: 'coast',   name: 'Coast FIRE',   desc: 'Patrimoine qui fructifie seul jusqu\'à la retraite' },
-  { id: 'barista', name: 'Barista FIRE', desc: 'Semi-retraite avec un petit revenu d\'activité plaisir' },
+  { id: 'lean',    name: 'Indépendance frugale',    desc: 'Frugalité maximale, liberté totale, budget minimal' },
+  { id: 'classic', name: 'Indépendance équilibrée', desc: 'Train de vie raisonnable, dépenses sous contrôle' },
+  { id: 'fat',     name: 'Indépendance confortable', desc: 'Liberté sans compromis, train de vie élevé' },
+  { id: 'coast',   name: 'Indépendance autonome',   desc: 'Patrimoine qui fructifie seul jusqu\'à la retraite' },
+  { id: 'barista', name: 'Indépendance partielle',  desc: 'Semi-retraite avec un petit revenu d\'activité plaisir' },
 ] as const
 
 // ───────────────────────────────────────────────────────────────────
