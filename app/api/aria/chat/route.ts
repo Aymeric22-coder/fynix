@@ -29,6 +29,8 @@ import { err, withAuth } from '@/lib/utils/api'
 import { buildLiveContext } from '@/lib/aria'
 import { encodeSSEFrame, type AriaSSEEvent } from '@/lib/aria/sse'
 import { ARIA_TOOLS, executeTool, type ToolExecutionContext } from '@/lib/aria/tools'
+import { summarizeConversation } from '@/lib/aria/memory/summarizer'
+import { extractAndPersistInsights } from '@/lib/aria/memory/insights'
 import { getPatrimoineComplet } from '@/lib/analyse/aggregateur'
 import type { User } from '@supabase/supabase-js'
 
@@ -152,7 +154,12 @@ export const POST = withAuth(async (req: Request, user: User) => {
   let patrimoineForTools
   try {
     patrimoineForTools = await getPatrimoineComplet(user.id)
-    const built = await buildLiveContext({ supabase, userId: user.id, ui: uiContext })
+    const built = await buildLiveContext({
+      supabase,
+      userId:                user.id,
+      ui:                    uiContext,
+      excludeConversationId: conversationId,
+    })
     systemPrompt = built.systemPrompt
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
@@ -313,6 +320,13 @@ export const POST = withAuth(async (req: Request, user: User) => {
         model,
       }))
       controller.close()
+
+      // Phase 4 — fire-and-forget : resume + insights, n'attendent pas
+      // la fin du stream et ne bloquent jamais la reponse user.
+      void summarizeConversation({ supabase, userId: user.id, conversationId: finalConversationId })
+        .catch(() => { /* silencieux : un summary rate n'est pas une erreur visible */ })
+      void extractAndPersistInsights({ supabase, userId: user.id, conversationId: finalConversationId })
+        .catch(() => { /* idem */ })
     },
 
     cancel() { /* coupe propre cote client, rien a faire */ },

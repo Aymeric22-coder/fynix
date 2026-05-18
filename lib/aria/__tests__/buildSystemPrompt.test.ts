@@ -11,7 +11,7 @@ import type { AriaRawData } from '../types'
 const REF_DATE = new Date('2026-05-17T10:00:00.000Z')
 
 function makeRaw(p = makePatrimoineFixture()): AriaRawData {
-  return { patrimoine: p, snapshots: [], activites: [] }
+  return { patrimoine: p, snapshots: [], activites: [], conversations_passees: [], insights_persistants: [] }
 }
 
 describe('buildSystemPrompt — structure generale', () => {
@@ -91,7 +91,7 @@ describe('buildSystemPrompt — alertes et actions', () => {
 
   it('indique "aucune alerte" si pas de reco', () => {
     const patrimoine = makePatrimoineFixture({ recommandations: [] })
-    const ctx = buildContextFromRaw({ patrimoine, snapshots: [], activites: [] }, null, REF_DATE)
+    const ctx = buildContextFromRaw({ patrimoine, snapshots: [], activites: [], conversations_passees: [], insights_persistants: [] }, null, REF_DATE)
     const prompt = buildSystemPrompt(ctx)
     expect(prompt).toContain('Aucune alerte active')
   })
@@ -104,6 +104,8 @@ describe('buildSystemPrompt — alertes et actions', () => {
       patrimoine: makePatrimoineFixture(),
       snapshots:  [],
       activites,
+      conversations_passees: [],
+      insights_persistants:  [],
     }, null, REF_DATE)
     const prompt = buildSystemPrompt(ctx)
     expect(prompt).toContain('Ajout 5 LVMH')
@@ -125,12 +127,60 @@ describe('buildSystemPrompt — UI', () => {
   })
 })
 
+describe('buildSystemPrompt — memoire long-terme (Phase 4)', () => {
+  it('expose un message par defaut si aucune conversation passee', () => {
+    const ctx = buildContextFromRaw(makeRaw(), null, REF_DATE)
+    const prompt = buildSystemPrompt(ctx)
+    expect(prompt).toContain('HISTORIQUE DES CONVERSATIONS PASSEES')
+    expect(prompt).toContain('premiere conversation')
+  })
+
+  it('liste les 3 conversations passees avec date + summary', () => {
+    const ctx = buildContextFromRaw({
+      patrimoine: makePatrimoineFixture(),
+      snapshots: [], activites: [],
+      conversations_passees: [
+        { id: 'c1', summary: 'Discussion sur le DCA',          last_message_at: '2026-05-10T10:00:00.000Z' },
+        { id: 'c2', summary: 'Question sur fiscalite LMNP',    last_message_at: '2026-05-05T10:00:00.000Z' },
+      ],
+      insights_persistants: [],
+    }, null, REF_DATE)
+    const prompt = buildSystemPrompt(ctx)
+    expect(prompt).toContain('Discussion sur le DCA')
+    expect(prompt).toContain('Question sur fiscalite LMNP')
+  })
+
+  it('expose un message par defaut si aucun insight', () => {
+    const ctx = buildContextFromRaw(makeRaw(), null, REF_DATE)
+    const prompt = buildSystemPrompt(ctx)
+    expect(prompt).toContain('INSIGHTS UTILISATEUR PERSISTANTS')
+    expect(prompt).toContain('aucun insight')
+  })
+
+  it('liste les insights avec type, confiance, texte', () => {
+    const ctx = buildContextFromRaw({
+      patrimoine: makePatrimoineFixture(),
+      snapshots: [], activites: [],
+      conversations_passees: [],
+      insights_persistants: [
+        { type: 'preoccupation', insight: 'Stresse sur la securite financiere', confidence: 0.85, last_confirmed_at: '2026-05-15T10:00:00.000Z' },
+        { type: 'objectif',      insight: 'Vise un FIRE lean a 50 ans',         confidence: 0.7,  last_confirmed_at: '2026-05-10T10:00:00.000Z' },
+      ],
+    }, null, REF_DATE)
+    const prompt = buildSystemPrompt(ctx)
+    expect(prompt).toContain('preoccupation')
+    expect(prompt).toContain('Stresse sur la securite financiere')
+    expect(prompt).toContain('85%')
+    expect(prompt).toContain('Vise un FIRE lean')
+  })
+})
+
 describe('buildSystemPrompt — robustesse', () => {
   it('ne crashe pas avec un patrimoine vide', () => {
     const patrimoine = makePatrimoineFixture({
       positions: [], biens: [], comptes: [], recommandations: [],
     })
-    const ctx = buildContextFromRaw({ patrimoine, snapshots: [], activites: [] }, null, REF_DATE)
+    const ctx = buildContextFromRaw({ patrimoine, snapshots: [], activites: [], conversations_passees: [], insights_persistants: [] }, null, REF_DATE)
     expect(() => buildSystemPrompt(ctx)).not.toThrow()
     const prompt = buildSystemPrompt(ctx)
     expect(prompt).toContain('(aucune position)')
@@ -138,7 +188,7 @@ describe('buildSystemPrompt — robustesse', () => {
 
   it('ne crashe pas avec une projection FIRE nulle', () => {
     const patrimoine = makePatrimoineFixture({ projectionFIRESnapshot: null })
-    const ctx = buildContextFromRaw({ patrimoine, snapshots: [], activites: [] }, null, REF_DATE)
+    const ctx = buildContextFromRaw({ patrimoine, snapshots: [], activites: [], conversations_passees: [], insights_persistants: [] }, null, REF_DATE)
     expect(() => buildSystemPrompt(ctx)).not.toThrow()
   })
 })

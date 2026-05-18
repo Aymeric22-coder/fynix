@@ -356,6 +356,8 @@ export function buildContextFromRaw(
     scores:           mapScores(patrimoine.scores),
     alertes:          mapAlertes(patrimoine),
     actions_recentes: mapActions(activites),
+    conversations_passees: raw.conversations_passees ?? [],
+    insights_persistants:  raw.insights_persistants  ?? [],
     ui:               mapUI(ui),
     generated_at:     now.toISOString(),
   }

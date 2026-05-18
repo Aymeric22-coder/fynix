@@ -60,6 +60,14 @@ vi.mock('@/lib/aria', () => ({
   buildLiveContext: vi.fn(async () => ({ context: {}, systemPrompt: 'STUBBED' })),
 }))
 
+vi.mock('@/lib/aria/memory/summarizer', () => ({
+  summarizeConversation: vi.fn(async () => ({ generated: false, reason: 'mocked' })),
+}))
+
+vi.mock('@/lib/aria/memory/insights', () => ({
+  extractAndPersistInsights: vi.fn(async () => ({ persisted: false, insights: [], reason: 'mocked' })),
+}))
+
 vi.mock('@/lib/analyse/aggregateur', () => ({
   getPatrimoineComplet: vi.fn(async () => makePatrimoineFixture({
     positions: [makePositionFixture({ isin: 'US-APPLE', name: 'Apple Inc', current_value: 1000 })],

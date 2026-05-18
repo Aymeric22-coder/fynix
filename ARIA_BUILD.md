@@ -221,6 +221,60 @@ Aucune logique de simulation ré-implémentée.
 ✓ npx eslint . --max-warnings 0 → silence
 ```
 
+---
+
+## Phase 4 — Mémoire persistante long terme ✅
+
+**Date :** 2026-05-18
+**Périmètre :** résumés de conversations passées + insights persistants (préoccupations / objectifs / préférences) injectés dans le system prompt aux conversations suivantes. Déclencheurs fire-and-forget en fin de stream.
+
+### Fichiers ajoutés/modifiés
+
+| Fichier | Rôle |
+|---|---|
+| `supabase/migrations/029_aria_user_insights.sql` (+ DOWN) | Table `aria_user_insights` (type, insight, confidence 0-1, last_confirmed_at) avec unique index sur `(user_id, type, lower(insight))` pour dédup. RLS owner-only. |
+| `lib/aria/memory/summarizer.ts` | `summarizeConversation()` → Claude Haiku résume une conversation 5+ messages en 3-5 phrases, persiste dans `aria_conversations.summary`. `shouldSummarize()` helper pur. |
+| `lib/aria/memory/insights.ts` | `extractAndPersistInsights()` → Claude Haiku extrait 0-3 insights, persiste avec merge des doublons (confidence moyenne pondérée). `parseInsightsResponse()` helper pur tolérant JSON imparfait. |
+| `lib/aria/types.ts` (modifié) | Nouveaux types `AriaPastConversation`, `AriaPersistentInsight` + 2 champs dans `AriaRawData` et `AriaLiveContext`. |
+| `lib/aria/fetchUserData.ts` (modifié) | +2 loaders parallèles : `loadConversationsPassees` (3 dernières avec summary, exclut la conv courante) + `loadInsightsPersistants` (top 5 par confidence). |
+| `lib/aria/computeMetrics.ts` (modifié) | Transmet les 2 nouveaux blocs dans `AriaLiveContext`. |
+| `lib/aria/buildSystemPrompt.ts` (modifié) | +2 sections : `HISTORIQUE DES CONVERSATIONS PASSEES` et `INSIGHTS UTILISATEUR PERSISTANTS`. |
+| `lib/aria/index.ts` (modifié) | `buildLiveContext()` accepte `excludeConversationId`. |
+| `app/api/aria/chat/route.ts` (modifié) | Déclenche `summarizeConversation` + `extractAndPersistInsights` en fire-and-forget juste après `controller.close()`. N'attend pas, ne bloque pas. |
+| Tests (5 fichiers modifiés + 2 nouveaux) | 32 nouveaux tests : summarizer (10), insights (15), buildSystemPrompt (4 sections), fetchUserData (3). |
+
+### Modèle utilisé pour summarizer + insights
+
+`claude-haiku-4-5` (rapide, peu cher) avec un `max_tokens` court. Override possible via param `options.model` côté appelant.
+
+### Déclencheurs
+
+- **Summarizer** : si la conversation a ≥ 5 messages ET (pas de summary OU summary > 24h).
+- **Insights** : si la conversation a ≥ 5 messages.
+
+Les deux tournent en `void promise.catch(() => {})` après `controller.close()` — n'impactent jamais la latence vue par l'utilisateur.
+
+### Sécurité
+
+- RLS owner-only sur `aria_user_insights` (auth.uid() = user_id).
+- Unique index empêche les doublons exacts (même user, type, texte insensible casse).
+- Toutes les fonctions memory ont try/catch global — **ne throw jamais**, retournent `{ generated: false, reason }` en cas d'erreur.
+
+### Migration à appliquer
+
+```sql
+-- À coller dans Supabase Studio SQL Editor
+-- Voir supabase/migrations/029_aria_user_insights.sql
+```
+
+### Validation Phase 4
+
+```
+✓ npx vitest run     → 941/941 tests passent (+32 nouveaux pour Phase 4)
+✓ npx tsc --noEmit   → silence
+✓ npx eslint . --max-warnings 0 → silence
+```
+
 ### Prochaine étape
 
-**Phase 4 — Mémoire persistante long terme** : résumés de conversations passées injectés dans le system prompt, table `aria_user_insights` (préoccupations / objectifs / préférences détectées). **À démarrer après validation utilisateur.**
+**Phase 5 — Feedback loop & Détection proactive** : boutons 👍/👎 sous les messages, page admin `/admin/aria-feedback`, détection des blocages utilisateur et nudges contextuels. **À démarrer après validation utilisateur.**

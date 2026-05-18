@@ -19,7 +19,7 @@
 import { formatCurrency, formatPercent, formatDate } from '@/lib/utils/format'
 import type {
   AriaActionRecente, AriaAlerte, AriaBien, AriaCompteCash, AriaLiveContext,
-  AriaPosition, AriaRepartitionLine,
+  AriaPastConversation, AriaPersistentInsight, AriaPosition, AriaRepartitionLine,
 } from './types'
 
 // ─────────────────────────────────────────────────────────────────
@@ -204,6 +204,29 @@ function sectionActions(actions: AriaActionRecente[]): string {
   return lines.join('\n')
 }
 
+function sectionConversationsPassees(convs: AriaPastConversation[]): string {
+  if (convs.length === 0) {
+    return ['HISTORIQUE DES CONVERSATIONS PASSEES', '(premiere conversation ou aucun resume disponible)'].join('\n')
+  }
+  const lines = ['HISTORIQUE DES CONVERSATIONS PASSEES (3 dernieres resumes)']
+  for (const c of convs) {
+    lines.push(`- ${formatDate(c.last_message_at, 'short')} : ${c.summary}`)
+  }
+  return lines.join('\n')
+}
+
+function sectionInsightsPersistants(insights: AriaPersistentInsight[]): string {
+  if (insights.length === 0) {
+    return ['INSIGHTS UTILISATEUR PERSISTANTS', '(aucun insight enregistre)'].join('\n')
+  }
+  const lines = ['INSIGHTS UTILISATEUR PERSISTANTS (top 5, observe sur les conversations precedentes)']
+  for (const i of insights) {
+    const conf = Math.round(i.confidence * 100)
+    lines.push(`- [${i.type} · ${conf}% confiance] ${i.insight}`)
+  }
+  return lines.join('\n')
+}
+
 function sectionUI(ctx: AriaLiveContext): string {
   const { ui } = ctx
   const lines = ['SECTION UI ACTIVE']
@@ -228,6 +251,10 @@ export function buildSystemPrompt(ctx: AriaLiveContext): string {
     sectionAlertes(ctx.alertes),
     '',
     sectionActions(ctx.actions_recentes),
+    '',
+    sectionConversationsPassees(ctx.conversations_passees ?? []),
+    '',
+    sectionInsightsPersistants(ctx.insights_persistants ?? []),
     '',
     sectionUI(ctx),
   ].join('\n')

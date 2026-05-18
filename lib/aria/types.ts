@@ -153,6 +153,27 @@ export interface AriaActionRecente {
   description: string
 }
 
+// ─────────────────────────────────────────────────────────────────
+// Memoire long-terme (Phase 4)
+// ─────────────────────────────────────────────────────────────────
+
+export interface AriaPastConversation {
+  id:              string
+  /** Resume genere automatiquement par lib/aria/memory/summarizer. */
+  summary:         string
+  /** ISO date string de la derniere activite sur cette conversation. */
+  last_message_at: string
+}
+
+export type AriaInsightType = 'preoccupation' | 'objectif' | 'preference'
+
+export interface AriaPersistentInsight {
+  type:              AriaInsightType
+  insight:           string
+  confidence:        number              // 0..1
+  last_confirmed_at: string              // ISO
+}
+
 export interface AriaUIContext {
   /** Section applicative active ('dashboard' | 'portefeuille' | 'analyse' | 'fire' | 'immo' | 'cash' | 'profil'...). */
   section:                 string | null
@@ -175,6 +196,10 @@ export interface AriaLiveContext {
   scores:          AriaScores
   alertes:         AriaAlerte[]
   actions_recentes: AriaActionRecente[]
+  /** Resumes des 3 dernieres conversations passees (Phase 4). */
+  conversations_passees: AriaPastConversation[]
+  /** Insights persistants top 5 par confidence (Phase 4). */
+  insights_persistants:  AriaPersistentInsight[]
   ui:              AriaUIContext
   /** ISO timestamp du moment ou le contexte a ete construit. */
   generated_at:    string
@@ -213,6 +238,10 @@ export interface AriaRawData {
   snapshots:   AriaWealthSnapshotRow[]
   /** 10 dernieres lignes de `user_activity_log`. */
   activites:   AriaActivityRow[]
+  /** 3 conversations passees les plus recentes avec summary non null (Phase 4). */
+  conversations_passees: AriaPastConversation[]
+  /** Top 5 insights persistants par confidence DESC (Phase 4). */
+  insights_persistants:  AriaPersistentInsight[]
 }
 
 // ─────────────────────────────────────────────────────────────────

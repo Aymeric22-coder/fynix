@@ -22,9 +22,11 @@ export async function buildLiveContext(params: {
   supabase: SupabaseClient
   userId:   string
   ui?:      UIInput | null
+  /** Si fourni, exclut cette conversation de la section "conversations passees". */
+  excludeConversationId?: string | null
 }): Promise<AriaBuiltContext> {
-  const { supabase, userId, ui } = params
-  const raw     = await fetchUserData(supabase, userId)
+  const { supabase, userId, ui, excludeConversationId } = params
+  const raw     = await fetchUserData(supabase, userId, excludeConversationId ?? null)
   const context = buildContextFromRaw(raw, ui ?? null)
   const systemPrompt = buildSystemPrompt(context)
   return { context, systemPrompt }

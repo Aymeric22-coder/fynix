@@ -17,7 +17,10 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getPatrimoineComplet } from '@/lib/analyse/aggregateur'
-import type { AriaActivityRow, AriaRawData, AriaWealthSnapshotRow } from './types'
+import type {
+  AriaActivityRow, AriaInsightType, AriaPastConversation,
+  AriaPersistentInsight, AriaRawData, AriaWealthSnapshotRow,
+} from './types'
 
 /**
  * Enveloppe une promesse Supabase pour qu'une erreur n'interrompe pas
@@ -77,21 +80,83 @@ async function loadActivites(
   }))
 }
 
+async function loadConversationsPassees(
+  supabase: SupabaseClient,
+  userId: string,
+  excludeConversationId: string | null,
+): Promise<AriaPastConversation[]> {
+  // 3 dernieres conversations qui ont deja un summary, en excluant la
+  // conversation courante (si on est en train de chatter dessus).
+  let query = supabase
+    .from('aria_conversations')
+    .select('id, summary, last_message_at')
+    .eq('user_id', userId)
+    .not('summary', 'is', null)
+    .order('last_message_at', { ascending: false })
+    .limit(3)
+  if (excludeConversationId) {
+    query = query.neq('id', excludeConversationId)
+  }
+
+  const { data, error } = await query
+  if (error) throw error
+  return (data ?? []).map((row) => ({
+    id:              row.id as string,
+    summary:         row.summary as string,
+    last_message_at: row.last_message_at as string,
+  }))
+}
+
+async function loadInsightsPersistants(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<AriaPersistentInsight[]> {
+  // Top 5 par confidence DESC, tie-break sur recence (last_confirmed_at).
+  const { data, error } = await supabase
+    .from('aria_user_insights')
+    .select('insight_type, insight, confidence, last_confirmed_at')
+    .eq('user_id', userId)
+    .order('confidence',        { ascending: false })
+    .order('last_confirmed_at', { ascending: false })
+    .limit(5)
+
+  if (error) throw error
+  return (data ?? []).map((row) => ({
+    type:              row.insight_type as AriaInsightType,
+    insight:           row.insight as string,
+    confidence:        Number(row.confidence ?? 0),
+    last_confirmed_at: row.last_confirmed_at as string,
+  }))
+}
+
 /**
  * Point d'entree : recupere en parallele patrimoine complet + snapshots
- * + activites recentes. Garantit un retour meme si certaines queries
- * echouent (le `patrimoine` reste obligatoire — sans lui ARIA n'a rien
- * a dire).
+ * + activites recentes + conversations passees + insights persistants.
+ * Garantit un retour meme si certaines queries echouent (le `patrimoine`
+ * reste obligatoire — sans lui ARIA n'a rien a dire).
+ *
+ * @param excludeConversationId si fourni, exclu cette conversation de la
+ *   liste des "conversations passees" (utile quand on est en train de
+ *   chatter dessus — on ne veut pas se citer soi-meme).
  */
 export async function fetchUserData(
   supabase: SupabaseClient,
   userId: string,
+  excludeConversationId: string | null = null,
 ): Promise<AriaRawData> {
-  const [patrimoine, snapshots, activites] = await Promise.all([
+  const [patrimoine, snapshots, activites, conversationsPassees, insightsPersistants] = await Promise.all([
     getPatrimoineComplet(userId),
-    safeQuery('loadSnapshots', loadSnapshots(supabase, userId), [] as AriaWealthSnapshotRow[]),
-    safeQuery('loadActivites', loadActivites(supabase, userId), [] as AriaActivityRow[]),
+    safeQuery('loadSnapshots',         loadSnapshots(supabase, userId),                                  [] as AriaWealthSnapshotRow[]),
+    safeQuery('loadActivites',         loadActivites(supabase, userId),                                  [] as AriaActivityRow[]),
+    safeQuery('loadConversationsPassees', loadConversationsPassees(supabase, userId, excludeConversationId), [] as AriaPastConversation[]),
+    safeQuery('loadInsightsPersistants',  loadInsightsPersistants(supabase, userId),                     [] as AriaPersistentInsight[]),
   ])
 
-  return { patrimoine, snapshots, activites }
+  return {
+    patrimoine,
+    snapshots,
+    activites,
+    conversations_passees: conversationsPassees,
+    insights_persistants:  insightsPersistants,
+  }
 }

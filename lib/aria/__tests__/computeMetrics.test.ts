@@ -14,6 +14,8 @@ function makeRaw(overrides: Partial<AriaRawData> = {}): AriaRawData {
     patrimoine: makePatrimoineFixture(),
     snapshots:  [],
     activites:  [],
+    conversations_passees: [],
+    insights_persistants:  [],
     ...overrides,
   }
 }
@@ -52,7 +54,7 @@ describe('buildContextFromRaw — patrimoine', () => {
       total_dettes:    30_000,
     }
     const patrimoine = makePatrimoineFixture()
-    const ctx = buildContextFromRaw({ patrimoine, snapshots: [snap30], activites: [] }, null, REF_DATE)
+    const ctx = buildContextFromRaw({ patrimoine, snapshots: [snap30], activites: [], conversations_passees: [], insights_persistants: [] }, null, REF_DATE)
     // attendu: ((totalNet - 50_000) / 50_000) * 100
     const attendu = ((patrimoine.totalNet - 50_000) / 50_000) * 100
     expect(ctx.patrimoine.evolution_30j_pct).toBeCloseTo(attendu, 1)
@@ -79,7 +81,7 @@ describe('buildContextFromRaw — portefeuille', () => {
       makePositionFixture({ isin: 'D', name: 'DDD', current_value: 50 }),
     ]
     const patrimoine = makePatrimoineFixture({ positions })
-    const ctx = buildContextFromRaw({ patrimoine, snapshots: [], activites: [] }, null, REF_DATE)
+    const ctx = buildContextFromRaw({ patrimoine, snapshots: [], activites: [], conversations_passees: [], insights_persistants: [] }, null, REF_DATE)
     expect(ctx.portefeuille.nb_positions).toBe(4)
     expect(ctx.portefeuille.top_3_par_valeur.map((p) => p.ticker)).toEqual(['B', 'C', 'A'])
   })
@@ -90,7 +92,7 @@ describe('buildContextFromRaw — portefeuille', () => {
       makePositionFixture({ gain_loss: -50 }),
       makePositionFixture({ gain_loss: 100 }),
     ]
-    const ctx = buildContextFromRaw({ patrimoine: makePatrimoineFixture({ positions }), snapshots: [], activites: [] }, null, REF_DATE)
+    const ctx = buildContextFromRaw({ patrimoine: makePatrimoineFixture({ positions }), snapshots: [], activites: [], conversations_passees: [], insights_persistants: [] }, null, REF_DATE)
     expect(ctx.portefeuille.pv_latente_totale).toBe(250)
   })
 
@@ -99,7 +101,7 @@ describe('buildContextFromRaw — portefeuille', () => {
       secteur: `Sec${i}`, valeur: 100, pourcentage: 8.3, benchmark: 5, deviation: 3, status: 'aligned' as const,
       positions: [], alerte: false,
     }))
-    const ctx = buildContextFromRaw({ patrimoine: makePatrimoineFixture({ repartitionSectorielle }), snapshots: [], activites: [] }, null, REF_DATE)
+    const ctx = buildContextFromRaw({ patrimoine: makePatrimoineFixture({ repartitionSectorielle }), snapshots: [], activites: [], conversations_passees: [], insights_persistants: [] }, null, REF_DATE)
     expect(ctx.portefeuille.repartition_secteurs.length).toBe(8)
   })
 })
@@ -110,19 +112,19 @@ describe('buildContextFromRaw — immo', () => {
       makeBienFixture({ id: '1', loyer_mensuel: 600 }),
       makeBienFixture({ id: '2', loyer_mensuel: 800 }),
     ]
-    const ctx = buildContextFromRaw({ patrimoine: makePatrimoineFixture({ biens }), snapshots: [], activites: [] }, null, REF_DATE)
+    const ctx = buildContextFromRaw({ patrimoine: makePatrimoineFixture({ biens }), snapshots: [], activites: [], conversations_passees: [], insights_persistants: [] }, null, REF_DATE)
     expect(ctx.immo.nb_biens).toBe(2)
     expect(ctx.immo.loyers_annuels_totaux).toBe((600 + 800) * 12)
   })
 
   it('normalise niveau_levier "Sans crédit" en "Sans credit"', () => {
     const biens = [makeBienFixture({ niveau_levier: 'Sans crédit', credit_restant: 0 })]
-    const ctx = buildContextFromRaw({ patrimoine: makePatrimoineFixture({ biens }), snapshots: [], activites: [] }, null, REF_DATE)
+    const ctx = buildContextFromRaw({ patrimoine: makePatrimoineFixture({ biens }), snapshots: [], activites: [], conversations_passees: [], insights_persistants: [] }, null, REF_DATE)
     expect(ctx.immo.biens[0]!.niveau_levier).toBe('Sans credit')
   })
 
   it('gere absence de biens', () => {
-    const ctx = buildContextFromRaw({ patrimoine: makePatrimoineFixture({ biens: [] }), snapshots: [], activites: [] }, null, REF_DATE)
+    const ctx = buildContextFromRaw({ patrimoine: makePatrimoineFixture({ biens: [] }), snapshots: [], activites: [], conversations_passees: [], insights_persistants: [] }, null, REF_DATE)
     expect(ctx.immo.nb_biens).toBe(0)
     expect(ctx.immo.biens).toEqual([])
     expect(ctx.immo.loyers_annuels_totaux).toBe(0)
@@ -143,7 +145,7 @@ describe('buildContextFromRaw — cash', () => {
     const patrimoine = makePatrimoineFixture({
       comptes: [makeCompteFixture({ solde: 100_000 })],
     })
-    const ctx = buildContextFromRaw({ patrimoine, snapshots: [], activites: [] }, null, REF_DATE)
+    const ctx = buildContextFromRaw({ patrimoine, snapshots: [], activites: [], conversations_passees: [], insights_persistants: [] }, null, REF_DATE)
     expect(ctx.cash.cash_excessif).toBe(true)
   })
 
@@ -152,7 +154,7 @@ describe('buildContextFromRaw — cash', () => {
       fireInputs: { ...makePatrimoineFixture().fireInputs, charges_mensuelles: 0 },
       revenuPassifImmo: 0,
     })
-    const ctx = buildContextFromRaw({ patrimoine, snapshots: [], activites: [] }, null, REF_DATE)
+    const ctx = buildContextFromRaw({ patrimoine, snapshots: [], activites: [], conversations_passees: [], insights_persistants: [] }, null, REF_DATE)
     expect(ctx.cash.mois_precaution).toBeNull()
   })
 })
@@ -170,7 +172,7 @@ describe('buildContextFromRaw — fire', () => {
 
   it('gere absence de projection FIRE', () => {
     const patrimoine = makePatrimoineFixture({ projectionFIRESnapshot: null })
-    const ctx = buildContextFromRaw({ patrimoine, snapshots: [], activites: [] }, null, REF_DATE)
+    const ctx = buildContextFromRaw({ patrimoine, snapshots: [], activites: [], conversations_passees: [], insights_persistants: [] }, null, REF_DATE)
     expect(ctx.fire.age_fire_estime).toBeNull()
     expect(ctx.fire.cible_patrimoine).toBeNull()
     expect(ctx.fire.progression_pct).toBeNull()
@@ -189,7 +191,7 @@ describe('buildContextFromRaw — scores', () => {
 describe('buildContextFromRaw — alertes', () => {
   it('transforme une reco haute en alerte critical', () => {
     const recos = [makeRecommandationFixture({ priorite: 'haute', titre: 'Cash insuffisant', categorie: 'liquidite' })]
-    const ctx = buildContextFromRaw({ patrimoine: makePatrimoineFixture({ recommandations: recos }), snapshots: [], activites: [] }, null, REF_DATE)
+    const ctx = buildContextFromRaw({ patrimoine: makePatrimoineFixture({ recommandations: recos }), snapshots: [], activites: [], conversations_passees: [], insights_persistants: [] }, null, REF_DATE)
     const alerte = ctx.alertes.find((a) => a.message === 'Cash insuffisant')
     expect(alerte).toBeDefined()
     expect(alerte!.type).toBe('critical')
@@ -204,6 +206,8 @@ describe('buildContextFromRaw — alertes', () => {
       patrimoine: makePatrimoineFixture({ scores, recommandations: [] }),
       snapshots: [],
       activites: [],
+      conversations_passees: [],
+      insights_persistants: [],
     }, null, REF_DATE)
     const alerte = ctx.alertes.find((a) => a.categorie === 'solidite')
     expect(alerte).toBeDefined()
@@ -241,7 +245,7 @@ describe('buildContextFromRaw — robustesse', () => {
       biens:     [],
       comptes:   [],
     })
-    expect(() => buildContextFromRaw({ patrimoine, snapshots: [], activites: [] }, null, REF_DATE)).not.toThrow()
+    expect(() => buildContextFromRaw({ patrimoine, snapshots: [], activites: [], conversations_passees: [], insights_persistants: [] }, null, REF_DATE)).not.toThrow()
   })
 
   it('emet generated_at en ISO', () => {
