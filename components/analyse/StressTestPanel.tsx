@@ -48,8 +48,12 @@ interface Props {
 
 const CHART_HEIGHT = 280
 
+/** Scénario par défaut sélectionné au montage du panneau. Permet
+ *  d'afficher d'emblée des résultats stress concrets sans cliquer. */
+const DEFAULT_SCENARIO_ID = 'crash_marches'
+
 export function StressTestPanel(props: Props) {
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selectedId, setSelectedId] = useState<string | null>(DEFAULT_SCENARIO_ID)
 
   const selectedScenario = useMemo(
     () => SCENARIOS_STRESS.find((s) => s.id === selectedId) ?? null,
@@ -82,12 +86,13 @@ export function StressTestPanel(props: Props) {
   return (
     <section className="card p-5">
       <div className="mb-4">
-        <h2 className="text-sm font-medium text-primary flex items-center gap-2">
-          <ShieldAlert size={14} className="text-warning" />
-          Résistance au stress
+        <h2 className="text-base font-semibold text-primary flex items-center gap-2">
+          <ShieldAlert size={16} className="text-warning" />
+          Et si&hellip; — résistance au stress
         </h2>
-        <p className="text-xs text-secondary mt-0.5">
-          Simulez l&apos;impact d&apos;une crise sur votre trajectoire FIRE. Cliquez sur un scénario pour voir l&apos;effet.
+        <p className="text-xs text-secondary mt-1 leading-relaxed">
+          6 scénarios pour tester ta trajectoire FIRE face à une crise.
+          Le crash boursier est sélectionné par défaut — clique sur une autre carte pour comparer.
         </p>
       </div>
 

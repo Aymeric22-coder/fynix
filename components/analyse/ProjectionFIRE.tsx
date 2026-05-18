@@ -405,25 +405,6 @@ function ProjectionFIREInner({ patrimoine, lastUpdatedAt }: Props) {
                 tooltip="Augmentation annuelle de votre capacité d'épargne (évolution de carrière, baisse des charges, enfants qui grandissent…). 0 % = épargne constante." />
       </div>
 
-      {/* ─── Stress tests (Sprint 4) ─── */}
-      <div className="mt-6 pt-5 border-t border-border">
-        <StressTestPanel
-          projectionBase={result}
-          age_actuel={fi.age!}
-          age_cible={fi.age_cible!}
-          cible_fire={result.ciblePatrimoineAjusteeInflation}
-          revenu_passif_cible={revenuCible}
-          rendement_central_pct={rendement}
-          swr_pct={swr}
-          inflation_pct={inflationGenerale}
-          total_portefeuille={patrimoine.totalPortefeuille}
-          total_immo={patrimoine.totalImmo}
-          total_cash={patrimoine.totalCash}
-          epargne_mensuelle={epargne}
-          revenu_loyers={Math.max(0, patrimoine.revenuPassifImmo)}
-        />
-      </div>
-
       {/* ─── Simulateur acquisitions futures ─── */}
       <div className="mt-6 pt-5 border-t border-border space-y-3">
         <div className="flex items-center justify-between">
@@ -475,6 +456,25 @@ function ProjectionFIREInner({ patrimoine, lastUpdatedAt }: Props) {
             ))}
           </div>
         )}
+      </div>
+
+      {/* ─── Stress tests — REMONTÉS en évidence sous les acquisitions ─── */}
+      <div className="mt-6 pt-5 border-t border-border">
+        <StressTestPanel
+          projectionBase={result}
+          age_actuel={fi.age!}
+          age_cible={fi.age_cible!}
+          cible_fire={result.ciblePatrimoineAjusteeInflation}
+          revenu_passif_cible={revenuCible}
+          rendement_central_pct={rendement}
+          swr_pct={swr}
+          inflation_pct={inflationGenerale}
+          total_portefeuille={patrimoine.totalPortefeuille}
+          total_immo={patrimoine.totalImmo}
+          total_cash={patrimoine.totalCash}
+          epargne_mensuelle={epargne}
+          revenu_loyers={Math.max(0, patrimoine.revenuPassifImmo)}
+        />
       </div>
 
       {/* ─── Disclaimer ─── */}

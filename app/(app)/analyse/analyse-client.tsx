@@ -1,13 +1,22 @@
 /**
- * Page /analyse — structure en 6 onglets (style /portefeuille) :
- *   1. Global               — KPIs + donut + score global
- *   2. Portefeuille         — sous-onglets par classe d'actif
- *   3. Immo physique        — synthèse biens + KPIs
- *   4. Cash                 — répartition + rendement + couverture
- *   5. Scores & Projection  — 5 scores + projection FIRE + simulateur
- *   6. Recommandations      — liste priorisée + disclaimer AMF
+ * Page /analyse — refonte 3 onglets (remplace l'ancienne structure 8 onglets) :
  *
- * Un onglet est masqué si l'utilisateur n'a aucun actif dans cette classe.
+ *   1. Où j'en suis  — 5 scores + répartition patrimoine +
+ *                       analyse portefeuille (6 sous-onglets MSCI) +
+ *                       couverture cash en mois.
+ *   2. Simuler       — Projection FIRE (chart + sliders) + acquisitions
+ *                       futures + stress tests (« Et si… ») + simulateur
+ *                       What-if (épargne / immobilier / allocation).
+ *   3. Optimiser     — Hero gains fiscaux récupérables €/an +
+ *                       8 opportunités fiscales chiffrées + recommandations
+ *                       mensuelles (avec bouton « Fait » de session).
+ *
+ * Les onglets supprimés (Global, Immo physique, Cash en doublon, Simulateur
+ * séparé) ont vu leur contenu redistribué ci-dessus ou retiré quand il
+ * faisait doublon avec les pages dédiées (/immobilier, /cash, Dashboard).
+ *
+ * Un paramètre URL `?tab=situation|simuler|optimiser` active l'onglet
+ * correspondant (deep-linking depuis le Dashboard, /paramètres, ARIA…).
  */
 'use client'
 
@@ -20,42 +29,99 @@ import { Badge } from '@/components/ui/badge'
 import { Tabs, type TabItem } from '@/components/ui/tabs'
 import { usePatrimoineAnalyse } from '@/hooks/use-patrimoine-analyse'
 
-import { GlobalAnalyse }            from '@/components/analyse/tabs/GlobalAnalyse'
-import { PortefeuilleAnalyse }      from '@/components/analyse/tabs/PortefeuilleAnalyse'
-import { ImmoPhysiqueAnalyse }      from '@/components/analyse/tabs/ImmoPhysiqueAnalyse'
-import { CashAnalyse }              from '@/components/analyse/tabs/CashAnalyse'
-import { ScoresProjectionAnalyse }  from '@/components/analyse/tabs/ScoresProjectionAnalyse'
-import { WhatIfSimulator }          from '@/components/analyse/WhatIfSimulator'
-import { OptimiseurFiscal }         from '@/components/analyse/OptimiseurFiscal'
-import { Recommandations }          from '@/components/analyse/Recommandations'
+import { ScoresBand }              from '@/components/analyse/ScoresBand'
+import { RepartitionChart }        from '@/components/analyse/RepartitionChart'
+import { CouvertureCash }          from '@/components/analyse/CouvertureCash'
+import { PortefeuilleAnalyse }     from '@/components/analyse/tabs/PortefeuilleAnalyse'
+import { ProjectionFIRE }          from '@/components/analyse/ProjectionFIRE'
+import { WhatIfSimulator }         from '@/components/analyse/WhatIfSimulator'
+import { OptimiseurHero }          from '@/components/analyse/OptimiseurHero'
+import { OptimiseurFiscal }        from '@/components/analyse/OptimiseurFiscal'
+import { Recommandations }         from '@/components/analyse/Recommandations'
+import { calculerOpportunitesFiscales } from '@/lib/analyse/optimiseurFiscal'
 
 export function AnalyseClient() {
   const { data, isLoading, error, refresh, refreshing, lastUpdatedAt } = usePatrimoineAnalyse()
 
-  // Construit la liste des onglets visibles (sauf si data nulle)
+  // Pré-calcul des opportunités fiscales pour le hero de l'onglet Optimiser.
+  // useMemo TOUJOURS appelé (rules of hooks) — early returns plus bas.
+  const opportunites = useMemo(
+    () => (data ? calculerOpportunitesFiscales({ patrimoine: data }).opportunites : []),
+    [data],
+  )
+
   const tabs: TabItem[] = useMemo(() => {
     if (!data) return []
-    const out: TabItem[] = [
-      { id: 'global',       label: 'Global',       content: <GlobalAnalyse data={data} /> },
+    return [
+      {
+        id: 'situation',
+        label: 'Où j’en suis',
+        content: (
+          <div className="space-y-6">
+            {/* Scores cliquables */}
+            <section>
+              <p className="text-xs text-secondary uppercase tracking-widest mb-3">
+                Scores d&apos;intelligence
+              </p>
+              <ScoresBand scores={data.scores} />
+              <p className="text-xs text-muted mt-2">
+                Clique sur une carte pour voir le détail du calcul et l&apos;action recommandée.
+              </p>
+            </section>
+
+            {/* Répartition patrimoine par classe d'actif */}
+            <RepartitionChart classes={data.repartitionClasses} totalNet={data.totalNet} />
+
+            {/* Couverture cash en mois (seul élément utile de l'ancien onglet Cash) */}
+            {data.comptes.length > 0 && <CouvertureCash data={data} />}
+
+            {/* Analyse portefeuille détaillée (6 sous-onglets MSCI) — unique à /analyse */}
+            {(data.positions.length > 0 || data.cryptoTotal > 0) && (
+              <section>
+                <p className="text-xs text-secondary uppercase tracking-widest mb-3">
+                  Analyse du portefeuille financier
+                </p>
+                <PortefeuilleAnalyse data={data} />
+              </section>
+            )}
+          </div>
+        ),
+      },
+      {
+        id: 'simuler',
+        label: 'Simuler',
+        content: (
+          <div className="space-y-6">
+            {/* Projection FIRE (chart + sliders) + acquisitions futures
+                + stress tests « Et si… » sont déjà orchestrés en interne. */}
+            <ProjectionFIRE patrimoine={data} lastUpdatedAt={lastUpdatedAt} />
+
+            {/* What-if épargne / immobilier / allocation (ancien onglet Simulateur) */}
+            <WhatIfSimulator patrimoine={data} />
+          </div>
+        ),
+      },
+      {
+        id: 'optimiser',
+        label: 'Optimiser',
+        badge: data.recommandations.length > 0
+          ? <Badge variant="warning">{data.recommandations.length}</Badge>
+          : undefined,
+        content: (
+          <div className="space-y-6">
+            {/* Hero gains fiscaux récupérables */}
+            <OptimiseurHero opportunites={opportunites} />
+
+            {/* 8 opportunités fiscales détaillées */}
+            <OptimiseurFiscal patrimoine={data} />
+
+            {/* Recommandations mensuelles avec bouton « Fait » de session */}
+            <Recommandations recos={data.recommandations} />
+          </div>
+        ),
+      },
     ]
-    // Portefeuille visible dès qu'il y a au moins une position (financier)
-    if (data.positions.length > 0 || data.cryptoTotal > 0) {
-      out.push({ id: 'portefeuille', label: 'Portefeuille', content: <PortefeuilleAnalyse data={data} /> })
-    }
-    if (data.biens.length > 0) {
-      out.push({ id: 'immo', label: 'Immo physique', content: <ImmoPhysiqueAnalyse data={data} /> })
-    }
-    if (data.comptes.length > 0) {
-      out.push({ id: 'cash', label: 'Cash', content: <CashAnalyse data={data} /> })
-    }
-    out.push({ id: 'scores', label: 'Scores & Projection', content: <ScoresProjectionAnalyse data={data} lastUpdatedAt={lastUpdatedAt} /> })
-    out.push({ id: 'simulateur', label: 'Simulateur', content: <WhatIfSimulator patrimoine={data} /> })
-    out.push({ id: 'recos',  label: 'Recommandations',
-               badge: data.recommandations.length > 0 ? <Badge variant="warning">{data.recommandations.length}</Badge> : undefined,
-               content: <Recommandations recos={data.recommandations} /> })
-    out.push({ id: 'fiscal', label: 'Optimisation fiscale', content: <OptimiseurFiscal patrimoine={data} /> })
-    return out
-  }, [data, lastUpdatedAt])
+  }, [data, lastUpdatedAt, opportunites])
 
   // ── Chargement initial ────────────────────────────────────────────
   if (isLoading && !data) {
@@ -83,9 +149,8 @@ export function AnalyseClient() {
   if (!data) return null
 
   // ── Patrimoine vide ──────────────────────────────────────────────
-  // On affiche un bandeau explicatif + on garde Scores & Projection visibles
-  // pour guider un utilisateur fraichement onboarde (la projection peut
-  // utiliser ses objectifs de profil meme sans actif).
+  // On garde les 3 onglets visibles : Scores & Projection peuvent utiliser
+  // les objectifs de profil même sans actif.
   const isEmpty = data.totalBrut === 0
 
   const lastUpdatedFr = new Date(data.lastUpdated).toLocaleString('fr-FR', {
@@ -125,17 +190,17 @@ export function AnalyseClient() {
         <div className="card p-4 mb-4 border-l-4 border-l-accent">
           <p className="text-sm text-primary font-medium">Patrimoine vide</p>
           <p className="text-xs text-secondary mt-1">
-            Tu n&apos;as pas encore d&apos;actif. La projection ci-dessous est basee
+            Tu n&apos;as pas encore d&apos;actif. La projection ci-dessous est basée
             uniquement sur tes objectifs de profil. Ajoute des positions dans
             <Link href="/portefeuille" className="text-accent hover:underline ml-1">Portefeuille</Link>,
             <Link href="/immobilier" className="text-accent hover:underline ml-1">Immobilier</Link> ou
             <Link href="/cash" className="text-accent hover:underline ml-1">Cash</Link> pour
-            debloquer l&apos;analyse complete.
+            débloquer l&apos;analyse complète.
           </p>
         </div>
       )}
 
-      <Tabs tabs={tabs} urlParam="tab" />
+      <Tabs tabs={tabs} defaultTab="situation" urlParam="tab" />
     </div>
   )
 }

@@ -3,7 +3,6 @@ import { createServerClient }    from '@/lib/supabase/server'
 import { KpiGrid }               from '@/components/dashboard/kpi-grid'
 import { AlertsPanel }           from '@/components/dashboard/alerts-panel'
 import { TopAssetsList }         from '@/components/dashboard/top-assets-list'
-import { DonutChart }            from '@/components/charts/donut-chart'
 import { PatrimonyAreaChart }    from '@/components/charts/area-chart'
 import { computeRealEstatePortfolio } from '@/lib/real-estate/portfolio'
 import { buildPortfolioFromDb }  from '@/lib/portfolio/build-from-db'
@@ -397,31 +396,20 @@ export default async function DashboardPage() {
         </div>
       )}
 
-      {/* Graphiques */}
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-        {/* Timeline — 3/5 */}
-        <div className="lg:col-span-3 card p-6">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h2 className="text-sm font-medium text-primary">Évolution du patrimoine</h2>
-              <p className="text-xs text-secondary mt-0.5">
-                {snapshots.length} point{snapshots.length > 1 ? 's' : ''} · Patrimoine net + brut
-              </p>
-            </div>
-            <ConfidenceBadge level={confScore >= 80 ? 'high' : confScore >= 50 ? 'medium' : 'low'} />
+      {/* Timeline patrimoine — pleine largeur depuis la refonte 3-onglets de
+          /analyse : le donut Allocation a été retiré d'ici car il fait doublon
+          avec la « Répartition patrimoniale » de /analyse > « Où j'en suis ». */}
+      <div className="card p-6">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h2 className="text-sm font-medium text-primary">Évolution du patrimoine</h2>
+            <p className="text-xs text-secondary mt-0.5">
+              {snapshots.length} point{snapshots.length > 1 ? 's' : ''} · Patrimoine net + brut
+            </p>
           </div>
-          <PatrimonyAreaChart data={timeline} />
+          <ConfidenceBadge level={confScore >= 80 ? 'high' : confScore >= 50 ? 'medium' : 'low'} />
         </div>
-
-        {/* Donut — 2/5 */}
-        <div className="lg:col-span-2 card p-6">
-          <h2 className="text-sm font-medium text-primary mb-6">Allocation</h2>
-          <DonutChart
-            data={donutData}
-            centerLabel="Patrimoine brut"
-            centerValue={formatCurrency(grossValue, 'EUR', { compact: true })}
-          />
-        </div>
+        <PatrimonyAreaChart data={timeline} />
       </div>
 
       {/* Top actifs */}

@@ -38,7 +38,7 @@ export function ActionsDuMois({ actions }: Props) {
           </p>
         </div>
         <Link
-          href="/analyse?tab=recos"
+          href="/analyse?tab=optimiser"
           className="text-xs text-accent hover:text-accent-hover transition-colors inline-flex items-center gap-1"
         >
           Voir toutes les recommandations
