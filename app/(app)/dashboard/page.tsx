@@ -10,7 +10,12 @@ import { getPatrimoineComplet }  from '@/lib/analyse/aggregateur'
 import { FIREProgressHero, type FireHeroData } from '@/components/dashboard/fire-progress-hero'
 import { FiscalKpiBanner } from '@/components/dashboard/fiscal-kpi-banner'
 import { TropheesCard } from '@/components/dashboard/trophees-card'
+import {
+  CalendrierFiscal,
+  type EvenementFiscalSerialisable,
+} from '@/components/dashboard/calendrier-fiscal'
 import { enrichJalonsAvecHistorique } from '@/lib/analyse/jalonsHistorique'
+import { getEvenementsFiscaux } from '@/lib/fiscal/calendrier'
 import type { JalonFIRE } from '@/types/analyse'
 import { ActionsDuMois } from '@/components/dashboard/actions-du-mois'
 import { DashboardEmptyState } from '@/components/dashboard/empty-state'
@@ -122,6 +127,52 @@ export default async function DashboardPage() {
     valeur: seuil,
   }))
   const jalonsEnrichis = enrichJalonsAvecHistorique(baseJalons, snapshotsForJalons)
+
+  // ── Calendrier fiscal personnalisé ───────────────────────────────────────
+  // Dates d'ouverture PEA / AV : on prend la `created_at` de la première
+  // enveloppe correspondante (proxy raisonnable, à défaut de date saisie).
+  const { data: envelopesRows } = await supabase
+    .from('financial_envelopes')
+    .select('envelope_type, created_at')
+    .eq('user_id', user!.id)
+    .order('created_at', { ascending: true })
+  const peaOuverture = envelopesRows?.find((e) => e.envelope_type === 'pea')?.created_at ?? null
+  const avOuverture  = envelopesRows?.find((e) => e.envelope_type === 'assurance_vie')?.created_at ?? null
+
+  // Solde Livret A (somme balances des comptes de type livret_a)
+  const livretASolde = patrimoineComplet.comptes
+    .filter((c) => c.type === 'livret_a')
+    .reduce((s, c) => s + (c.solde ?? 0), 0)
+
+  // Régimes fiscaux distincts présents dans les biens (skip null)
+  const regimesImmoSet = new Set<string>()
+  for (const b of patrimoineComplet.biens) {
+    if (b.fiscal_regime) regimesImmoSet.add(b.fiscal_regime)
+  }
+
+  // Présence d'une résidence secondaire (type === 'Résidence secondaire' / proxy)
+  const hasResidenceSecondaire = patrimoineComplet.biens.some(
+    (b) => (b.type ?? '').toLowerCase().includes('secondaire'),
+  )
+
+  const evenementsFiscauxRaw = getEvenementsFiscaux({
+    patrimoineNet:          patrimoineComplet.totalNet,
+    tmiPct:                 patrimoineComplet.fireInputs.tmi_rate,
+    enveloppes:             patrimoineComplet.fireInputs.enveloppes ?? [],
+    regimesImmo:            Array.from(regimesImmoSet),
+    nbBiensImmo:            patrimoineComplet.biens.length,
+    hasResidenceSecondaire,
+    peaOuvertureDate:       peaOuverture,
+    avOuvertureDate:        avOuverture,
+    livretASolde,
+    now:                    new Date(),
+  })
+  // Sérialise Date → ISO string pour traverser la frontière Server → Client.
+  const evenementsFiscaux: EvenementFiscalSerialisable[] = evenementsFiscauxRaw.map((e) => ({
+    ...e,
+    date: e.date.toISOString(),
+  }))
+
   const actionsDuMois = genererActionsMensuelles(patrimoineComplet, {
     lastPositionAddedAt,
     opportunitesFiscales,
@@ -334,6 +385,9 @@ export default async function DashboardPage() {
 
       {/* Jalons patrimoniaux franchis */}
       <TropheesCard jalons={jalonsEnrichis} />
+
+      {/* Calendrier fiscal personnalisé (12 prochains mois) */}
+      <CalendrierFiscal evenements={evenementsFiscaux} />
 
       {/* Alertes */}
       {alerts.length > 0 && <AlertsPanel alerts={alerts} />}
