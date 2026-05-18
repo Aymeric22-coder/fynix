@@ -14,7 +14,7 @@
 import { createServiceClient } from '@/lib/supabase/server'
 
 const HTML_OK = (email?: string) => `<!doctype html>
-<html lang="fr"><head><meta charset="utf-8"><title>Désinscription Fynix</title>
+<html lang="fr"><head><meta charset="utf-8"><title>Désinscription FIRECORE</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
   body { margin:0; background:#0a0a0a; color:#f4f4f5; font-family:-apple-system,sans-serif; padding:48px 16px; }
@@ -25,7 +25,7 @@ const HTML_OK = (email?: string) => `<!doctype html>
 </style>
 </head><body>
 <div class="card">
-  <div style="font-size:14px;font-weight:700;letter-spacing:0.18em;margin-bottom:24px;">FYNIX</div>
+  <div style="font-size:14px;font-weight:700;letter-spacing:0.18em;margin-bottom:24px;">FIRECORE</div>
   <h1>✓ Vous êtes désinscrit</h1>
   <p>Vous ne recevrez plus le rapport patrimonial mensuel${email ? ' à <strong>' + email + '</strong>' : ''}.</p>
   <p>Vous pouvez vous réinscrire à tout moment depuis <a href="https://fynix-mu.vercel.app/parametres">vos paramètres</a>.</p>
@@ -44,7 +44,7 @@ const HTML_ERROR = `<!doctype html>
 </style>
 </head><body>
 <div class="card">
-  <div style="font-size:14px;font-weight:700;letter-spacing:0.18em;margin-bottom:24px;">FYNIX</div>
+  <div style="font-size:14px;font-weight:700;letter-spacing:0.18em;margin-bottom:24px;">FIRECORE</div>
   <h1>Lien invalide ou expiré</h1>
   <p>Ce lien de désinscription n'est plus valide. Il a peut-être déjà été utilisé.</p>
   <p>Vous pouvez gérer vos préférences depuis <a href="https://fynix-mu.vercel.app/parametres">vos paramètres</a>.</p>

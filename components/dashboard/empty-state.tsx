@@ -40,7 +40,7 @@ export function DashboardEmptyState() {
           Commence par ajouter un actif
         </h2>
         <p className="text-sm text-secondary mt-2 max-w-md mx-auto">
-          Renseigne ce que tu detiens et Fynix calcule automatiquement allocation,
+          Renseigne ce que tu detiens et FIRECORE calcule automatiquement allocation,
           scores, trajectoire d&apos;indépendance et recommandations.
         </p>
       </div>

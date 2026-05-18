@@ -1,4 +1,4 @@
-# Quick Wins — Sprint produit Fynix
+﻿# Quick Wins — Sprint produit FIRECORE
 
 > Date : 2026-05-18
 > Tests : **966 → 977** (+11)
@@ -41,11 +41,11 @@ Infra de test étendue : `jsdom` + `@testing-library/react` + `@vitejs/plugin-re
 ## BLOC 2 — ARIA dans les empty states ✅
 
 **Créé :**
-- `lib/aria/openAria.ts` : helper `openAriaWithPrompt(prompt)` + constante `ARIA_OPEN_EVENT = 'fynix:aria-open'`. Mécanisme léger via `CustomEvent` sur `window` (zéro context provider à ajouter).
+- `lib/aria/openAria.ts` : helper `openAriaWithPrompt(prompt)` + constante `ARIA_OPEN_EVENT = 'firecore:aria-open'`. Mécanisme léger via `CustomEvent` sur `window` (zéro context provider à ajouter).
 - `components/ui/__tests__/empty-state.test.tsx` (3 tests).
 
 **Modifié :**
-- `components/aria/AriaLauncher.tsx` : ajoute un `useEffect` qui s'abonne à `fynix:aria-open` et ouvre le panneau avec le prompt fourni.
+- `components/aria/AriaLauncher.tsx` : ajoute un `useEffect` qui s'abonne à `firecore:aria-open` et ouvre le panneau avec le prompt fourni.
 - `components/ui/empty-state.tsx` : nouveau prop optionnel `ariaPrompt?: string`. Quand fourni, affiche un bouton secondaire « 💬 Demander à ARIA » qui dispatche l'event.
 - 5 empty states reçoivent un `ariaPrompt` adapté :
   - `app/(app)/portefeuille/page.tsx` — ETF World + small caps avec 500 €/mois

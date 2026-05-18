@@ -6,8 +6,13 @@ const geistSans = Geist({ variable: '--font-geist-sans', subsets: ['latin'] })
 const geistMono = Geist_Mono({ variable: '--font-geist-mono', subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: { default: 'FYNIX', template: '%s — FYNIX' },
-  description: 'Pilotage patrimonial holistique',
+  title: {
+    default:  'FIRECORE',
+    template: '%s | FIRECORE',
+  },
+  description: 'Simulateur expert d\'indépendance financière — '
+    + 'projection FIRE, optimisation fiscale, stress tests.',
+  applicationName: 'FIRECORE',
   robots: 'noindex,nofollow',  // application privée
 }
 

@@ -11,7 +11,7 @@ interface EmptyStateProps {
   /**
    * Quand fourni, affiche un bouton secondaire « 💬 Demander à ARIA »
    * sous l'action principale. Au clic, ouvre le panel ARIA avec ce
-   * prompt pré-rempli (via l'event global `fynix:aria-open`).
+   * prompt pré-rempli (via l'event global `firecore:aria-open`).
    *
    * Le bouton n'est rendu que côté client (composant 'use client').
    */

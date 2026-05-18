@@ -77,7 +77,7 @@ export function OptimiseurFiscal({ patrimoine }: Props) {
         </div>
         <p className="text-xs text-secondary leading-relaxed mb-4">
           Pour calculer vos opportunités fiscales (PEA, PER, déficit foncier, démembrement…),
-          Fynix a besoin de votre tranche marginale d&apos;imposition (TMI), des enveloppes que vous
+          FIRECORE a besoin de votre tranche marginale d&apos;imposition (TMI), des enveloppes que vous
           détenez et des régimes fiscaux de vos biens immobiliers.
         </p>
         <Link
@@ -174,7 +174,7 @@ export function OptimiseurFiscal({ patrimoine }: Props) {
         <div className="flex items-start gap-2">
           <span className="text-base shrink-0" aria-hidden>⚖️</span>
           <p className="text-xs text-secondary leading-relaxed">
-            Ces estimations sont indicatives et basées sur les données renseignées dans Fynix.
+            Ces estimations sont indicatives et basées sur les données renseignées dans FIRECORE.
             <strong className="text-primary"> Consultez un conseiller fiscal ou un expert-comptable</strong>
             {' '}avant toute décision d&apos;optimisation. La fiscalité française évolue chaque année et
             les seuils, taux et plafonds mentionnés peuvent changer. Cet outil ne constitue pas un

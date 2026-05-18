@@ -10,7 +10,7 @@
  * Resend, logs) reste côté Vercel — l'Edge Function n'est qu'un trigger.
  *
  * Pourquoi cette séparation :
- *   - L'aggregateur Fynix vit côté Next.js (imports lourds, types TS)
+ *   - L'aggregateur FIRECORE vit côté Next.js (imports lourds, types TS)
  *   - L'Edge Function aurait dû dupliquer toute la logique en Deno
  *   - Mieux : appeler l'API Next.js qui sait déjà tout faire
  *

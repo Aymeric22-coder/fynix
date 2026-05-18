@@ -34,7 +34,7 @@ describe('<EmptyState>', () => {
     expect(screen.getByRole('button', { name: /demander à aria/i })).toBeInTheDocument()
   })
 
-  it('dispatche un CustomEvent fynix:aria-open avec le prompt au clic sur ARIA', () => {
+  it('dispatche un CustomEvent firecore:aria-open avec le prompt au clic sur ARIA', () => {
     const listener = vi.fn<(e: Event) => void>()
     window.addEventListener(ARIA_OPEN_EVENT, listener)
     render(

@@ -90,7 +90,7 @@ export function ProfilClient() {
           showResumeBanner
             ? 'Tu as déjà commencé le questionnaire — reprends où tu en étais.'
             : showWizard
-            ? 'Quelques minutes pour calibrer ton accompagnement Fynix.'
+            ? 'Quelques minutes pour calibrer ton accompagnement FIRECORE.'
             : 'Ta synthèse globale — recalculée à chaque modification.'
         }
       />

@@ -1,4 +1,4 @@
-# CLAUDE.md — Fynix
+# CLAUDE.md — FIRECORE
 
 > App de pilotage patrimonial + FIRE (FR). Analyse multi-classes (bourse, ETF, crypto, SCPI, immo physique, cash) avec scores d'intelligence, projection FIRE et benchmarks MSCI.
 

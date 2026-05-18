@@ -1,4 +1,4 @@
-# Next Actions — Fynix
+# Next Actions — FIRECORE
 
 Décisions produit en attente et opérations à programmer après les Sprints 0, 1, 2 et 3.
 

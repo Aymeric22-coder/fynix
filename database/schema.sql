@@ -1,5 +1,5 @@
 -- =============================================================================
--- FYNIX — Schéma de base de données complet
+-- FIRECORE — Schéma de base de données complet
 -- Version : 1.0.0 | Phase MVP
 -- Moteur   : PostgreSQL (Supabase)
 -- Règle    : APPEND-ONLY sur valuations. Jamais de DELETE logique direct.

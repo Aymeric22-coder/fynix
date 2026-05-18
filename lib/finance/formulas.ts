@@ -1,4 +1,4 @@
-// Toutes les formules financières de FYNIX.
+// Toutes les formules financières de FIRECORE.
 // Aucune approximation — calculs exacts avec précision double.
 
 // ─── Crédit ───────────────────────────────────────────────────────────────────

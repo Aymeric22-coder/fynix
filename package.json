@@ -1,7 +1,8 @@
 {
-  "name": "fynix",
+  "name": "firecore",
   "version": "0.1.0",
   "private": true,
+  "description": "Simulateur expert d'indépendance financière — projection FIRE, optimisation fiscale, stress tests.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",

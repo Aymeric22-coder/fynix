@@ -109,7 +109,7 @@ export function generateMonthlyReportHTML(data: MonthlyReportData): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Fynix — Rapport ${escapeHtml(data.mois_annee)}</title>
+<title>FIRECORE — Rapport ${escapeHtml(data.mois_annee)}</title>
 </head>
 <body style="margin:0;padding:0;background:${COLORS.bg};color:${COLORS.primary};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
   <!-- Wrapper centré 600px -->
@@ -146,7 +146,7 @@ function renderHeader(data: MonthlyReportData): string {
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
         <tr>
           <td>
-            <div style="font-size:16px;font-weight:700;letter-spacing:0.18em;color:${COLORS.primary};">FYNIX</div>
+            <div style="font-size:16px;font-weight:700;letter-spacing:0.18em;color:${COLORS.primary};">FIRECORE</div>
             <div style="font-size:12px;color:${COLORS.accent};margin-top:6px;letter-spacing:0.06em;">
               Votre rapport patrimonial — ${escapeHtml(data.mois_annee)}
             </div>
@@ -361,7 +361,7 @@ function renderFooter(data: MonthlyReportData): string {
   <tr>
     <td style="padding:20px 28px 24px;border-top:1px solid ${COLORS.border};background:${COLORS.bg};">
       <div style="font-size:11px;color:${COLORS.muted};line-height:1.6;text-align:center;">
-        <strong style="color:${COLORS.secondary};">Fynix</strong> — Votre copilote patrimonial<br>
+        <strong style="color:${COLORS.secondary};">FIRECORE</strong> — Votre copilote patrimonial<br>
         <a href="${escapeHtml(data.url_desinscription)}"
            style="color:${COLORS.muted};text-decoration:underline;">
           Ne plus recevoir ces emails

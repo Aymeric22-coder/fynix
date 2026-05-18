@@ -13,7 +13,7 @@
  * Côté AriaLauncher : `window.addEventListener(ARIA_OPEN_EVENT, …)`.
  */
 
-export const ARIA_OPEN_EVENT = 'fynix:aria-open'
+export const ARIA_OPEN_EVENT = 'firecore:aria-open'
 
 export interface AriaOpenDetail {
   prompt: string

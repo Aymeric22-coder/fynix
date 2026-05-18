@@ -22,7 +22,7 @@ export interface StepMeta {
 }
 
 export const STEPS: ReadonlyArray<StepMeta> = [
-  { id: 1, title: 'Situation personnelle',     sub: 'Les bases de votre profil pour personnaliser toute votre expérience Fynix.' },
+  { id: 1, title: 'Situation personnelle',     sub: 'Les bases de votre profil pour personnaliser toute votre expérience FIRECORE.' },
   { id: 2, title: 'Revenus',                   sub: 'Vos revenus nets mensuels, toutes sources confondues.' },
   { id: 3, title: 'Charges & Dépenses',        sub: 'Vos charges fixes et courantes pour calculer votre vrai reste à vivre.' },
   { id: 4, title: 'Capacité d\'investissement', sub: 'Ce que vous pouvez réellement allouer chaque mois à votre patrimoine.' },

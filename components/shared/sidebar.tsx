@@ -46,7 +46,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
       {/* Logo */}
       <div className="px-5 py-6 border-b border-border">
         <span className="text-xl font-bold tracking-tight">
-          FY<span className="text-accent">NIX</span>
+          FIRE<span className="text-accent">CORE</span>
         </span>
       </div>
 

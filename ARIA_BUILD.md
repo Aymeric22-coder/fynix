@@ -1,6 +1,6 @@
-# ARIA — Journal de construction
+﻿# ARIA — Journal de construction
 
-Assistant patrimonial IA intégré à FYNIX. Document vivant : tenu à jour au fil des phases.
+Assistant patrimonial IA intégré à FIRECORE. Document vivant : tenu à jour au fil des phases.
 
 Spec d'origine : prompt utilisateur du 2026-05-17 (6 phases).
 
@@ -54,7 +54,7 @@ Pour rollback : exécuter `028_aria_init_DOWN.sql`.
 
 ### Adaptations du spec d'origine
 
-Le prompt d'origine mentionnait des tables qui ne portent pas ces noms dans Fynix :
+Le prompt d'origine mentionnait des tables qui ne portent pas ces noms dans FIRECORE :
 - `biens` → `real_estate_properties` (consommé via `getPatrimoineComplet`)
 - `credits` → `debts` (idem)
 - `loyers` → `real_estate_lots` (idem)

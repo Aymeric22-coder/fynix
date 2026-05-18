@@ -1,4 +1,4 @@
-# Audit Fixes — Fynix
+# Audit Fixes — FIRECORE
 
 > **Évolution depuis l'audit initial**
 >

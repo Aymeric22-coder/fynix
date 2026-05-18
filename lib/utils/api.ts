@@ -37,7 +37,7 @@ export function withAuth<Ctx = RouteContext>(handler: RouteHandler<Ctx>) {
 
       return await handler(req, user, ctx)
     } catch (e) {
-      console.error('[fynix] Unhandled error:', e)
+      console.error('[firecore] Unhandled error:', e)
       return err('Internal server error', 500)
     }
   }

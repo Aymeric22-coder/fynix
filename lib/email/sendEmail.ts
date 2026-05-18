@@ -11,7 +11,7 @@
 
 import { Resend } from 'resend'
 
-export const DEFAULT_FROM = 'Fynix <onboarding@resend.dev>'
+export const DEFAULT_FROM = 'FIRECORE <onboarding@resend.dev>'
 
 export interface SendEmailParams {
   to:      string

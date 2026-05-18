@@ -1,6 +1,6 @@
-# Fynix
+# FIRECORE
 
-App de pilotage patrimonial + FIRE (FR). Voir [CLAUDE.md](./CLAUDE.md) pour la vision produit et le détail de l'architecture.
+App de pilotage patrimonial + indépendance financière (FR). Voir [CLAUDE.md](./CLAUDE.md) pour la vision produit et le détail de l'architecture.
 
 ## Démarrage rapide
 

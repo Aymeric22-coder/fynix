@@ -1,8 +1,8 @@
-# ARIA — Assistant patrimonial IA de FYNIX
+﻿# ARIA — Assistant patrimonial IA de FIRECORE
 
 Documentation utilisateur et développeur d'ARIA.
 
-ARIA est un assistant IA intégré à FYNIX qui :
+ARIA est un assistant IA intégré à FIRECORE qui :
 - Connaît en temps réel toutes les données patrimoniales de l'utilisateur (Supabase live)
 - Peut exécuter des actions dans l'app via des function calls (simuler stress tests, recalculer FIRE…)
 - Garde la mémoire des conversations précédentes au fil des semaines

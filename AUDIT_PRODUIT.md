@@ -1,4 +1,4 @@
-# Audit Produit Fynix
+﻿# Audit Produit FIRECORE
 > Angle : expérience utilisateur + stratégie produit
 > Date : 2026-05-18
 
@@ -6,7 +6,7 @@
 
 ## Résumé exécutif
 
-Fynix est un **moteur d'analyse patrimoniale très solide** posé sur une **expérience produit encore brouillonne**. Le code calcule beaucoup (5 scores commentés, 8 opportunités fiscales chiffrées, 6 stress tests, projection FIRE multi-composantes, expansion ETF en micro-expositions, optimisation par profil) — mais l'utilisateur navigue dans **8 onglets dans /analyse**, doit ressaisir manuellement chaque ligne (pas d'agrégation bancaire), et tombe sur des chiffres bruts avec un langage d'expert-comptable.
+FIRECORE est un **moteur d'analyse patrimoniale très solide** posé sur une **expérience produit encore brouillonne**. Le code calcule beaucoup (5 scores commentés, 8 opportunités fiscales chiffrées, 6 stress tests, projection FIRE multi-composantes, expansion ETF en micro-expositions, optimisation par profil) — mais l'utilisateur navigue dans **8 onglets dans /analyse**, doit ressaisir manuellement chaque ligne (pas d'agrégation bancaire), et tombe sur des chiffres bruts avec un langage d'expert-comptable.
 
 L'app a **trois différenciateurs réels vs Finary** : l'optimiseur fiscal chiffré en €/an, les stress tests interactifs, ARIA (assistant IA conversationnel avec tool-calling sur les données patrimoniales). Aucun n'est mis en avant dans le parcours nouvel utilisateur.
 
@@ -21,7 +21,7 @@ Priorité 1 : **rabattre /analyse de 8 onglets à 3 récits clairs** (Où j'en s
 | Profil | Onboarding | Valeur sem. 1 | Valeur mensuelle | Raison de payer | Note globale |
 |---|---|---|---|---|---|
 | **A — Thomas, 28 ans, débute** | 3/10 — wizard 8 étapes intimidant, quiz bourse/crypto/immo avant d'avoir vu un chiffre | 4/10 — scores en « gris/Données insuffisantes » tant qu'il n'a rien saisi | 4/10 — peu d'évolution à voir avec un patrimoine 0-5 k€ | 2/10 — n'identifie pas pourquoi payer ; Boursorama suffit | **3/10** |
-| **B — Sophie, 35 ans, 80 k€** | 5/10 — friction de re-saisie manuelle de tout son portefeuille déjà sur Finary | 7/10 — voit vraiment ses scores, projection FIRE, optimisations LMNP | 6/10 — itère sur le simulateur, ajoute des bien futurs | 5/10 — Finary fait l'agrégation auto, Fynix fait mieux l'analyse mais elle doit choisir un seul outil | **6/10** |
+| **B — Sophie, 35 ans, 80 k€** | 5/10 — friction de re-saisie manuelle de tout son portefeuille déjà sur Finary | 7/10 — voit vraiment ses scores, projection FIRE, optimisations LMNP | 6/10 — itère sur le simulateur, ajoute des bien futurs | 5/10 — Finary fait l'agrégation auto, FIRECORE fait mieux l'analyse mais elle doit choisir un seul outil | **6/10** |
 | **C — Marc, 45 ans, patrimoine complexe** | 6/10 — accepte la saisie manuelle car valeur perçue justifie l'effort | 9/10 — optimiseur fiscal chiffré + stress tests + projection multi-composantes = vraie nouveauté | 8/10 — outil indispensable de pilotage trimestriel | 8/10 — l'optimiseur fiscal seul vaut 200 €/an chez un CGP | **8/10** |
 | **D — Julie, 52 ans, peu tech** | 2/10 — vocabulaire FIRE / DCA / TMI / SWR / tracking error la perd dès le wizard | 3/10 — ne comprend pas les scores, n'ose pas cliquer sur les modales d'explication | 3/10 — pas d'angle « retraite » lisible | 1/10 — aucune raison perçue | **2/10** |
 
@@ -102,7 +102,7 @@ Tout son contenu est redistribué. Le mot "analyse" est trop abstrait pour un ut
 ## Analyse par section
 
 ### Profil (wizard 8 étapes + carte synthèse)
-- **Promesse** : « Quelques minutes pour calibrer ton accompagnement Fynix ».
+- **Promesse** : « Quelques minutes pour calibrer ton accompagnement FIRECORE ».
 - **Réalité** : 8 étapes, ~5-8 min, beaucoup de saisie chiffrée (revenus, charges, capacité), 11 questions de quiz, sliders de risque. La carte de fin est statique.
 - **Manque** : pas de feedback live « voilà ce qu'on calcule avec ce que tu viens de saisir » à chaque étape. Le quiz n'a pas de score motivant. Aucune validation que l'effort en valait la peine.
 - **Polish** : fonctionnel, validation par étape, reprise après abandon — bon travail technique. Mais l'**UX promet 2 min et coûte 8 min**.
@@ -213,7 +213,7 @@ Le langage utilisé est **expert** : FIRE, DCA, SWR, TWR, MWR, Drawdown, Sharpe 
 
 ## Analyse concurrentielle
 
-| Critère | Fynix aujourd'hui | Finary | Copilot Money | Projection |
+| Critère | FIRECORE aujourd'hui | Finary | Copilot Money | Projection |
 |---|---|---|---|---|
 | **Agrégation bancaire auto** | ❌ saisie manuelle | ✅ Bridge/Powens | ✅ Plaid (US) | ❌ |
 | **Multi-classes (immo + financier + crypto)** | ✅ complet | ✅ complet | ⚠️ pas immo physique | ⚠️ FIRE-only |
@@ -230,7 +230,7 @@ Le langage utilisé est **expert** : FIRE, DCA, SWR, TWR, MWR, Drawdown, Sharpe 
 | **Communauté / social** | ❌ | ⚠️ basique | ✅ Discord | ❌ |
 | **Pricing premium** | — | 9,99 €/mois | 13 $/mois | — |
 
-### Ce que Fynix fait mieux que tous
+### Ce que FIRECORE fait mieux que tous
 - **Optimiseur fiscal chiffré en €** : ni Finary, ni Copilot, ni Projection ne quantifient le manque à gagner fiscal en euros annualisés sur 5 ans avec action concrète.
 - **Stress tests interactifs** : 6 scénarios avec graphique comparatif baseline/stressée. Différenciateur fort.
 - **Projection FIRE 4 composantes** (financier + immo existant + immo futur + cash, avec amortissement crédit année par année et acquisitions futures simulées).
@@ -265,15 +265,15 @@ Le langage utilisé est **expert** : FIRE, DCA, SWR, TWR, MWR, Drawdown, Sharpe 
 3. **Pas de comparaison anonyme** — « les utilisateurs de ton âge/revenu épargnent X €/mois en moyenne » n'existe pas. Levier fort de rétention.
 4. **Pas d'alertes événementielles** — dividende reçu, ATH portefeuille, drawdown -10 %, ETF qui a changé de composition.
 5. **Pas de tracking objectif** — l'utilisateur fixe une cible FIRE mais ne reçoit pas de mise à jour mensuelle « tu es à 12,3 % de ta cible, +0,4 % ce mois ».
-6. **Pas d'historique des recos appliquées** — l'utilisateur ne peut pas voir « j'ai ouvert un PEA grâce à Fynix, ça m'a rapporté X € depuis ».
+6. **Pas d'historique des recos appliquées** — l'utilisateur ne peut pas voir « j'ai ouvert un PEA grâce à FIRECORE, ça m'a rapporté X € depuis ».
 
 ### Pourquoi un utilisateur revient chaque semaine ?
 **Aujourd'hui : il ne revient pas systématiquement.** Les triggers principaux sont :
-- Curiosité « combien j'ai aujourd'hui » → résolu par n'importe quel agrégateur, Fynix demande une re-saisie qui frictionne.
+- Curiosité « combien j'ai aujourd'hui » → résolu par n'importe quel agrégateur, FIRECORE demande une re-saisie qui frictionne.
 - Rapport mensuel email → 1 visite/mois max.
 - Désir de simuler une décision (« et si j'achète ce bien ? ») → résolu par /analyse > Simulateur, mais utilisateur revient seulement quand il a une décision à prendre, donc 2-3 fois/an.
 
-**Manque le « pourquoi je reviens même quand je n'ai rien à faire »** — c'est là que Fynix est faible.
+**Manque le « pourquoi je reviens même quand je n'ai rien à faire »** — c'est là que FIRECORE est faible.
 
 ---
 
@@ -323,7 +323,7 @@ Format : Nom · Profil servi · Pourquoi ça crée de la rétention · Effort ·
 
 10. **Tracking des recommandations appliquées**
     *Profil :* Marc · *Rétention :* sentiment de progression
-    Bouton « J'ai fait ça » sur chaque reco → historique « depuis Fynix tu as économisé X € ».  *Effort : M · Diff : forte*
+    Bouton « J'ai fait ça » sur chaque reco → historique « depuis FIRECORE tu as économisé X € ».  *Effort : M · Diff : forte*
 
 11. **Calendrier fiscal et événementiel**
     *Profil :* Marc, Sophie · *Rétention :* rappels à valeur
@@ -415,7 +415,7 @@ Inclus :
 - Export PDF / Excel mensuel
 - Support email prioritaire
 
-**Pourquoi 7,99 €** : Finary à 9,99 € a une perception « cher pour de l'agrégation ». Fynix se positionne 20 % moins cher mais avec plus de valeur analytique. Cible : 4-6 % de conversion gratuit→premium = 50-100 k€ ARR sur 1 000 utilisateurs payants.
+**Pourquoi 7,99 €** : Finary à 9,99 € a une perception « cher pour de l'agrégation ». FIRECORE se positionne 20 % moins cher mais avec plus de valeur analytique. Cible : 4-6 % de conversion gratuit→premium = 50-100 k€ ARR sur 1 000 utilisateurs payants.
 
 ### Tier Patrimoine — 19,99 € / mois ou 199 €/an (pour Marc)
 - Tout Premium +
@@ -462,8 +462,8 @@ Inclus :
 
 ## Verdict final
 
-Fynix dispose **techniquement de tout ce qu'il faut** pour battre Finary sur l'analyse et Projection sur le FIRE. Le moteur de calcul est plus mature que la moyenne du marché. Le frein n'est pas dans le code — il est dans la **mise en scène** : trop d'écrans, trop de jargon, pas de récit utilisateur clair, pas de boucles d'engagement hebdomadaires.
+FIRECORE dispose **techniquement de tout ce qu'il faut** pour battre Finary sur l'analyse et Projection sur le FIRE. Le moteur de calcul est plus mature que la moyenne du marché. Le frein n'est pas dans le code — il est dans la **mise en scène** : trop d'écrans, trop de jargon, pas de récit utilisateur clair, pas de boucles d'engagement hebdomadaires.
 
-**La question stratégique à trancher** : Fynix veut-elle être un **agrégateur** (alors connecteur Powens obligatoire) ou un **simulateur expert** (alors assumer la saisie manuelle et viser Marc) ? Le code actuel essaie les deux, et l'expérience en pâtit. Choisir l'angle « simulateur expert + IA » est plus défendable à court terme et différencie mieux. L'agrégation peut venir en V2.
+**La question stratégique à trancher** : FIRECORE veut-elle être un **agrégateur** (alors connecteur Powens obligatoire) ou un **simulateur expert** (alors assumer la saisie manuelle et viser Marc) ? Le code actuel essaie les deux, et l'expérience en pâtit. Choisir l'angle « simulateur expert + IA » est plus défendable à court terme et différencie mieux. L'agrégation peut venir en V2.
 
 Si une seule recommandation devait être appliquée : **remonter l'optimiseur fiscal en première page** avec « X € que tu laisses sur la table chaque année ». C'est la promesse unique que personne ne tient en France aujourd'hui, et c'est déjà calculé.

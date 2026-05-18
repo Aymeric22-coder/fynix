@@ -1,4 +1,4 @@
-# Refonte /analyse — 8 onglets → 3 onglets
+﻿# Refonte /analyse — 8 onglets → 3 onglets
 
 > Date : 2026-05-18
 > Périmètre : `app/(app)/analyse/*`, `components/analyse/*`, `app/(app)/dashboard/page.tsx`, `components/dashboard/actions-du-mois.tsx`.

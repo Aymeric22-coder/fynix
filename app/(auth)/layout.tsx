@@ -5,9 +5,9 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         {/* Logo */}
         <div className="mb-10 text-center">
           <span className="text-3xl font-bold tracking-tight text-primary">
-            FY<span className="text-accent">NIX</span>
+            FIRE<span className="text-accent">CORE</span>
           </span>
-          <p className="mt-2 text-sm text-secondary">Pilotage patrimonial</p>
+          <p className="mt-2 text-sm text-secondary">Simulateur d&apos;indépendance financière</p>
         </div>
         {children}
       </div>
