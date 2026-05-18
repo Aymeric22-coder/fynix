@@ -579,6 +579,19 @@ export interface WealthSnapshot {
 }
 export type WealthSnapshotInsert = Omit<WealthSnapshot, 'id' | 'created_at'>
 
+/** Migration 030 — Recommandations marquées « Fait » par l'utilisateur. */
+export interface RecoDone {
+  id:         string
+  user_id:    string
+  reco_key:   string
+  done_at:    string
+  undone_at:  string | null
+}
+export type RecoDoneInsert = Omit<RecoDone, 'id' | 'done_at' | 'undone_at'> & {
+  done_at?:   string
+  undone_at?: string | null
+}
+
 /** Migration 021 — Erreurs de signup loguees par fn_handle_new_user. */
 export interface SignupError {
   id:             string

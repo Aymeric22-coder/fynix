@@ -20,6 +20,9 @@ export default defineConfig({
       // `/* @vitest-environment jsdom */` en première ligne.
       'components/**/*.test.tsx',
       'components/**/*.test.ts',
+      // Hooks React (BLOC 2 — useRecosDone).
+      'hooks/**/*.test.ts',
+      'hooks/**/*.test.tsx',
     ],
     setupFiles: ['./vitest.setup.ts'],
   },

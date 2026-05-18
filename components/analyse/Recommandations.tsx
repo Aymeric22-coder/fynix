@@ -4,22 +4,23 @@
  * Tri serveur : déjà priorisé (haute > moyenne > info) par genererRecommandations.
  * Bordure colorée par priorité (rouge / orange / bleu).
  *
- * Refonte 3-onglets : chaque carte expose un bouton « ✓ Fait » qui la
- * bascule en état "appliquée" pour la session (state local uniquement,
- * pas de persistance — c'est un signal visuel pour aider l'utilisateur
- * à trier ce qu'il a déjà fait dans cette session).
+ * Le bouton « ✓ Fait » de chaque carte est persisté côté Supabase via
+ * la table `recos_done` (migration 030) — voir hooks/use-recos-done.ts.
+ * Les recos marquées comme faites glissent dans une section repliable
+ * « Complétées (N) » en bas de la liste, fermée par défaut.
  */
 'use client'
 
 import { useState } from 'react'
 import {
   AlertTriangle, AlertCircle, Info, Compass, Receipt, Sparkles, Shield, PiggyBank,
-  Coins, Clock, Check, RotateCcw,
+  Coins, Clock, Check, RotateCcw, ChevronDown, ChevronUp,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { Recommandation } from '@/types/analyse'
 import type { RecommandationEnrichie } from '@/lib/analyse/recommandations'
 import { formatEur } from '@/lib/utils/format'
+import { useRecosDone } from '@/hooks/use-recos-done'
 
 interface Props {
   recos: Recommandation[]
@@ -55,21 +56,16 @@ const CATEGORIE_ICON: Record<Recommandation['categorie'], LucideIcon> = {
 }
 
 export function Recommandations({ recos }: Props) {
-  // State local de session : ids des recos marquées comme "Fait".
-  // Volontairement non persisté (pas de DB, pas de localStorage) — Sprint 1.
-  const [doneIds, setDoneIds] = useState<ReadonlySet<string>>(() => new Set())
+  // Persisté côté Supabase (table recos_done). `loading` est true pendant
+  // le GET initial — on désactive les boutons pour éviter un toggle avant
+  // qu'on connaisse l'état persisté.
+  const { doneKeys, toggle, loading } = useRecosDone()
 
-  function toggleDone(id: string) {
-    setDoneIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else              next.add(id)
-      return next
-    })
-  }
+  // Section « Complétées » fermée par défaut (accordéon).
+  const [completedOpen, setCompletedOpen] = useState(false)
 
-  const remaining = recos.filter((r) => !doneIds.has(r.id))
-  const done      = recos.filter((r) => doneIds.has(r.id))
+  const remaining = recos.filter((r) => !doneKeys.has(r.id))
+  const done      = recos.filter((r) => doneKeys.has(r.id))
 
   return (
     <div className="card p-5">
@@ -80,7 +76,7 @@ export function Recommandations({ recos }: Props) {
             {recos.length === 0
               ? 'aucune action prioritaire'
               : `${remaining.length} restante${remaining.length > 1 ? 's' : ''}${
-                  done.length > 0 ? ` · ${done.length} marquée${done.length > 1 ? 's' : ''} comme faite${done.length > 1 ? 's' : ''}` : ''
+                  done.length > 0 ? ` · ${done.length} complétée${done.length > 1 ? 's' : ''}` : ''
                 }`}
           </p>
         </div>
@@ -94,18 +90,43 @@ export function Recommandations({ recos }: Props) {
         <>
           <div className="space-y-3">
             {remaining.map((r) => (
-              <RecoCard key={r.id} reco={r} done={false} onToggle={() => toggleDone(r.id)} />
+              <RecoCard
+                key={r.id}
+                reco={r}
+                done={false}
+                disabled={loading}
+                onToggle={() => { void toggle(r.id, true) }}
+              />
             ))}
           </div>
 
           {done.length > 0 && (
             <div className="mt-5 pt-4 border-t border-border space-y-3">
-              <p className="text-xs text-muted uppercase tracking-widest">
-                Marquées comme faites ({done.length})
-              </p>
-              {done.map((r) => (
-                <RecoCard key={r.id} reco={r} done onToggle={() => toggleDone(r.id)} />
-              ))}
+              <button
+                type="button"
+                onClick={() => setCompletedOpen((v) => !v)}
+                className="w-full flex items-center justify-between text-xs text-muted uppercase tracking-widest
+                           hover:text-primary transition-colors"
+                aria-expanded={completedOpen}
+              >
+                <span>Complétées ({done.length})</span>
+                {completedOpen
+                  ? <ChevronUp size={14} />
+                  : <ChevronDown size={14} />}
+              </button>
+              {completedOpen && (
+                <div className="space-y-3">
+                  {done.map((r) => (
+                    <RecoCard
+                      key={r.id}
+                      reco={r}
+                      done
+                      disabled={loading}
+                      onToggle={() => { void toggle(r.id, false) }}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </>
@@ -120,7 +141,12 @@ export function Recommandations({ recos }: Props) {
   )
 }
 
-function RecoCard({ reco, done, onToggle }: { reco: Recommandation; done: boolean; onToggle: () => void }) {
+function RecoCard({ reco, done, disabled = false, onToggle }: {
+  reco:      Recommandation
+  done:      boolean
+  disabled?: boolean
+  onToggle:  () => void
+}) {
   const { border, badge, label } = PRIO_COLOR[reco.priorite]
   const PrioIcon = PRIO_COLOR[reco.priorite].icon
   const CatIcon  = CATEGORIE_ICON[reco.categorie]
@@ -150,9 +176,11 @@ function RecoCard({ reco, done, onToggle }: { reco: Recommandation; done: boolea
           <button
             type="button"
             onClick={onToggle}
+            disabled={disabled}
             aria-pressed={done}
+            aria-busy={disabled}
             aria-label={done ? 'Marquer comme à faire' : 'Marquer comme faite'}
-            className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium border transition-colors ${
+            className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium border transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
               done
                 ? 'border-secondary/40 text-secondary hover:text-primary hover:border-primary/40'
                 : 'border-accent/40 text-accent hover:bg-accent/10'
