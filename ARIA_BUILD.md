@@ -275,6 +275,46 @@ Les deux tournent en `void promise.catch(() => {})` après `controller.close()` 
 ✓ npx eslint . --max-warnings 0 → silence
 ```
 
+---
+
+## Phase 5 — Feedback loop & Détection proactive ✅
+
+**Date :** 2026-05-18
+**Périmètre :** route API feedback, hook React de feedback, page admin gated par email, logique de détection proactive (rules + detector pur + hook). **Pas d'UI** — c'est en Phase 6.
+
+### Fichiers ajoutés/modifiés
+
+| Fichier | Rôle |
+|---|---|
+| `app/api/aria/feedback/route.ts` | `POST /api/aria/feedback` — upsert `aria_feedback` (overwrite si vote précédent). Vérifie ownership du message + rôle assistant. |
+| `app/api/aria/feedback/route.test.ts` | 7 tests : body invalide, message inexistant, role user rejeté, upsert positif/négatif, erreur DB. |
+| `hooks/use-aria-feedback.ts` | Hook React `sendFeedback({ messageId, rating, reason? })`. Branchable Phase 6 sur les boutons 👍/👎. |
+| `app/(app)/admin/aria-feedback/page.tsx` | Server component gated par `ADMIN_EMAIL` env var (sinon `notFound()`). Liste les 50 derniers feedbacks avec join sur message content + tool_calls. UI minimaliste (palette FIRECORE existante). |
+| `lib/aria/proactive/rules.ts` | 6 règles déclaratives : 4 idle (fire/analyse/portefeuille/immo) + 2 event-based (csv_import_success, bien_added). |
+| `lib/aria/proactive/detector.ts` | `selectNudge(state, rules, now)` pur — 1er match wins, respecte mute (24h) et event freshness (30s). |
+| `lib/aria/proactive/__tests__/detector.test.ts` | 12 tests : idle / event / mute / priorité / robustesse / cohérence des règles canoniques. |
+| `hooks/use-aria-proactive.ts` | Hook React qui gère state machine (idle timer, interactions count, lastEvent, mute persisté en localStorage). Expose `{ activeNudge, acceptNudge, dismissNudge, registerInteraction, fireEvent }`. |
+
+### Variables d'environnement
+
+| Variable | Rôle | Obligatoire |
+|---|---|---|
+| `ADMIN_EMAIL` | Email autorisé à voir `/admin/aria-feedback` | non (sans → 404 pour tout le monde) |
+
+### Sécurité
+
+- Route feedback : double check (RLS Supabase + check applicatif `msg.user_id = auth.uid()`) pour bloquer le vote sur des messages d'autres users.
+- Page admin : `notFound()` plutôt que 403 → ne révèle pas que la page existe.
+- Hook proactive : mute stocké en localStorage (pas DB) → reset si le user change de device, c'est ok pour ce contexte.
+
+### Validation Phase 5
+
+```
+✓ npx vitest run     → 966/966 tests passent (+25 nouveaux pour Phase 5)
+✓ npx tsc --noEmit   → silence
+✓ npx eslint . --max-warnings 0 → silence
+```
+
 ### Prochaine étape
 
-**Phase 5 — Feedback loop & Détection proactive** : boutons 👍/👎 sous les messages, page admin `/admin/aria-feedback`, détection des blocages utilisateur et nudges contextuels. **À démarrer après validation utilisateur.**
+**Phase 6 — Frontend complet** : composants UI (`AriaPanel`, `AriaMessage`, `AriaToolCallCard`, `AriaFeedbackButtons`, `AriaProactiveNudge`), bouton flottant global d'ouverture, intégration dans le layout `(app)`. C'est la phase qui rend ARIA **visible et utilisable** dans le navigateur. Respecte strictement les composants UI existants + la palette FIRECORE (noir + emerald).
