@@ -125,7 +125,10 @@ export const POST = withAuth(async (req: Request, user: User) => {
       .insert({ user_id: user.id })
       .select('id')
       .single()
-    if (error || !data) return err(`Creation conversation: ${error?.message ?? 'inconnue'}`, 500)
+    if (error || !data) {
+      console.error('[aria/chat] step=insert_conv FAILED', error?.message, error)
+      return err(`Creation conversation: ${error?.message ?? 'inconnue'}`, 500)
+    }
     conversationId = data.id as string
   } else {
     const { data, error } = await supabase
@@ -134,9 +137,13 @@ export const POST = withAuth(async (req: Request, user: User) => {
       .eq('id', conversationId)
       .eq('user_id', user.id)
       .maybeSingle()
-    if (error) return err(`Lecture conversation: ${error.message}`, 500)
+    if (error) {
+      console.error('[aria/chat] step=read_conv FAILED', error.message)
+      return err(`Lecture conversation: ${error.message}`, 500)
+    }
     if (!data) return err('Conversation introuvable', 404)
   }
+  console.warn(`[aria/chat] step=conv_ok id=${conversationId.slice(0, 8)}`)
 
   // 3. Persiste le message user
   const uiContext = body.ui ?? null
@@ -149,13 +156,18 @@ export const POST = withAuth(async (req: Request, user: User) => {
       content:         lastMessage.content,
       ui_context:      uiContext,
     })
-  if (insertUserErr) return err(`Persistance message user: ${insertUserErr.message}`, 500)
+  if (insertUserErr) {
+    console.error('[aria/chat] step=insert_user_msg FAILED', insertUserErr.message, insertUserErr)
+    return err(`Persistance message user: ${insertUserErr.message}`, 500)
+  }
+  console.warn(`[aria/chat] step=user_msg_ok`)
 
   // 4. Live context (et patrimoine complet, partage avec les executors de tools)
   let systemPrompt: string
   let patrimoineForTools
   try {
     patrimoineForTools = await getPatrimoineComplet(user.id)
+    console.warn(`[aria/chat] step=patrimoine_ok pos=${patrimoineForTools.positions.length} biens=${patrimoineForTools.biens.length}`)
     const built = await buildLiveContext({
       supabase,
       userId:                user.id,
@@ -163,9 +175,11 @@ export const POST = withAuth(async (req: Request, user: User) => {
       excludeConversationId: conversationId,
     })
     systemPrompt = built.systemPrompt
+    console.warn(`[aria/chat] step=context_ok prompt_chars=${systemPrompt.length}`)
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
-    return sseErrorResponse(`Construction du contexte: ${msg}`, 500)
+    console.error('[aria/chat] step=build_context FAILED', msg, e)
+    return sseErrorResponse(`Construction du contexte: ${msg}`, 200)
   }
 
   // 5. Stream + boucle tool_use

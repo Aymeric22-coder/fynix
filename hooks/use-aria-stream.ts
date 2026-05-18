@@ -128,6 +128,31 @@ export function useAriaStream(options: UseAriaStreamOptions = {}): UseAriaStream
       return
     }
 
+    if (!response.ok) {
+      // Erreur HTTP : essaye de lire le JSON {error}, sinon message generique
+      let errMsg = `HTTP ${response.status}`
+      try {
+        const txt = await response.text()
+        try {
+          const j = JSON.parse(txt) as { error?: string }
+          if (j.error) errMsg = j.error
+        } catch {
+          if (txt.trim().length > 0 && txt.length < 300) errMsg = txt.trim()
+        }
+      } catch { /* ignore */ }
+      setLastError(errMsg)
+      setIsStreaming(false)
+      // Retire le placeholder assistant vide pour ne pas afficher une bulle fantome
+      setMessages((prev) => {
+        if (prev.length === 0) return prev
+        const last = prev[prev.length - 1]!
+        if (last.role === 'assistant' && last.content === '') return prev.slice(0, -1)
+        return prev
+      })
+      abortRef.current = null
+      return
+    }
+
     if (!response.body) {
       setLastError('Reponse sans corps')
       setIsStreaming(false)
