@@ -32,6 +32,7 @@ import { ARIA_TOOLS, executeTool, type ToolExecutionContext } from '@/lib/aria/t
 import { summarizeConversation } from '@/lib/aria/memory/summarizer'
 import { extractAndPersistInsights } from '@/lib/aria/memory/insights'
 import { getPatrimoineComplet } from '@/lib/analyse/aggregateur'
+import { isMockEnabled, runMockStream } from '@/lib/aria/mock/mockStream'
 import type { User } from '@supabase/supabase-js'
 
 const DEFAULT_MODEL = 'claude-sonnet-4-20250514'
@@ -112,8 +113,9 @@ export const POST = withAuth(async (req: Request, user: User) => {
     return err('Le dernier message doit avoir le role "user"', 400)
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY
-  if (!apiKey) return err('ANTHROPIC_API_KEY non configuree', 500)
+  const mockMode = isMockEnabled()
+  const apiKey   = process.env.ANTHROPIC_API_KEY
+  if (!apiKey && !mockMode) return err('ANTHROPIC_API_KEY non configuree (ou active ARIA_MOCK_MODE=true)', 500)
 
   // 2. Conversation
   const supabase = await createServerClient()
@@ -182,8 +184,7 @@ export const POST = withAuth(async (req: Request, user: User) => {
     return sseErrorResponse(`Construction du contexte: ${msg}`, 200)
   }
 
-  // 5. Stream + boucle tool_use
-  const client = new Anthropic({ apiKey })
+  // 5. Stream + boucle tool_use (ou mock si ARIA_MOCK_MODE=true)
   const model  = process.env.ARIA_MODEL || DEFAULT_MODEL
   const finalConversationId = conversationId
 
@@ -207,6 +208,35 @@ export const POST = withAuth(async (req: Request, user: User) => {
       let totalInputTokens = 0
       let totalOutputTokens = 0
       let stoppedByTool = false
+
+      // ─── Mode mock ──────────────────────────────────────────────
+      // Si ARIA_MOCK_MODE=true, on bypass Anthropic. On execute les vrais
+      // tools (chiffres reels) et on stream une reponse texte simulee.
+      // La persistance + emit done en bas se chargent du reste comme d'hab.
+      if (mockMode) {
+        try {
+          console.warn('[aria/chat] step=mock_mode_active')
+          const mockRes = await runMockStream({
+            controller,
+            supabase,
+            userId:          user.id,
+            patrimoine:      patrimoineForTools,
+            conversationId:  finalConversationId,
+            lastUserMessage: lastMessage.content,
+          })
+          finalText = mockRes.finalText
+          toolTrace.push(...mockRes.toolTrace)
+          totalInputTokens  = mockRes.usage.input_tokens
+          totalOutputTokens = mockRes.usage.output_tokens
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e)
+          console.error('[aria/chat] mock exception', msg, e)
+          controller.enqueue(sseEncode({ type: 'error', message: `Mock: ${msg}` }))
+          controller.close()
+          return
+        }
+      } else {
+      const client = new Anthropic({ apiKey: apiKey! })
 
       try {
         for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
@@ -322,6 +352,7 @@ export const POST = withAuth(async (req: Request, user: User) => {
         controller.close()
         return
       }
+      } // ─── fin du else !mockMode ─────────────────────────────────
 
       // Log diagnostique cote serveur — visible dans Vercel runtime logs.
       console.warn(`[aria/chat] done | model=${model} | tools_used=${toolTrace.length} | text_chars=${finalText.length} | first_failed_tool=${toolTrace.find((t) => !t.success)?.name ?? '-'}`)
@@ -370,10 +401,13 @@ export const POST = withAuth(async (req: Request, user: User) => {
 
       // Phase 4 — fire-and-forget : resume + insights, n'attendent pas
       // la fin du stream et ne bloquent jamais la reponse user.
-      void summarizeConversation({ supabase, userId: user.id, conversationId: finalConversationId })
-        .catch(() => { /* silencieux : un summary rate n'est pas une erreur visible */ })
-      void extractAndPersistInsights({ supabase, userId: user.id, conversationId: finalConversationId })
-        .catch(() => { /* idem */ })
+      // Skip en mode mock (pas d'API key pour ces appels Claude).
+      if (!mockMode) {
+        void summarizeConversation({ supabase, userId: user.id, conversationId: finalConversationId })
+          .catch(() => { /* silencieux : un summary rate n'est pas une erreur visible */ })
+        void extractAndPersistInsights({ supabase, userId: user.id, conversationId: finalConversationId })
+          .catch(() => { /* idem */ })
+      }
     },
 
     cancel() { /* coupe propre cote client, rien a faire */ },
