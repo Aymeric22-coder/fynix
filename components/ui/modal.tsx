@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 import { cn } from '@/lib/utils/format'
 
@@ -18,6 +19,17 @@ const SIZES = { sm: 'max-w-md', md: 'max-w-xl', lg: 'max-w-2xl' }
 export function Modal({ open, onClose, title, subtitle, children, size = 'md' }: ModalProps) {
   const overlayRef = useRef<HTMLDivElement>(null)
 
+  // Le portail vit dans `document.body` pour éviter que les clics à
+  // l'intérieur du modal remontent par bubbling vers un éventuel
+  // ancêtre cliquable (par ex. une carte `<Link>` qui contient le
+  // bouton d'ouverture). C'était la cause d'une nav inattendue
+  // observée sur /immobilier après ouverture du simulateur de revente.
+  //
+  // Marqueur de montage côté client : createPortal n'est pas disponible
+  // côté serveur (pas de document). On garde un fallback SSR-safe.
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => { setMounted(true) }, [])
+
   // Fermer avec Échap
   useEffect(() => {
     if (!open) return
@@ -32,12 +44,21 @@ export function Modal({ open, onClose, title, subtitle, children, size = 'md' }:
     return () => { document.body.style.overflow = '' }
   }, [open])
 
-  if (!open) return null
+  if (!open || !mounted) return null
 
-  return (
+  const content = (
     <div
       ref={overlayRef}
-      onClick={(e) => { if (e.target === overlayRef.current) onClose() }}
+      // stopPropagation à la racine du portail pour bloquer définitivement
+      // la remontée des clics vers l'arbre React parent (par ex. un Link).
+      // Le portail rend déjà le modal hors du DOM du parent, mais React
+      // propage encore les événements synthétiques selon l'arbre React,
+      // donc on coupe explicitement ici.
+      onClick={(e) => {
+        e.stopPropagation()
+        if (e.target === overlayRef.current) onClose()
+      }}
+      onMouseDown={(e) => { e.stopPropagation() }}
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
     >
       <div className={cn(
@@ -66,4 +87,6 @@ export function Modal({ open, onClose, title, subtitle, children, size = 'md' }:
       </div>
     </div>
   )
+
+  return createPortal(content, document.body)
 }
