@@ -1,9 +1,15 @@
 /**
  * Empty state du dashboard quand l'utilisateur n'a aucun actif renseigne.
  * Affiche 3 CTA vers les pages d'ajout pour lui montrer par ou commencer.
+ *
+ * Quick Win : bouton « 💬 Demander à ARIA » avec prompt pré-rempli pour
+ * faire découvrir l'assistant dès le premier écran.
  */
+'use client'
+
 import Link from 'next/link'
-import { Briefcase, Building2, PiggyBank, ArrowRight } from 'lucide-react'
+import { Briefcase, Building2, PiggyBank, ArrowRight, MessageCircle } from 'lucide-react'
+import { openAriaWithPrompt } from '@/lib/aria/openAria'
 
 const ENTRIES = [
   {
@@ -35,7 +41,7 @@ export function DashboardEmptyState() {
         </h2>
         <p className="text-sm text-secondary mt-2 max-w-md mx-auto">
           Renseigne ce que tu detiens et Fynix calcule automatiquement allocation,
-          scores, projection FIRE et recommandations.
+          scores, trajectoire d&apos;indépendance et recommandations.
         </p>
       </div>
 
@@ -60,6 +66,21 @@ export function DashboardEmptyState() {
         Astuce : tu peux importer un export CSV depuis Trade Republic, Degiro,
         Boursorama, Fortuneo et bien d&apos;autres.
       </p>
+
+      <div className="pt-2">
+        <button
+          type="button"
+          onClick={() => openAriaWithPrompt(
+            "Je viens de créer mon compte. Par où commencer pour atteindre l'indépendance financière le plus tôt possible ?",
+          )}
+          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg
+                     border border-border text-sm text-secondary hover:text-primary
+                     hover:border-accent/40 hover:bg-accent/5 transition-colors"
+        >
+          <MessageCircle size={14} />
+          💬 Demander à ARIA
+        </button>
+      </div>
     </section>
   )
 }

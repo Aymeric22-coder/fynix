@@ -180,6 +180,7 @@ export default async function PortefeuillePage({ searchParams }: Props) {
           title="Aucune position"
           description="Ajoutez votre première position (action, ETF, crypto, SCPI…) pour démarrer le suivi unifié."
           action={<PortefeuilleActions envelopes={envelopes ?? []} />}
+          ariaPrompt="Je n'ai pas encore de positions. Montre-moi à quoi ressemblerait un portefeuille ETF World + small caps avec 500 €/mois d'épargne."
         />
       ) : summary.positionsCount === 0 ? (
         <EmptyState

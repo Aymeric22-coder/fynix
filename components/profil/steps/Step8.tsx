@@ -57,7 +57,7 @@ export function Step8({ values, set }: Props) {
 
       {/* Type de FIRE */}
       <div className="space-y-3 pt-4 border-t border-border">
-        <p className="text-xs text-secondary uppercase tracking-widest">Type de FIRE visé</p>
+        <p className="text-xs text-secondary uppercase tracking-widest">Type d&apos;indépendance visé</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {FIRE_TYPES.map((f) => {
             const selected = values.fire_type === f.id
@@ -89,7 +89,7 @@ export function Step8({ values, set }: Props) {
             onChange={(e) => set('revenu_passif_cible', e.target.value ? Number(e.target.value) : null)}
           />
         </Field>
-        <Field label="Âge cible FIRE">
+        <Field label="Âge cible d'indépendance">
           <Input
             type="number" min={0} max={120} placeholder="45"
             value={values.age_cible ?? ''}

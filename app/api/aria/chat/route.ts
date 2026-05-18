@@ -338,7 +338,7 @@ export const POST = withAuth(async (req: Request, user: User) => {
               ? rawReason
               : 'cause inconnue'
             hint = `Je n'ai pas pu repondre : l'outil "${failedTool.name}" a echoue (${reason}). ` +
-                   'Verifie que ton profil est complet (age, age FIRE cible, revenu passif cible) dans /profil.'
+                   'Verifie que ton profil est complet (age, age d\'independance cible, revenu passif cible) dans /profil.'
           } else {
             hint = 'Je n\'ai pas reussi a formuler une reponse pour cette question. Reformule-la ou demande-moi quelque chose de plus precis.'
           }

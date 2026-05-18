@@ -11,16 +11,29 @@ interface Props {
   envelopes: Pick<FinancialEnvelope, 'id' | 'name' | 'envelope_type' | 'broker'>[]
 }
 
+/** Texte d'aide affiché en tooltip sous le bouton « Importer CSV ». */
+const IMPORT_BROKER_HINT = 'Compatible Boursorama, Degiro, Trade Republic, Fortuneo, Lynx/IBKR, Linxea et autres brokers FR/EU.'
+
 export function PortefeuilleActions({ envelopes }: Props) {
   const [openAdd, setOpenAdd] = useState(false)
   const [openImport, setOpenImport] = useState(false)
   return (
     <>
-      <div className="flex items-center gap-2">
-        <Button variant="secondary" icon={FileUp} onClick={() => setOpenImport(true)}>
-          Importer CSV
-        </Button>
-        <Button icon={Plus} onClick={() => setOpenAdd(true)}>Ajouter une position</Button>
+      <div className="flex flex-col items-end gap-1">
+        <div className="flex items-center gap-2">
+          <Button
+            variant="secondary"
+            icon={FileUp}
+            onClick={() => setOpenImport(true)}
+            title={IMPORT_BROKER_HINT}
+          >
+            Importer CSV
+          </Button>
+          <Button icon={Plus} onClick={() => setOpenAdd(true)}>Ajouter une position</Button>
+        </div>
+        <p className="text-[10px] text-muted hidden sm:block">
+          {IMPORT_BROKER_HINT}
+        </p>
       </div>
       <AddPositionForm
         open={openAdd}

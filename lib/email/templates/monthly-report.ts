@@ -194,7 +194,7 @@ function renderFireProgress(data: MonthlyReportData, pctFire: number): string {
     <td style="padding:0 28px 24px;">
       <div style="background:${COLORS.surface2};border:1px solid ${COLORS.border};border-radius:8px;padding:18px;">
         <div style="font-size:12px;color:${COLORS.muted};letter-spacing:0.08em;text-transform:uppercase;margin-bottom:8px;">
-          Votre trajectoire FIRE
+          Votre trajectoire vers l&rsquo;indépendance
         </div>
         <!-- Barre de progression -->
         <div style="background:${COLORS.border};border-radius:999px;height:8px;overflow:hidden;margin:8px 0 10px;">

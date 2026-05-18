@@ -45,6 +45,7 @@ export default async function CashPage() {
           title="Aucun compte"
           description="Ajoutez vos livrets et comptes courants pour centraliser votre cash."
           action={<CashActions />}
+          ariaPrompt="Je n'ai pas encore de compte renseigné. Explique-moi comment organiser mon épargne de précaution avec mon profil."
         />
       ) : (
         <>

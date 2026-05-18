@@ -76,7 +76,7 @@ export function ProjectionFIRE({ patrimoine, lastUpdatedAt }: Props) {
   if (!fi.age || !fi.age_cible || fi.revenu_passif_cible <= 0) {
     return (
       <div className="card p-5">
-        <p className="text-xs text-secondary uppercase tracking-widest mb-2">Projection FIRE</p>
+        <p className="text-xs text-secondary uppercase tracking-widest mb-2">Ta trajectoire vers l&apos;indépendance</p>
         <p className="text-sm text-secondary">
           Complétez votre profil (âge, âge cible, revenu passif visé) dans <a href="/profil" className="text-accent underline">Profil investisseur</a> pour activer la projection.
         </p>
@@ -182,7 +182,7 @@ function ProjectionFIREInner({ patrimoine, lastUpdatedAt }: Props) {
     <div className="card p-5">
       <div className="mb-4 flex items-start justify-between gap-3">
         <div>
-          <p className="text-xs text-secondary uppercase tracking-widest">Projection FIRE</p>
+          <p className="text-xs text-secondary uppercase tracking-widest">Ta trajectoire vers l&apos;indépendance</p>
           <p className="text-xs text-muted mt-0.5">4 composantes — financier, immo existant, acquisitions futures, cash</p>
         </div>
         {lastUpdatedAt != null && (
@@ -442,7 +442,7 @@ function ProjectionFIREInner({ patrimoine, lastUpdatedAt }: Props) {
         {loadingAcquisitions ? (
           <p className="text-xs text-muted">Chargement des acquisitions…</p>
         ) : acquisitions.length === 0 ? (
-          <p className="text-xs text-muted">Aucune acquisition simulée. Ajoutez-en pour voir l&apos;impact sur votre courbe FIRE.</p>
+          <p className="text-xs text-muted">Aucune acquisition simulée. Ajoutez-en pour voir l&apos;impact sur votre trajectoire d&apos;indépendance.</p>
         ) : (
           <div className="space-y-4">
             {acquisitions.map((a) => (
@@ -575,7 +575,7 @@ function AcquisitionWithImpact({
       <AcquisitionFutureForm acquisition={acquisition} onChange={onChange} onDelete={onDelete} />
       {impact !== 0 && (
         <p className={`text-xs mt-1.5 ${impact > 0 ? 'text-accent' : 'text-warning'}`}>
-          Impact FIRE : {impact > 0 ? `+${impact} an${impact > 1 ? 's' : ''} d'avance` : `${impact} an${impact < -1 ? 's' : ''} de retard`}
+          Impact sur ton indépendance : {impact > 0 ? `+${impact} an${impact > 1 ? 's' : ''} d'avance` : `${impact} an${impact < -1 ? 's' : ''} de retard`}
         </p>
       )}
     </div>

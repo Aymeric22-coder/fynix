@@ -82,12 +82,12 @@ export function ProfilCard({ profile, onEdit }: Props) {
         </div>
 
         <div className="card p-5">
-          <p className="text-xs text-secondary uppercase tracking-widest mb-4">Objectif FIRE</p>
+          <p className="text-xs text-secondary uppercase tracking-widest mb-4">Objectif d&apos;indépendance</p>
           <ul className="space-y-3">
             <FireLine icon={<Flame size={14} className="text-accent" />}     label="Type"       value={fireDef?.name ?? '—'} accent />
             <FireLine icon={<Target size={14} className="text-secondary" />} label="Cible"      value={formatCurrency(m.fireTargetCapital, 'EUR', { decimals: 0 })} />
             <FireLine icon={<Hourglass size={14} className="text-accent" />} label="Estimation" value={m.fireYearsValue >= 99 ? 'N/A' : `${Math.ceil(m.fireYearsValue)} ans`} accent />
-            <FireLine icon={<Calendar size={14} className="text-secondary" />} label="Âge FIRE" value={m.fireAge ? `${m.fireAge} ans` : '—'} />
+            <FireLine icon={<Calendar size={14} className="text-secondary" />} label="Âge d&apos;indépendance" value={m.fireAge ? `${m.fireAge} ans` : '—'} />
             {profile.priorite && (
               <FireLine icon={<Lightbulb size={14} className="text-secondary" />} label="Priorité" value={profile.priorite} />
             )}

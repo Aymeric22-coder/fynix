@@ -22,11 +22,12 @@
 
 import { useMemo } from 'react'
 import Link from 'next/link'
-import { RefreshCw } from 'lucide-react'
+import { RefreshCw, MessageCircle } from 'lucide-react'
 import { PageHeader } from '@/components/shared/page-header'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, type TabItem } from '@/components/ui/tabs'
+import { openAriaWithPrompt } from '@/lib/aria/openAria'
 import { usePatrimoineAnalyse } from '@/hooks/use-patrimoine-analyse'
 
 import { ScoresBand }              from '@/components/analyse/ScoresBand'
@@ -197,6 +198,18 @@ export function AnalyseClient() {
             <Link href="/cash" className="text-accent hover:underline ml-1">Cash</Link> pour
             débloquer l&apos;analyse complète.
           </p>
+          <button
+            type="button"
+            onClick={() => openAriaWithPrompt(
+              "Je débute. Donne-moi une projection d'indépendance financière réaliste avec 2 000 €/mois de revenu et 300 €/mois d'épargne.",
+            )}
+            className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg
+                       border border-border text-xs text-secondary hover:text-primary
+                       hover:border-accent/40 hover:bg-accent/5 transition-colors"
+          >
+            <MessageCircle size={12} />
+            💬 Demander à ARIA
+          </button>
         </div>
       )}
 

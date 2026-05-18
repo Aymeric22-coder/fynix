@@ -173,7 +173,7 @@ function EmptyState() {
       </div>
       <h3 className="text-sm font-semibold text-primary mb-1">Bonjour, je suis ARIA</h3>
       <p className="text-xs text-secondary leading-relaxed max-w-xs mx-auto">
-        Pose-moi une question sur ton patrimoine, ta projection FIRE,
+        Pose-moi une question sur ton patrimoine, ta trajectoire d&apos;indépendance,
         un bien immobilier, ou demande-moi une simulation.
       </p>
 

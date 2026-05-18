@@ -34,7 +34,7 @@ const NIVEAU_COLOR: Record<ScoreNiveau, string> = {
 const SCORES_META: Array<{ key: keyof ScoresComplets; title: string; icon: LucideIcon }> = [
   { key: 'diversification',    title: 'Diversification', icon: Compass },
   { key: 'coherence_profil',   title: 'Cohérence',       icon: Target },
-  { key: 'progression_fire',   title: 'Progression FIRE', icon: Sparkles },
+  { key: 'progression_fire',   title: 'Progression vers l\'indépendance', icon: Sparkles },
   { key: 'solidite',           title: 'Solidité',        icon: Shield },
   { key: 'efficience_fiscale', title: 'Efficience fiscale', icon: Receipt },
 ]

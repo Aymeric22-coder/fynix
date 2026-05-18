@@ -151,7 +151,7 @@ export function PatrimoineEvolutionChart({ cibleFire }: Props) {
                 stroke="#E8B84B"
                 strokeDasharray="4 4"
                 label={{
-                  value: `Cible FIRE ${formatCurrency(cibleFire, 'EUR', { compact: true })}`,
+                  value: `Objectif ${formatCurrency(cibleFire, 'EUR', { compact: true })}`,
                   position: 'insideTopRight',
                   fill: '#E8B84B',
                   fontSize: 10,
@@ -240,7 +240,7 @@ function CustomTooltip({ active, payload, label }: {
       )}
       {row.progression_fire_pct !== null && (
         <div className="mt-2 pt-2 border-t border-border">
-          <Row label="Progression FIRE" value={row.progression_fire_pct} color="#E8B84B" pct />
+          <Row label="Progression vers l'indépendance" value={row.progression_fire_pct} color="#E8B84B" pct />
         </div>
       )}
     </div>

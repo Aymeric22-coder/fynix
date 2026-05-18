@@ -11,10 +11,11 @@
  */
 'use client'
 
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { Sparkles } from 'lucide-react'
 import { useAriaProactive } from '@/hooks/use-aria-proactive'
+import { ARIA_OPEN_EVENT, type AriaOpenDetail } from '@/lib/aria/openAria'
 import { AriaPanel } from './AriaPanel'
 import { AriaProactiveNudge } from './AriaProactiveNudge'
 
@@ -40,6 +41,18 @@ export function AriaLauncher() {
     setOpen(true)
     acceptNudge()
   }, [acceptNudge])
+
+  // Listener global pour ouvrir ARIA depuis n'importe quel composant
+  // (empty states, KPI cards…) via openAriaWithPrompt().
+  useEffect(() => {
+    function handleOpen(e: Event) {
+      const detail = (e as CustomEvent<AriaOpenDetail>).detail
+      if (detail?.prompt) setPendingPrompt(detail.prompt)
+      setOpen(true)
+    }
+    window.addEventListener(ARIA_OPEN_EVENT, handleOpen)
+    return () => window.removeEventListener(ARIA_OPEN_EVENT, handleOpen)
+  }, [])
 
   // Pulse subtil si un nudge attend, mais pas tant que le panel est ouvert.
   const showPulse = !!activeNudge && !open

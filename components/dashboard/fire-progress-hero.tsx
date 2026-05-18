@@ -50,7 +50,7 @@ export function FIREProgressHero({ data }: { data: FireHeroData }) {
               <Target size={20} className="text-accent" />
             </div>
             <div>
-              <h2 className="text-base font-semibold text-primary mb-1">Définis ton objectif FIRE</h2>
+              <h2 className="text-base font-semibold text-primary mb-1">Définis ton objectif d&apos;indépendance</h2>
               <p className="text-xs text-secondary max-w-xl leading-relaxed">
                 Indique ton âge, ton âge cible d&apos;indépendance financière et ton revenu passif visé
                 pour voir ta trajectoire et savoir ce qu&apos;il te reste à parcourir.
@@ -61,7 +61,7 @@ export function FIREProgressHero({ data }: { data: FireHeroData }) {
             href="/profil"
             className="bg-accent hover:bg-accent/90 text-white text-sm font-medium px-4 py-2 rounded-lg whitespace-nowrap transition-colors"
           >
-            Définir mon objectif FIRE
+            Définir mon objectif d&apos;indépendance
           </Link>
         </div>
       </section>
@@ -95,7 +95,7 @@ export function FIREProgressHero({ data }: { data: FireHeroData }) {
 
   const tooltipHypotheses =
     `Hypothèses de rendement : rendement médian ${data.rendement_central_pct.toFixed(1)} %/an, `
-    + `optimiste +1,5 %, pessimiste −1,5 %. Cible FIRE indexée sur 2 %/an d'inflation.`
+    + `optimiste +1,5 %, pessimiste −1,5 %. Objectif patrimonial indexé sur 2 %/an d'inflation.`
 
   const deltaEpargne = data.epargne_mensuelle_necessaire !== null
     ? data.epargne_mensuelle_necessaire - data.epargne_mensuelle_actuelle
@@ -106,8 +106,7 @@ export function FIREProgressHero({ data }: { data: FireHeroData }) {
       {/* Header */}
       <div className="flex items-center gap-2 mb-4">
         <Sparkles size={16} className="text-accent" />
-        <h2 className="text-base font-semibold text-primary">Ta trajectoire FIRE</h2>
-        <span className="text-[10px] text-muted ml-auto uppercase tracking-widest">Indépendance financière</span>
+        <h2 className="text-base font-semibold text-primary">Ta trajectoire vers l&apos;indépendance</h2>
       </div>
 
       {/* Progress bar patrimoine */}

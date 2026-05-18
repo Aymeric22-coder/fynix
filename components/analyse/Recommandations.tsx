@@ -196,7 +196,7 @@ function RecoCard({ reco, done, onToggle }: { reco: Recommandation; done: boolea
               <span className="text-accent font-medium financial-value">
                 {moisGagnes} mois
               </span>
-              <span className="text-secondary">gagnés sur le FIRE</span>
+              <span className="text-secondary">gagnés sur l&apos;indépendance</span>
             </span>
           )}
         </div>

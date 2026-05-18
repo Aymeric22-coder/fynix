@@ -77,6 +77,7 @@ export default async function ImmobilierPage() {
           title="Aucun bien immobilier"
           description="Ajoutez vos biens immobiliers pour suivre leur valorisation, rendement et cash-flow."
           action={<ImmobilierActions />}
+          ariaPrompt="Je n'ai pas encore de bien immobilier. Simule l'impact d'un premier achat locatif à 200 000 € sur ma trajectoire d'indépendance financière."
         />
       ) : (
         <>

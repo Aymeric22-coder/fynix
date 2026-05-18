@@ -8,6 +8,10 @@ import { computeRealEstatePortfolio } from '@/lib/real-estate/portfolio'
 import { buildPortfolioFromDb }  from '@/lib/portfolio/build-from-db'
 import { getPatrimoineComplet }  from '@/lib/analyse/aggregateur'
 import { FIREProgressHero, type FireHeroData } from '@/components/dashboard/fire-progress-hero'
+import { FiscalKpiBanner } from '@/components/dashboard/fiscal-kpi-banner'
+import { TropheesCard } from '@/components/dashboard/trophees-card'
+import { enrichJalonsAvecHistorique } from '@/lib/analyse/jalonsHistorique'
+import type { JalonFIRE } from '@/types/analyse'
 import { ActionsDuMois } from '@/components/dashboard/actions-du-mois'
 import { DashboardEmptyState } from '@/components/dashboard/empty-state'
 import { PatrimoineEvolutionChart } from '@/components/dashboard/patrimoine-evolution-chart'
@@ -96,6 +100,28 @@ export default async function DashboardPage() {
   const lastPositionAddedAt = lastPosRow?.acquisition_date ?? null
   // Sprint 1 — I3 : ActionsDuMois inclut les top opportunites fiscales.
   const opportunitesFiscales = calculerOpportunitesFiscales({ patrimoine: patrimoineComplet }).opportunites
+
+  // ── Jalons patrimoniaux historiques (carte « Mes trophées ») ─────────────
+  // On charge l'historique complet pour identifier la 1re date de franchissement
+  // de chaque seuil. Les wealth_snapshots restent bornés par utilisateur (1/jour
+  // max via snapshotDebounce) donc le coût est borné dans le temps.
+  const { data: allWealthSnaps } = await supabase
+    .from('wealth_snapshots')
+    .select('snapshot_date,patrimoine_net')
+    .eq('user_id', user!.id)
+    .order('snapshot_date', { ascending: true })
+  const snapshotsForJalons = (allWealthSnaps ?? []).map((s) => ({
+    snapshot_date: s.snapshot_date as string,
+    patrimoine_net: Number(s.patrimoine_net ?? 0),
+  }))
+  const MILESTONES = [10_000, 25_000, 50_000, 100_000, 250_000, 500_000, 1_000_000, 2_000_000]
+  const baseJalons: JalonFIRE[] = MILESTONES.map((seuil) => ({
+    age:    0,
+    label:  `${(seuil / 1000).toFixed(0)} k€`,
+    type:   'milestone' as const,
+    valeur: seuil,
+  }))
+  const jalonsEnrichis = enrichJalonsAvecHistorique(baseJalons, snapshotsForJalons)
   const actionsDuMois = genererActionsMensuelles(patrimoineComplet, {
     lastPositionAddedAt,
     opportunitesFiscales,
@@ -297,11 +323,17 @@ export default async function DashboardPage() {
         <DashboardEmptyState />
       ) : (
         <>
+      {/* KPI fiscal — opportunités chiffrées (lien vers /analyse?tab=optimiser) */}
+      <FiscalKpiBanner opportunites={opportunitesFiscales} />
+
       {/* Actions de ce mois — recoMensuelles (Sprint 2) */}
       <ActionsDuMois actions={actionsDuMois} />
 
       {/* Évolution patrimoine — wealth_snapshots (Sprint 2) */}
       <PatrimoineEvolutionChart cibleFire={fireHeroData.patrimoine_fire_cible || null} />
+
+      {/* Jalons patrimoniaux franchis */}
+      <TropheesCard jalons={jalonsEnrichis} />
 
       {/* Alertes */}
       {alerts.length > 0 && <AlertsPanel alerts={alerts} />}
