@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase/server'
 import Sidebar from '@/components/shared/sidebar'
 import { AriaLauncher } from '@/components/aria/AriaLauncher'
+import { AriaErrorBoundary } from '@/components/aria/AriaErrorBoundary'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createServerClient()
@@ -17,7 +18,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           {children}
         </div>
       </main>
-      <AriaLauncher />
+      <AriaErrorBoundary>
+        <AriaLauncher />
+      </AriaErrorBoundary>
     </div>
   )
 }
