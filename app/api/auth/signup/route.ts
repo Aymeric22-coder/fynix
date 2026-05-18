@@ -22,7 +22,9 @@ export async function POST(req: NextRequest) {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      options: { emailRedirectTo: `${APP_URL}/dashboard` },
+      // Onboarding 60s : on envoie le user fraîchement confirmé sur /bienvenue.
+      // La page redirige vers /dashboard si le profil est déjà complet.
+      options: { emailRedirectTo: `${APP_URL}/bienvenue` },
     })
 
     if (error) {

@@ -95,6 +95,14 @@ export interface Profile {
    *  "Reprendre a l etape X" quand l utilisateur revient sans avoir fini. */
   wizard_step_completed: number
 
+  // ── Migration 031 — Onboarding 60 secondes ────────────────────────
+  /** Sentinel : true dès la première soumission de /bienvenue
+   *  (3 inputs). Bloque la re-navigation vers /bienvenue. */
+  onboarding_quick_done:       boolean
+  /** Snapshot des 3 inputs onboarding pour pré-remplir le wizard si
+   *  l'utilisateur choisit ensuite d'affiner. */
+  onboarding_quick_data:       Json | null
+
   // ── Migration 022 — Préférences email ────────────────────────────
   /** Opt-in rapport patrimonial mensuel par email (default true). */
   email_monthly_report:        boolean

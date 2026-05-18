@@ -42,7 +42,7 @@ export default function SignupPage() {
         setSuccess(true)
         setNeedsConfirmation(Boolean(data.needsConfirmation))
         if (!data.needsConfirmation) {
-          router.push('/profil')
+          router.push('/bienvenue')
           router.refresh()
         }
       }

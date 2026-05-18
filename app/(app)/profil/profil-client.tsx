@@ -21,7 +21,8 @@
 'use client'
 
 import { useState } from 'react'
-import { PlayCircle, RotateCcw } from 'lucide-react'
+import Link from 'next/link'
+import { PlayCircle, RotateCcw, Sparkles, ArrowLeft } from 'lucide-react'
 import { PageHeader } from '@/components/shared/page-header'
 import { Button } from '@/components/ui/button'
 import { ProfilQuestionnaire } from '@/components/profil/ProfilQuestionnaire'
@@ -61,6 +62,9 @@ export function ProfilClient() {
   const isComplete = !!profile.profile_completed_at
   const lastStep   = Math.min(8, Math.max(0, profile.wizard_step_completed ?? 0))
   const hasPartial = !isComplete && lastStep > 0 && lastStep < 8
+  // Affiche le bandeau « tu affines » si l'utilisateur arrive du nouvel
+  // onboarding 60s (quick_done = true) et n'a pas encore terminé le wizard.
+  const showQuickAffinerBanner = profile.onboarding_quick_done && !isComplete
   // Si on a une reprise possible et que l'utilisateur n'a pas encore choisi
   // (resumeStep null, startFresh false), on affiche d'abord la bannière.
   const showResumeBanner = hasPartial && resumeStep === null && !startFresh
@@ -94,6 +98,28 @@ export function ProfilClient() {
             : 'Ta synthèse globale — recalculée à chaque modification.'
         }
       />
+
+      {showQuickAffinerBanner && (
+        <div className="mb-5 rounded-xl border border-accent/30 bg-accent/5 p-4 flex items-start justify-between gap-3 flex-wrap">
+          <div className="flex items-start gap-3 min-w-0">
+            <Sparkles size={18} className="text-accent flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm text-primary font-medium">Tu affines ta projection</p>
+              <p className="text-xs text-secondary mt-0.5 leading-relaxed">
+                Plus tu renseignes (TMI, enveloppes, biens immobiliers…), plus FIRECORE est précis.
+                Tu peux aussi t&apos;arrêter ici et revenir plus tard.
+              </p>
+            </div>
+          </div>
+          <Link
+            href="/dashboard"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-xs text-secondary hover:text-primary hover:border-accent/40 transition-colors whitespace-nowrap"
+          >
+            <ArrowLeft size={12} />
+            Revenir au dashboard
+          </Link>
+        </div>
+      )}
 
       {showResumeBanner ? (
         <div className="max-w-2xl mx-auto">
