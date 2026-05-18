@@ -7,10 +7,24 @@ import { EmptyState }                    from '@/components/ui/empty-state'
 import { Badge }                         from '@/components/ui/badge'
 import { ChargesWarningBanner }          from '@/components/ui/charges-warning-banner'
 import { ImmobilierActions }             from '@/components/pages/immobilier-actions'
+import { ReventeButton }                 from '@/components/real-estate/revente-button'
+import type { TypeUsageBien }            from '@/lib/real-estate/plusValue'
 import { computeRealEstatePortfolio }    from '@/lib/real-estate/portfolio'
 import { formatCurrency, formatPercent, ASSET_TYPE_LABELS } from '@/lib/utils/format'
 
 export const metadata: Metadata = { title: 'Immobilier' }
+
+/** Déduit le type d'usage par défaut à partir du régime fiscal saisi.
+ *  L'utilisateur peut surcharger dans le modal. */
+function inferTypeUsage(fiscalRegime: string | null): TypeUsageBien {
+  if (!fiscalRegime) return 'secondaire'
+  // Tous les régimes connus de la table profiles sont locatifs.
+  if (fiscalRegime.startsWith('lmnp_')
+   || fiscalRegime.startsWith('lmp')
+   || fiscalRegime.startsWith('foncier_')
+   || fiscalRegime.startsWith('sci_')) return 'locatif'
+  return 'secondaire'
+}
 
 export default async function ImmobilierPage() {
   const supabase = await createServerClient()
@@ -22,7 +36,7 @@ export default async function ImmobilierPage() {
     .select(`
       id, asset_id, property_type, address_city, address_zip, surface_m2,
       purchase_price, purchase_fees, works_amount, fiscal_regime,
-      asset:assets!asset_id ( name, current_value, acquisition_price, status ),
+      asset:assets!asset_id ( name, current_value, acquisition_price, acquisition_date, status ),
       lots:real_estate_lots ( id, status, rent_amount, charges_amount )
     `)
     .eq('user_id', user!.id)
@@ -45,7 +59,7 @@ export default async function ImmobilierPage() {
   const estimatedCount = (properties ?? []).filter((p) => !propsWithChargesSet.has(p.id)).length
 
   // ── Helpers ──────────────────────────────────────────────────────────────
-  type AssetJoin = { name: string; current_value: number | null; acquisition_price: number | null; status: string }
+  type AssetJoin = { name: string; current_value: number | null; acquisition_price: number | null; acquisition_date: string | null; status: string }
   const getAsset = (raw: unknown): AssetJoin | null =>
     Array.isArray(raw) ? (raw[0] ?? null) : (raw as AssetJoin | null)
 
@@ -240,6 +254,24 @@ export default async function ImmobilierPage() {
                       <p className="text-xs text-secondary">
                         {formatCurrency(monthlyRent, 'EUR')} / mois
                       </p>
+                    </div>
+                  )}
+
+                  {/* Bouton « Simuler la revente » (sans déclencher la nav du Link) */}
+                  {asset?.acquisition_date && (p.purchase_price ?? 0) > 0 && (
+                    <div className="mt-4 pt-3 border-t border-border">
+                      <ReventeButton
+                        bien={{
+                          id:               p.id,
+                          nom:              asset.name ?? 'Bien immobilier',
+                          prixAchat:        p.purchase_price ?? 0,
+                          dateAchat:        asset.acquisition_date,
+                          valeurActuelle:   asset.current_value,
+                          typeUsage:        inferTypeUsage(p.fiscal_regime),
+                          fraisAcquisitionReels: p.purchase_fees > 0 ? p.purchase_fees : undefined,
+                          travauxReels:          p.works_amount   > 0 ? p.works_amount   : undefined,
+                        }}
+                      />
                     </div>
                   )}
                 </Link>
