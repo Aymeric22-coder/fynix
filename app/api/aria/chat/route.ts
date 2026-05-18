@@ -216,16 +216,19 @@ export const POST = withAuth(async (req: Request, user: User) => {
           totalInputTokens  += finalMsg.usage.input_tokens
           totalOutputTokens += finalMsg.usage.output_tokens
 
-          if (iterText) finalText = iterText                 // dernier tour visible = reponse
-
           const toolUseBlocks = finalMsg.content.filter(
             (b): b is Extract<typeof b, { type: 'tool_use' }> => b.type === 'tool_use',
           )
 
           if (finalMsg.stop_reason !== 'tool_use' || toolUseBlocks.length === 0) {
-            // Fin normale
+            // Fin normale : on adopte le texte de CE tour comme reponse finale
+            // (meme s'il est vide — c'est un signal d'erreur a traiter plus bas).
+            finalText = iterText
             break
           }
+
+          // Sinon : tour intermediaire (tool_use). On NE garde PAS son texte
+          // (rarement utile) ; on attend le tour final apres tool_result.
 
           stoppedByTool = true
 
@@ -271,6 +274,17 @@ export const POST = withAuth(async (req: Request, user: User) => {
         // Si on est sorti par limite d'iterations alors qu'on attendait encore un tool
         if (stoppedByTool) {
           finalText = (finalText + '\n\n[ARIA a atteint la limite d\'iterations tool — reponse partielle]').trim()
+        }
+
+        // Fallback : si Claude n'a rien dit (ex. tool a renvoye ok:false et il
+        // n'a pas su quoi formuler), on emet un message explicite plutot que
+        // de laisser "(message vide)" cote UI.
+        if (!finalText.trim()) {
+          const hint = toolTrace.some((t) => !t.success)
+            ? 'Le tool appele n\'a pas pu aboutir (souvent : profil incomplet — verifie age, age FIRE cible et revenu passif cible dans /profil). Pose-moi une autre question ou complete ton profil.'
+            : 'Je n\'ai pas reussi a formuler une reponse pour cette question. Reformule-la ou demande-moi quelque chose de plus precis.'
+          finalText = hint
+          controller.enqueue(sseEncode({ type: 'delta', delta: hint }))
         }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e)

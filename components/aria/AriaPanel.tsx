@@ -130,7 +130,7 @@ export function AriaPanel({ open, onClose, initialPrompt, onPromptConsumed }: Ar
             <AriaMessage
               key={i}
               role={m.role}
-              content={m.content || (m.streaming ? '' : '(message vide)')}
+              content={m.content || (m.streaming ? '' : 'Aucune reponse generee. Reessaie ou reformule.')}
               streaming={m.streaming}
               toolCalls={toolCallsFromMessage(m)}
               messageId={m.message_id}
