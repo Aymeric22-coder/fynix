@@ -94,6 +94,8 @@ function sseErrorResponse(message: string, status: number): NextResponse {
 // ─────────────────────────────────────────────────────────────────
 
 export const POST = withAuth(async (req: Request, user: User) => {
+  console.warn(`[aria/chat] POST start user=${user.id.slice(0, 8)}`)
+
   // 1. Parse + validation body
   let body: ChatBody
   try {
@@ -271,27 +273,44 @@ export const POST = withAuth(async (req: Request, user: User) => {
           conversationMessages.push({ role: 'user',      content: toolResultsForClaude })
         }
 
-        // Si on est sorti par limite d'iterations alors qu'on attendait encore un tool
-        if (stoppedByTool) {
-          finalText = (finalText + '\n\n[ARIA a atteint la limite d\'iterations tool — reponse partielle]').trim()
+        // Si on est sorti par limite d'iterations alors qu'on attendait encore un tool,
+        // on stream un message explicite au client (le bug racine du symptome
+        // "message vide" : on updatait finalText localement sans le pousser au SSE).
+        if (stoppedByTool && !finalText.trim()) {
+          const limitMsg = 'Desole, je suis arrive a la limite d\'iterations sur les outils sans pouvoir te formuler une reponse complete. Reformule ta question ou divise-la en plusieurs.'
+          finalText = limitMsg
+          controller.enqueue(sseEncode({ type: 'delta', delta: limitMsg }))
         }
 
         // Fallback : si Claude n'a rien dit (ex. tool a renvoye ok:false et il
         // n'a pas su quoi formuler), on emet un message explicite plutot que
         // de laisser "(message vide)" cote UI.
         if (!finalText.trim()) {
-          const hint = toolTrace.some((t) => !t.success)
-            ? 'Le tool appele n\'a pas pu aboutir (souvent : profil incomplet — verifie age, age FIRE cible et revenu passif cible dans /profil). Pose-moi une autre question ou complete ton profil.'
-            : 'Je n\'ai pas reussi a formuler une reponse pour cette question. Reformule-la ou demande-moi quelque chose de plus precis.'
+          const failedTool = toolTrace.find((t) => !t.success)
+          let hint: string
+          if (failedTool) {
+            const rawReason = (failedTool.result as { raison?: unknown } | null)?.raison
+            const reason = typeof rawReason === 'string' && rawReason.length > 0
+              ? rawReason
+              : 'cause inconnue'
+            hint = `Je n'ai pas pu repondre : l'outil "${failedTool.name}" a echoue (${reason}). ` +
+                   'Verifie que ton profil est complet (age, age FIRE cible, revenu passif cible) dans /profil.'
+          } else {
+            hint = 'Je n\'ai pas reussi a formuler une reponse pour cette question. Reformule-la ou demande-moi quelque chose de plus precis.'
+          }
           finalText = hint
           controller.enqueue(sseEncode({ type: 'delta', delta: hint }))
         }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e)
+        console.error('[aria/chat] stream exception', msg, e)
         controller.enqueue(sseEncode({ type: 'error', message: `Stream Claude: ${msg}` }))
         controller.close()
         return
       }
+
+      // Log diagnostique cote serveur — visible dans Vercel runtime logs.
+      console.warn(`[aria/chat] done | model=${model} | tools_used=${toolTrace.length} | text_chars=${finalText.length} | first_failed_tool=${toolTrace.find((t) => !t.success)?.name ?? '-'}`)
 
       // Persistance du message assistant (avec trace des tools si presente)
       const insertPayload: Record<string, unknown> = {
