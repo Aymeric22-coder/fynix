@@ -160,6 +160,99 @@ describe('<SimulationReventeModal> — affichage résultats par régime', () => 
   })
 })
 
+describe('<SimulationReventeModal> — crédit immobilier (CRD + IRA)', () => {
+  afterEach(() => { cleanup() })
+
+  it('Section crédit présente dans le formulaire (accordéon)', () => {
+    render(<SimulationReventeModal bien={mkBien()} open onClose={() => {}} />)
+    // Bouton d'ouverture de la section
+    const toggle = screen.getByRole('button', { name: /Crédit immobilier/i })
+    expect(toggle).toBeInTheDocument()
+    // Par défaut fermé tant que pas de pré-data
+    expect(screen.queryByLabelText(/Capital emprunté/i)).not.toBeInTheDocument()
+    fireEvent.click(toggle)
+    // Une fois ouvert : les 4 champs + checkbox sont là
+    expect(screen.getByLabelText(/Capital emprunté/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/Taux annuel/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/Durée totale/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/Date du 1er paiement/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/IRA exonérées/i)).toBeInTheDocument()
+  })
+
+  it('Pré-remplissage depuis le bien : si CRD pré-calculé fourni, section déjà ouverte', () => {
+    render(<SimulationReventeModal
+      bien={mkBien({ creditCapitalRestantDu: 80_000 })}
+      open
+      onClose={() => {}}
+    />)
+    // La section est déjà ouverte (pré-data présente)
+    expect(screen.getByLabelText(/Capital emprunté/i)).toBeInTheDocument()
+  })
+
+  it('Sans crédit renseigné → pas de bloc "Remboursement à la banque" dans les résultats', () => {
+    render(<SimulationReventeModal bien={mkBien()} open onClose={() => {}} />)
+    setPrix('300000')
+    submit()
+    expect(screen.queryByText(/Remboursement à la banque/i)).not.toBeInTheDocument()
+  })
+
+  it('Avec données brutes du crédit → bloc "Remboursement à la banque" affiché avec CRD + IRA + total', () => {
+    render(<SimulationReventeModal
+      bien={mkBien({
+        creditCapitalInitial: 200_000,
+        creditTauxAnnuelPct:  2,
+        creditDureeMois:      240,
+        creditDateDebut:      '2016-01-01',
+      })}
+      open
+      onClose={() => {}}
+    />)
+    setPrix('300000')
+    submit()
+    const titre = screen.getByText(/Remboursement à la banque/i)
+    expect(titre).toBeInTheDocument()
+    const section = titre.closest('section')!
+    expect(within(section).getByText(/Capital restant dû/i)).toBeInTheDocument()
+    expect(within(section).getByText(/^IRA\b/i)).toBeInTheDocument()
+    expect(within(section).getByText(/Total banque/i)).toBeInTheDocument()
+  })
+
+  it('Crédit soldé (date cession > fin crédit) → bandeau "Crédit soldé"', () => {
+    // Crédit débuté il y a 25 ans, durée 20 ans → terminé depuis 5 ans
+    render(<SimulationReventeModal
+      bien={mkBien({
+        creditCapitalInitial: 100_000,
+        creditTauxAnnuelPct:  3,
+        creditDureeMois:      240,
+        creditDateDebut:      '2000-01-01',
+      })}
+      open
+      onClose={() => {}}
+    />)
+    setPrix('300000')
+    submit()
+    // CRD = 0 → bloc "Remboursement à la banque" NON affiché (totalRemb = 0)
+    expect(screen.queryByText(/Remboursement à la banque/i)).not.toBeInTheDocument()
+  })
+
+  it('IRA exonérées → bloc indique "IRA exonérées" et IRA = 0', () => {
+    render(<SimulationReventeModal
+      bien={mkBien({ creditCapitalRestantDu: 50_000 })}
+      open
+      onClose={() => {}}
+    />)
+    // Ouvre la section crédit (déjà ouverte vu pré-data) et coche la case
+    fireEvent.click(screen.getByLabelText(/IRA exonérées/i))
+    setPrix('300000')
+    submit()
+    const titre = screen.getByText(/Remboursement à la banque/i)
+    const section = titre.closest('section')!
+    // Au moins une mention "IRA exonérées" dans la section résultats
+    const mentions = within(section).getAllByText(/IRA exonérées/i)
+    expect(mentions.length).toBeGreaterThan(0)
+  })
+})
+
 describe('<SimulationReventeModal> — tableau comparatif inter-régimes', () => {
   afterEach(() => { cleanup() })
 

@@ -32,6 +32,7 @@ import {
   calculerQuickProjection,
   type QuickProjectionResult,
 } from '../onboarding/quickProjection'
+import { calculerCRD, calculerIRA, type IraMethode } from './credit'
 
 // ─────────────────────────────────────────────────────────────────
 // Constantes fiscales
@@ -146,6 +147,21 @@ export interface SimulationReventeInput {
   /** 1re cession hors RP, vendeur sans RP depuis 4 ans. */
   estPremiereCessionHorsRP?: boolean
 
+  // ── Crédit immobilier (CRD + IRA déduits du net vendeur) ──────────
+  /** Capital emprunté à l'origine (€). */
+  creditCapitalInitial?:   number
+  /** Taux annuel nominal du prêt (% — ex. 2.5 pour 2,5 %). */
+  creditTauxAnnuelPct?:    number
+  /** Durée totale du crédit en mois. */
+  creditDureeMois?:        number
+  /** Date du premier prélèvement / mise en place du prêt. */
+  creditDateDebut?:        Date
+  /** Alternative : CRD déjà calculé à aujourd'hui (priorité aux 4 champs
+   *  bruts si fournis, sinon ce CRD pré-calculé est utilisé tel quel). */
+  creditCapitalRestantDu?: number
+  /** Cas d'exonération légale ou contractuelle des IRA. */
+  iraExonere?:             boolean
+
   /** Patrimoine financier actuel (€) — impact FIRE. */
   patrimoineActuel?:       number
   /** Épargne mensuelle (€/mois). */
@@ -190,6 +206,26 @@ export interface LmpDetail {
   raisonExoneration?:       string
 }
 
+/** Détail du remboursement bancaire (CRD + IRA) lors de la cession. */
+export interface CreditDetail {
+  /** CRD estimé à la date de cession (€). */
+  crdADateCession:          number
+  /** Mensualités restantes jusqu'à la fin du prêt. */
+  mensualitesRestantes:     number
+  /** true si le crédit est déjà soldé à la date de cession. */
+  creditSolde:              boolean
+  /** Indemnités de remboursement anticipé retenues (€). */
+  ira:                      number
+  /** Méthode de calcul IRA retenue. */
+  methodeIRA:               IraMethode
+  /** Libellé pédagogique de la méthode IRA retenue. */
+  detailIRA:                string
+  /** Total à rembourser à la banque = CRD + IRA. */
+  totalRemboursementBanque: number
+  /** Net vendeur AVANT déduction CRD + IRA (impôts et frais déjà déduits). */
+  netVendeurAvantCredit:    number
+}
+
 /** Comparaison rapide avec les autres régimes. */
 export interface ComparaisonRegime {
   regime:          RegimeFiscalRevente
@@ -210,6 +246,11 @@ export interface SimulationReventeResult {
   /** Régime utilisé pour ce calcul. */
   regime:                   RegimeFiscalRevente
   regimeLabel:              string
+
+  /** Prix de vente envisagé (input, propagé pour l'UI / waterfall). */
+  prixVenteEstime:          number
+  /** Frais d'agence (input, propagé pour l'UI / waterfall). */
+  fraisAgenceVente:         number
 
   /** Années révolues entre dateAchat et dateCessionEstimee. */
   anneesDetention:          number
@@ -256,6 +297,9 @@ export interface SimulationReventeResult {
   // Détails par régime (présents seulement si pertinents)
   sciIsDetail?:             SciIsDetail
   lmpDetail?:               LmpDetail
+
+  // Crédit immobilier (présent uniquement si données du prêt fournies)
+  creditDetail?:            CreditDetail
 
   // Pédagogie + conseils
   avertissements:           string[]
@@ -346,6 +390,79 @@ function calculerFraisEtTravaux(input: SimulationReventeInput, annees: number): 
   }
 
   return { fraisAcquisitionRetenus, travauxRetenus }
+}
+
+/**
+ * Construit le `CreditDetail` à partir des inputs crédit du bien.
+ * Renvoie `undefined` si aucune donnée de crédit n'est fournie.
+ * `netVendeurAvantCredit` doit être le net vendeur **après** impôts et
+ * frais d'agence, mais **avant** déduction CRD/IRA.
+ */
+function buildCreditDetail(
+  input:                 SimulationReventeInput,
+  netVendeurAvantCredit: number,
+): CreditDetail | undefined {
+  // Mode 1 : données brutes du prêt (calcul d'amortissement complet)
+  if (
+    input.creditCapitalInitial !== undefined && input.creditCapitalInitial > 0
+    && input.creditTauxAnnuelPct !== undefined
+    && input.creditDureeMois !== undefined && input.creditDureeMois > 0
+    && input.creditDateDebut !== undefined
+  ) {
+    const crdR = calculerCRD(
+      input.creditCapitalInitial,
+      input.creditTauxAnnuelPct,
+      input.creditDureeMois,
+      input.creditDateDebut,
+      input.dateCessionEstimee,
+    )
+    const iraR = calculerIRA(crdR.crd, input.creditTauxAnnuelPct, input.iraExonere)
+    return {
+      crdADateCession:          crdR.crd,
+      mensualitesRestantes:     crdR.mensualitesRestantes,
+      creditSolde:              crdR.creditSolde,
+      ira:                      iraR.ira,
+      methodeIRA:               iraR.methode,
+      detailIRA:                iraR.detail,
+      totalRemboursementBanque: crdR.crd + iraR.ira,
+      netVendeurAvantCredit,
+    }
+  }
+
+  // Mode 2 : CRD pré-calculé par l'app (cache `debts.capital_remaining`)
+  if (input.creditCapitalRestantDu !== undefined && input.creditCapitalRestantDu > 0) {
+    const crd = Math.round(input.creditCapitalRestantDu)
+    const iraR = calculerIRA(crd, input.creditTauxAnnuelPct ?? 0, input.iraExonere)
+    return {
+      crdADateCession:          crd,
+      mensualitesRestantes:     0,
+      creditSolde:              false,
+      ira:                      iraR.ira,
+      methodeIRA:               iraR.methode,
+      detailIRA:                iraR.detail,
+      totalRemboursementBanque: crd + iraR.ira,
+      netVendeurAvantCredit,
+    }
+  }
+
+  return undefined
+}
+
+/**
+ * Applique le remboursement bancaire (CRD + IRA) au résultat :
+ *   - écrit `creditDetail` (si crédit fourni)
+ *   - met à jour `netVendeur = netVendeur − CRD − IRA`
+ *
+ * Sans crédit fourni, le résultat est inchangé (rétro-compat 100 %).
+ */
+function applyCreditToResult(
+  result: SimulationReventeResult,
+  input:  SimulationReventeInput,
+): void {
+  const detail = buildCreditDetail(input, result.netVendeur)
+  if (!detail) return
+  result.creditDetail = detail
+  result.netVendeur = result.netVendeur - detail.totalRemboursementBanque
 }
 
 function computeImpactFIRE(
@@ -509,6 +626,8 @@ function calculerPVParticulier(
   const result: SimulationReventeResult = {
     regime,
     regimeLabel: REGIME_LABELS[regime],
+    prixVenteEstime: input.prixVenteEstime,
+    fraisAgenceVente: fraisAgence,
     anneesDetention: annees,
     fraisAcquisitionRetenus,
     travauxRetenus,
@@ -531,10 +650,12 @@ function calculerPVParticulier(
     avertissements,
   }
 
+  applyCreditToResult(result, input)
+
   if (!opts.pourComparaison) {
     const conseil = calculerConseilAttente(input, annees, abattIR, abattPS, pvBrute)
     if (conseil) result.conseilAttente = conseil
-    const impactFIRE = computeImpactFIRE(input, netVendeur)
+    const impactFIRE = computeImpactFIRE(input, result.netVendeur)
     if (impactFIRE) result.impactFIRE = impactFIRE
   }
   return result
@@ -635,6 +756,8 @@ function calculerPVLmnp(
   const result: SimulationReventeResult = {
     regime,
     regimeLabel: REGIME_LABELS[regime],
+    prixVenteEstime: input.prixVenteEstime,
+    fraisAgenceVente: fraisAgence,
     anneesDetention: annees,
     fraisAcquisitionRetenus,
     travauxRetenus,
@@ -658,10 +781,12 @@ function calculerPVLmnp(
     avertissements,
   }
 
+  applyCreditToResult(result, input)
+
   if (!opts.pourComparaison) {
     const conseil = calculerConseilAttente(input, annees, abattIR, abattPS, pvBrute)
     if (conseil) result.conseilAttente = conseil
-    const impactFIRE = computeImpactFIRE(input, netVendeur)
+    const impactFIRE = computeImpactFIRE(input, result.netVendeur)
     if (impactFIRE) result.impactFIRE = impactFIRE
   }
   return result
@@ -757,6 +882,8 @@ function calculerPVLmp(
   const result: SimulationReventeResult = {
     regime,
     regimeLabel: REGIME_LABELS[regime],
+    prixVenteEstime: input.prixVenteEstime,
+    fraisAgenceVente: fraisAgence,
     anneesDetention: annees,
     fraisAcquisitionRetenus: 0,
     travauxRetenus: 0,
@@ -783,8 +910,10 @@ function calculerPVLmp(
     avertissements,
   }
 
+  applyCreditToResult(result, input)
+
   if (!opts.pourComparaison) {
-    const impactFIRE = computeImpactFIRE(input, netVendeur)
+    const impactFIRE = computeImpactFIRE(input, result.netVendeur)
     if (impactFIRE) result.impactFIRE = impactFIRE
   }
   return result
@@ -861,6 +990,8 @@ function calculerPVSciIs(
   const result: SimulationReventeResult = {
     regime,
     regimeLabel: REGIME_LABELS[regime],
+    prixVenteEstime: input.prixVenteEstime,
+    fraisAgenceVente: fraisAgence,
     anneesDetention: annees,
     fraisAcquisitionRetenus: 0,
     travauxRetenus: 0,
@@ -886,8 +1017,10 @@ function calculerPVSciIs(
     avertissements,
   }
 
+  applyCreditToResult(result, input)
+
   if (!opts.pourComparaison) {
-    const impactFIRE = computeImpactFIRE(input, netVendeur)
+    const impactFIRE = computeImpactFIRE(input, result.netVendeur)
     if (impactFIRE) result.impactFIRE = impactFIRE
   }
   return result
@@ -913,6 +1046,8 @@ function baseExonere(
   const result: SimulationReventeResult = {
     regime,
     regimeLabel: REGIME_LABELS[regime],
+    prixVenteEstime: input.prixVenteEstime,
+    fraisAgenceVente: fraisAgence,
     anneesDetention: annees,
     fraisAcquisitionRetenus,
     travauxRetenus,
@@ -935,7 +1070,8 @@ function baseExonere(
     raisonExoneration,
     avertissements,
   }
-  const impactFIRE = computeImpactFIRE(input, netVendeur)
+  applyCreditToResult(result, input)
+  const impactFIRE = computeImpactFIRE(input, result.netVendeur)
   if (impactFIRE) result.impactFIRE = impactFIRE
   return result
 }

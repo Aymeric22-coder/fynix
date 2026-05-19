@@ -274,6 +274,9 @@ export default async function ImmobilierPage() {
                           regimeFiscal:     mapFiscalRegimeToRevente(p.fiscal_regime),
                           fraisAcquisitionReels: p.purchase_fees > 0 ? p.purchase_fees : undefined,
                           travauxReels:          p.works_amount   > 0 ? p.works_amount   : undefined,
+                          // CRD cumulé pré-calculé par `computeRealEstatePortfolio`
+                          // (cache `debts.capital_remaining`). 0 si pas de crédit actif.
+                          creditCapitalRestantDu: crd > 0 ? crd : undefined,
                         }}
                       />
                     </div>

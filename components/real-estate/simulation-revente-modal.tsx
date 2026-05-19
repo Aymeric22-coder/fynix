@@ -56,6 +56,12 @@ export interface SimulationReventeBien {
   travauxReels?:            number
   amortissementsCumules?:   number
   comptesCourantsAssocies?: number
+  // ── Crédit immobilier (pré-rempli depuis debts du bien si dispo) ──
+  creditCapitalInitial?:    number
+  creditTauxAnnuelPct?:     number
+  creditDureeMois?:         number
+  creditDateDebut?:         string   // YYYY-MM-DD
+  creditCapitalRestantDu?:  number   // CRD pré-calculé (cache `debts.capital_remaining`)
 }
 
 export interface SimulationReventeModalProps {
@@ -137,6 +143,23 @@ export function SimulationReventeModal(props: SimulationReventeModalProps) {
   const [travauxReels, setTravauxReels]   = useState<string>(
     bien.travauxReels != null ? String(bien.travauxReels) : '')
 
+  // ── État crédit immobilier ────────────────────────────────────────
+  const aPreData =
+       (bien.creditCapitalInitial   != null && bien.creditCapitalInitial > 0)
+    || (bien.creditCapitalRestantDu != null && bien.creditCapitalRestantDu > 0)
+  const [showCredit, setShowCredit] = useState<boolean>(aPreData)
+  const [creditCapital, setCreditCapital] = useState<string>(
+    bien.creditCapitalInitial != null ? String(bien.creditCapitalInitial) : '')
+  const [creditTaux, setCreditTaux] = useState<string>(
+    bien.creditTauxAnnuelPct != null ? String(bien.creditTauxAnnuelPct) : '')
+  const [creditDuree, setCreditDuree] = useState<string>(
+    bien.creditDureeMois != null ? String(bien.creditDureeMois) : '')
+  const [creditDateDebut, setCreditDateDebut] = useState<string>(
+    bien.creditDateDebut ?? '')
+  const [creditCRDpreCalcule] = useState<string>(
+    bien.creditCapitalRestantDu != null ? String(bien.creditCapitalRestantDu) : '')
+  const [iraExonere, setIraExonere] = useState<boolean>(false)
+
   function handleClose() {
     setStep('inputs')
     onClose()
@@ -166,6 +189,13 @@ export function SimulationReventeModal(props: SimulationReventeModalProps) {
       fraisAcquisitionReels:   fraisAcqReels ? Number(fraisAcqReels) : undefined,
       travauxReels:            travauxReels ? Number(travauxReels) : undefined,
       fraisAgenceVente:        fraisAgence ? Number(fraisAgence) : 0,
+      // ── Crédit (mode 1 : données brutes, mode 2 : CRD pré-calculé) ──
+      creditCapitalInitial:    creditCapital ? Number(creditCapital) : undefined,
+      creditTauxAnnuelPct:     creditTaux ? Number(creditTaux) : undefined,
+      creditDureeMois:         creditDuree ? Number(creditDuree) : undefined,
+      creditDateDebut:         creditDateDebut ? new Date(creditDateDebut) : undefined,
+      creditCapitalRestantDu:  creditCRDpreCalcule && !creditCapital ? Number(creditCRDpreCalcule) : undefined,
+      iraExonere:              iraExonere,
       patrimoineActuel:        props.patrimoineActuel,
       epargneMensuelle:        props.epargneMensuelle,
       revenuMensuelNet:        props.revenuMensuelNet,
@@ -174,7 +204,10 @@ export function SimulationReventeModal(props: SimulationReventeModalProps) {
   }, [
     step, prixVente, horizon, fraisAgence, fraisAcqReels, travauxReels,
     typeUsage, regimeFiscal, amortissements, comptesCourantsAssocies,
-    tauxIS, caLmp, tmiLmp, showCCA, showCaTmiLmp, bien, props,
+    tauxIS, caLmp, tmiLmp, showCCA, showCaTmiLmp,
+    creditCapital, creditTaux, creditDuree, creditDateDebut,
+    creditCRDpreCalcule, iraExonere,
+    bien, props,
   ])
 
   const valid = Number(prixVente) > 0
@@ -418,6 +451,90 @@ export function SimulationReventeModal(props: SimulationReventeModalProps) {
             )}
           </section>
 
+          {/* ─── Accordéon Crédit immobilier ─── */}
+          <section>
+            <button
+              type="button"
+              onClick={() => setShowCredit((v) => !v)}
+              aria-expanded={showCredit}
+              className="w-full text-left text-xs text-secondary uppercase tracking-widest hover:text-primary"
+            >
+              {showCredit ? '▾' : '▸'} Crédit immobilier (avancé)
+            </button>
+            {showCredit && (
+              <div className="mt-3 space-y-3">
+                <p className="text-[10px] text-muted leading-relaxed">
+                  Si le bien n&apos;a plus de crédit, laissez vide — aucun remboursement ne sera déduit.
+                  Pré-rempli depuis tes données si dispo.
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Capital emprunté (€)" htmlFor="credit-capital">
+                    <input
+                      id="credit-capital"
+                      type="number"
+                      inputMode="decimal"
+                      min={0}
+                      step={1000}
+                      value={creditCapital}
+                      onChange={(e) => setCreditCapital(e.target.value)}
+                      placeholder="Ex: 200000"
+                      className={inputCls}
+                    />
+                  </Field>
+                  <Field label="Taux annuel (%)" htmlFor="credit-taux">
+                    <input
+                      id="credit-taux"
+                      type="number"
+                      inputMode="decimal"
+                      min={0}
+                      step={0.05}
+                      value={creditTaux}
+                      onChange={(e) => setCreditTaux(e.target.value)}
+                      placeholder="Ex: 2.5"
+                      className={inputCls}
+                    />
+                  </Field>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Durée totale (mois)" htmlFor="credit-duree">
+                    <input
+                      id="credit-duree"
+                      type="number"
+                      inputMode="decimal"
+                      min={0}
+                      step={12}
+                      value={creditDuree}
+                      onChange={(e) => setCreditDuree(e.target.value)}
+                      placeholder="Ex: 240"
+                      className={inputCls}
+                    />
+                  </Field>
+                  <Field label="Date du 1er paiement" htmlFor="credit-date">
+                    <input
+                      id="credit-date"
+                      type="date"
+                      value={creditDateDebut}
+                      onChange={(e) => setCreditDateDebut(e.target.value)}
+                      className={inputCls}
+                    />
+                  </Field>
+                </div>
+                <label htmlFor="ira-exonere" className="flex items-start gap-2 text-xs text-secondary leading-relaxed cursor-pointer">
+                  <input
+                    id="ira-exonere"
+                    type="checkbox"
+                    checked={iraExonere}
+                    onChange={(e) => setIraExonere(e.target.checked)}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    IRA exonérées (mutation pro / licenciement / décès du co-emprunteur / clause contractuelle)
+                  </span>
+                </label>
+              </div>
+            )}
+          </section>
+
           <div className="pt-2">
             <Button onClick={() => setStep('results')} disabled={!valid} className="w-full">
               Simuler la revente
@@ -609,6 +726,42 @@ function ResultsView({ result, onEdit }: {
         </section>
       )}
 
+      {/* Bloc 3d — Remboursement bancaire (CRD + IRA) */}
+      {result.creditDetail && result.creditDetail.totalRemboursementBanque > 0 && (
+        <section className="card p-4">
+          <p className="text-xs text-secondary uppercase tracking-widest mb-3">
+            Remboursement à la banque
+          </p>
+          <Row
+            label="Capital restant dû"
+            value={formatEur(result.creditDetail.crdADateCession, { decimals: 0 })}
+          />
+          <Row
+            label={`IRA (${result.creditDetail.methodeIRA === 'pct_crd'
+              ? '3 % du CRD'
+              : result.creditDetail.methodeIRA === 'mois_interets'
+                ? '6 mois d\'intérêts'
+                : 'exonérées'})`}
+            value={formatEur(result.creditDetail.ira, { decimals: 0 })}
+          />
+          <div className="border-t border-border mt-2 pt-2">
+            <Row
+              label="Total banque"
+              value={formatEur(result.creditDetail.totalRemboursementBanque, { decimals: 0 })}
+              bold
+              tone="danger"
+            />
+          </div>
+          {result.creditDetail.creditSolde && (
+            <p className="text-[11px] text-emerald-400 mt-2">✓ Crédit soldé avant la vente</p>
+          )}
+          {result.creditDetail.methodeIRA === 'exonere' && !result.creditDetail.creditSolde && (
+            <p className="text-[11px] text-emerald-400 mt-2">✓ IRA exonérées</p>
+          )}
+          <p className="text-[10px] text-muted italic mt-2">{result.creditDetail.detailIRA}</p>
+        </section>
+      )}
+
       {/* Bloc 4 — Net vendeur (métrique hero) */}
       <section className="rounded-xl border border-accent/30 bg-accent/5 p-5 text-center">
         <p className="text-xs text-secondary uppercase tracking-widest mb-1">
@@ -617,8 +770,17 @@ function ResultsView({ result, onEdit }: {
         <p className="text-3xl font-bold text-accent financial-value">
           {formatEur(result.netVendeur, { decimals: 0 })} nets
         </p>
-        <p className="text-xs text-secondary mt-1">après impôts et frais d&apos;agence</p>
+        <p className="text-xs text-secondary mt-1">
+          {result.creditDetail && result.creditDetail.totalRemboursementBanque > 0
+            ? <>après impôts ({formatEur(result.impotTotal, { decimals: 0 })}), remboursement banque ({formatEur(result.creditDetail.totalRemboursementBanque, { decimals: 0 })}) et frais d&apos;agence</>
+            : 'après impôts et frais d\'agence'}
+        </p>
       </section>
+
+      {/* Waterfall visuel — décomposition du prix de vente */}
+      {result.creditDetail && result.creditDetail.totalRemboursementBanque > 0 && (
+        <WaterfallPrixVente result={result} />
+      )}
 
       {/* Bloc 5 — Impact FIRE */}
       {result.impactFIRE && (
@@ -783,6 +945,58 @@ function AbattementRow({ label, pct, pvNette }: {
         PV imposable : <span className="financial-value">{formatEur(pvNette, { decimals: 0 })}</span>
       </p>
     </div>
+  )
+}
+
+/**
+ * Waterfall horizontal du prix de vente :
+ * barres empilées montrant la décomposition prix vente → net vendeur.
+ * Affiché uniquement si CRD > 0.
+ */
+function WaterfallPrixVente({ result }: { result: SimulationReventeResult }) {
+  if (!result.creditDetail) return null
+  const prixVente   = result.prixVenteEstime
+  const fraisAgence = result.fraisAgenceVente
+  const banque      = result.creditDetail.totalRemboursementBanque
+  const impot       = result.impotTotal
+  const net         = Math.max(0, result.netVendeur)
+  const total       = prixVente > 0 ? prixVente : 1
+  const items: Array<{ key: string; label: string; value: number; cls: string }> = [
+    { key: 'banque', label: 'Remb. banque', value: banque, cls: 'bg-danger/70' },
+    { key: 'impot',  label: 'Impôt PV',     value: impot,  cls: 'bg-amber-500/70' },
+    { key: 'frais',  label: 'Frais agence', value: fraisAgence, cls: 'bg-secondary/60' },
+    { key: 'net',    label: 'Net vendeur',  value: net,    cls: 'bg-accent/80' },
+  ].filter((it) => it.value > 0)
+  return (
+    <section className="card p-4">
+      <p className="text-xs text-secondary uppercase tracking-widest mb-3">
+        Décomposition du prix de vente
+      </p>
+      <p className="text-[10px] text-muted mb-2">
+        Prix de vente : <span className="financial-value text-primary">{formatEur(prixVente, { decimals: 0 })}</span>
+      </p>
+      <div className="flex h-3 rounded-full overflow-hidden border border-border bg-surface-2">
+        {items.map((it) => (
+          <div
+            key={it.key}
+            className={it.cls}
+            style={{ width: `${(it.value / total) * 100}%` }}
+            title={`${it.label} : ${formatEur(it.value, { decimals: 0 })}`}
+          />
+        ))}
+      </div>
+      <ul className="grid grid-cols-2 gap-x-4 gap-y-1.5 mt-3 text-[11px]">
+        {items.map((it) => (
+          <li key={it.key} className="flex items-center justify-between gap-2">
+            <span className="flex items-center gap-1.5 text-secondary">
+              <span className={`inline-block h-2 w-2 rounded-sm ${it.cls}`} />
+              {it.label}
+            </span>
+            <span className="financial-value text-primary">{formatEur(it.value, { decimals: 0 })}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
   )
 }
 
