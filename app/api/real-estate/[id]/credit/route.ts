@@ -31,6 +31,9 @@ type Ctx = { params: Promise<{ id: string }> }
 interface CreditUpsertBody {
   name?:                string
   lender?:              string | null
+  /** Migration 034 — distingue plusieurs crédits sur le même bien */
+  loan_kind?:           'principal' | 'ptz' | 'travaux' | 'pel'
+                      | 'action_logement' | 'relais' | 'in_fine' | 'autre'
   initial_amount?:      number | null
   interest_rate?:       number | null
   insurance_rate?:      number | null
@@ -161,13 +164,24 @@ export const PUT = withAuth(async (req: Request, user: User, ctx: Ctx) => {
   const assetId = await getPropertyAssetId(supabase, user.id, propertyId)
   if (!assetId) return err('Property not found', 404)
 
-  // Récupère le crédit existant (s'il existe)
-  const { data: existing } = await supabase
+  // Migration 034 — un upsert cible un crédit unique identifié par
+  // (asset_id, loan_kind). Pour les biens existants où le crédit n'a
+  // pas encore de loan_kind, on tombe sur le défaut 'principal'.
+  const targetKind = body.loan_kind ?? 'principal'
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const baseQuery: any = supabase
     .from('debts')
     .select('*')
     .eq('asset_id', assetId)
     .eq('user_id', user.id)
     .eq('status', 'active')
+
+  // Note : on filtre par loan_kind si la colonne existe en base. Si la
+  // migration 034 n'est pas encore appliquée, on tombe sur le premier
+  // crédit actif.
+  const { data: existing } = await baseQuery
+    .eq('loan_kind', targetKind)
     .maybeSingle()
 
   // Merge : valeurs fournies dans le body écrasent l'existant
@@ -175,6 +189,7 @@ export const PUT = withAuth(async (req: Request, user: User, ctx: Ctx) => {
     name:               body.name              ?? existing?.name              ?? 'Crédit',
     debt_type:          'mortgage' as const,   // forcé : section Dette indépendante supprimée
     status:             'active' as const,
+    loan_kind:          targetKind,
     lender:             body.lender            ?? existing?.lender            ?? null,
     initial_amount:     body.initial_amount    ?? existing?.initial_amount    ?? null,
     interest_rate:      body.interest_rate     ?? existing?.interest_rate     ?? null,

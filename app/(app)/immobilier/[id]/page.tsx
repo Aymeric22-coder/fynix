@@ -15,6 +15,7 @@ import { DriftAlerts } from '@/components/real-estate/drift-alerts'
 import { RevisedForecastSection } from '@/components/real-estate/revised-forecast-section'
 import { YearEndReportPanel } from '@/components/real-estate/year-end-report-panel'
 import { CreditTab } from '@/components/real-estate/credit-tab'
+import { MultiCreditList } from '@/components/real-estate/multi-credit-list'
 import { AmortizationTable } from '@/components/real-estate/amortization-table'
 import type { ExistingCredit } from '@/components/real-estate/credit-form'
 import { loadActualData } from '@/lib/real-estate/actual'
@@ -22,7 +23,9 @@ import { compareActualToSimulation } from '@/lib/real-estate/compare'
 import { detectDriftAlerts } from '@/lib/real-estate/insights'
 import { computeRevisedForecast } from '@/lib/real-estate/forecast'
 import { buildYearEndReport } from '@/lib/real-estate/year-end-report'
-import { buildAmortizationSchedule, computeRemainingCapitalAt } from '@/lib/real-estate/amortization'
+import { buildAmortizationSchedule } from '@/lib/real-estate/amortization'
+import { aggregateLoans } from '@/lib/real-estate/multi-credit'
+import type { LoanKind } from '@/types/database.types'
 import { buildSimulationInputFromDb, runSimulation } from '@/lib/real-estate'
 import { formatCurrency, formatPercent, formatDate } from '@/lib/utils/format'
 import type { LoanInput } from '@/lib/real-estate/types'
@@ -70,18 +73,26 @@ export default async function ImmobilierDetailPage({ params }: Props) {
   const isRental    = isRentalUsage(usageType)
   const isPrimaryRP = usageType === 'primary_residence'
 
-  // ── Crédit lié à cet asset (s'il existe) ───────────────────────────────
+  // ── Crédits liés à cet asset (migration 034 : multi-crédit possible) ────
   // Note : on utilise select('*') plutôt que de lister les colonnes
-  // explicitement, pour tolérer un environnement où la migration 006
-  // n'est pas encore appliquée (insurance_base / quotite / guarantee_type
-  // seront undefined dans la row, gérés par les ?? defaults plus bas).
-  const { data: debtRow } = await supabase
+  // explicitement, pour tolérer un environnement où les migrations 006
+  // et 034 ne sont pas encore appliquées (loan_kind / insurance_base /
+  // quotite / guarantee_type seront undefined, gérés par les ?? defaults).
+  const { data: debtsRows } = await supabase
     .from('debts')
     .select('*')
     .eq('asset_id', prop.asset_id)
     .eq('user_id', user!.id)
     .eq('status', 'active')
-    .maybeSingle()
+    .order('created_at', { ascending: true })
+
+  // Pour rétrocompat avec le code existant : on prend le "premier" crédit
+  // comme crédit principal (typiquement le prêt principal). Le reste des
+  // crédits est utilisé pour l'agrégation multi-prêt côté affichage.
+  const allDebts = debtsRows ?? []
+  const debtRow  = allDebts.find(d => (d.loan_kind ?? 'principal') === 'principal')
+                ?? allDebts[0]
+                ?? null
 
   // ── Profil utilisateur (TMI) ─────────────────────────────────────────────
   const { data: profileRow } = await supabase
@@ -186,6 +197,7 @@ export default async function ImmobilierDetailPage({ params }: Props) {
     id:                 debtRow.id,
     name:               debtRow.name ?? 'Crédit',
     lender:             debtRow.lender,
+    loan_kind:          (debtRow.loan_kind ?? 'principal') as LoanKind,
     initial_amount:     debtRow.initial_amount,
     interest_rate:      debtRow.interest_rate,
     insurance_rate:     debtRow.insurance_rate ?? 0,
@@ -221,11 +233,42 @@ export default async function ImmobilierDetailPage({ params }: Props) {
     insuranceQuotitePct: creditForTab.insurance_quotite,
   } : null
 
+  // ── Multi-crédit (migration 034) ────────────────────────────────────────
+  // Construit un LoanInput pour CHAQUE crédit actif puis agrège leur
+  // schedule. Pour rétrocompat avec un bien à un seul crédit, le résultat
+  // est strictement identique à l'ancien calcul.
+  const allLoansForCalc: LoanInput[] = allDebts
+    .filter(d =>
+      d.initial_amount != null &&
+      d.interest_rate  != null &&
+      d.duration_months != null,
+    )
+    .map(d => ({
+      principal:           d.initial_amount,
+      annualRatePct:       d.interest_rate,
+      durationYears:       d.duration_months / 12,
+      insuranceRatePct:    d.insurance_rate ?? 0,
+      bankFees:            d.bank_fees      ?? 0,
+      guaranteeFees:       d.guarantee_fees ?? 0,
+      startDate:           d.start_date ? new Date(d.start_date) : undefined,
+      deferralType:        (d.deferral_type     ?? 'none')             as 'none' | 'partial' | 'total',
+      deferralMonths:      d.deferral_months   ?? 0,
+      insuranceBase:       (d.insurance_base    ?? 'capital_initial') as 'capital_initial' | 'capital_remaining',
+      insuranceQuotitePct: d.insurance_quotite ?? 100,
+    }))
+
+  const multiCredit = aggregateLoans(allLoansForCalc, new Date())
+  // Schedule du crédit principal (utilisé par l'onglet "Amortissement").
   const schedule = loanForCalc ? buildAmortizationSchedule(loanForCalc) : null
-  const crdNow   = loanForCalc ? computeRemainingCapitalAt(loanForCalc, new Date()) : 0
+  // CRD à date — total tous prêts actifs confondus.
+  const crdNow   = allLoansForCalc.length > 0
+    ? multiCredit.totalRemainingCapital
+    : 0
 
   // ── Synthèse : KPIs financiers globaux ──────────────────────────────────
-  const monthlyLoanPayment = schedule?.totalMonthly ?? 0
+  // Mensualité totale = somme des mensualités de tous les crédits actifs
+  // (migration 034). Pour un bien avec un seul crédit, équivalent à l'ancien.
+  const monthlyLoanPayment = multiCredit.totalMonthly
   const monthlyCharges     = annualCharges / 12
   // Pour un bien locatif : cash-flow = loyers − charges − crédit.
   // Pour une RP / résidence secondaire sans location : pas de loyers, le KPI
@@ -437,11 +480,32 @@ export default async function ImmobilierDetailPage({ params }: Props) {
       label: 'Crédit',
       icon:  <Banknote size={14} />,
       content: (
-        <CreditTab
-          propertyId={prop.id}
-          propertyName={prop.asset?.name}
-          credit={creditForTab}
-        />
+        <div className="space-y-6">
+          {/* Vue d'ensemble multi-crédit (migration 034) */}
+          {allDebts.length > 0 && (
+            <MultiCreditList
+              credits={allDebts.map(d => ({
+                id:               d.id,
+                loan_kind:        (d.loan_kind ?? 'principal') as LoanKind,
+                lender:           d.lender ?? null,
+                initial_amount:   d.initial_amount,
+                interest_rate:    d.interest_rate,
+                insurance_rate:   d.insurance_rate ?? 0,
+                duration_months:  d.duration_months,
+                start_date:       d.start_date,
+              }))}
+              totalMonthly={multiCredit.totalMonthly}
+              totalRemainingCapital={multiCredit.totalRemainingCapital}
+            />
+          )}
+
+          {/* Formulaire d'édition du crédit principal (création / modification) */}
+          <CreditTab
+            propertyId={prop.id}
+            propertyName={prop.asset?.name}
+            credit={creditForTab}
+          />
+        </div>
       ),
     },
 

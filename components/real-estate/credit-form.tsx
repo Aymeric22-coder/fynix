@@ -25,10 +25,15 @@ import { formatCurrency, formatPercent } from '@/lib/utils/format'
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
+export type LoanKindForm =
+  | 'principal' | 'ptz' | 'travaux' | 'pel'
+  | 'action_logement' | 'relais' | 'in_fine' | 'autre'
+
 export interface ExistingCredit {
   id?:                  string
   name:                 string
   lender:               string | null
+  loan_kind:            LoanKindForm
   initial_amount:       number | null
   interest_rate:        number | null
   insurance_rate:       number | null
@@ -59,6 +64,7 @@ function makeInitial(name: string) {
   return {
     name,
     lender:             '' as string,
+    loan_kind:          'principal' as LoanKindForm,
     initial_amount:     null as number | null,
     interest_rate:      null as number | null,
     insurance_rate:     0.30 as number,
@@ -87,6 +93,7 @@ export function CreditForm({ open, onClose, propertyId, existing, propertyName }
     ? {
         name:              existing.name,
         lender:            existing.lender ?? '',
+        loan_kind:         existing.loan_kind ?? ('principal' as LoanKindForm),
         initial_amount:    existing.initial_amount,
         interest_rate:     existing.interest_rate,
         insurance_rate:    existing.insurance_rate ?? 0,
@@ -121,6 +128,7 @@ export function CreditForm({ open, onClose, propertyId, existing, propertyName }
         body:    JSON.stringify({
           name:              v.name,
           lender:            v.lender || null,
+          loan_kind:         v.loan_kind,
           initial_amount:    v.initial_amount,
           interest_rate:     v.interest_rate,
           insurance_rate:    v.insurance_rate ?? 0,
@@ -199,6 +207,22 @@ export function CreditForm({ open, onClose, propertyId, existing, propertyName }
 
         {/* Identité du crédit */}
         <FormSection>
+          <Field label="Type de prêt" required hint="Permet d'avoir plusieurs crédits sur un même bien (principal + PTZ + travaux)">
+            <Select
+              value={values.loan_kind}
+              onChange={(e) => set('loan_kind', e.target.value as LoanKindForm)}
+              required
+            >
+              <option value="principal">Prêt principal</option>
+              <option value="ptz">PTZ (Prêt à Taux Zéro)</option>
+              <option value="travaux">Prêt travaux</option>
+              <option value="pel">PEL / CEL</option>
+              <option value="action_logement">Action Logement</option>
+              <option value="relais">Prêt relais</option>
+              <option value="in_fine">Prêt in fine</option>
+              <option value="autre">Autre</option>
+            </Select>
+          </Field>
           <FormGrid>
             <Field label="Libellé" required>
               <Input value={values.name} onChange={(e) => set('name', e.target.value)} placeholder="ex : Crédit acquisition" required />

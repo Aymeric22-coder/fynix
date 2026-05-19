@@ -23,6 +23,28 @@ export type HoldingMode = 'direct' | 'assurance_vie' | 'sci' | 'other'
 export type LotStatus = 'rented' | 'vacant' | 'owner_occupied' | 'works'
 export type FiscalRegime = 'lmnp_reel' | 'lmnp_micro' | 'lmp' | 'sci_is' | 'sci_ir' | 'foncier_nu' | 'foncier_micro'
 
+// ── Migration 034 — Type de prêt (multi-crédit par bien) ─────────
+export type LoanKind =
+  | 'principal'
+  | 'ptz'
+  | 'travaux'
+  | 'pel'
+  | 'action_logement'
+  | 'relais'
+  | 'in_fine'
+  | 'autre'
+
+export const LOAN_KIND_LABELS: Record<LoanKind, string> = {
+  principal:       'Prêt principal',
+  ptz:             'PTZ (Prêt à Taux Zéro)',
+  travaux:         'Prêt travaux',
+  pel:             'PEL / CEL',
+  action_logement: 'Action Logement',
+  relais:          'Prêt relais',
+  in_fine:         'Prêt in fine',
+  autre:           'Autre',
+}
+
 // ── Migration 033 — Type d'usage d'un bien immobilier ─────────────
 export type PropertyUsageType =
   | 'primary_residence'
