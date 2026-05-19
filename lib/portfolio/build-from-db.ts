@@ -4,6 +4,12 @@
  * Charge les positions, instruments, prix et envelopes d'un utilisateur,
  * puis appelle le moteur de valorisation pur. Les analytics historiques
  * sont calculées à partir de `wealth_snapshots` (depuis Sprint 2, I4 finalise).
+ *
+ * Conversion FX : pré-charge les taux nécessaires (positionCurrency → ref
+ * et priceCurrency → positionCurrency) depuis `getFxRate` (cache mémoire +
+ * fx_rates DB + Frankfurter API). Les paires introuvables retombent sur
+ * un repli 1:1 plutôt que d'exclure silencieusement la position des KPI,
+ * et sont remontées dans `summary.excludedForFx` pour avertissement UI.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -14,8 +20,9 @@ import {
   valuePortfolio, type ValuationOptions,
 } from './valuation'
 import type {
-  InstrumentInput, PositionInput, PriceInput, PortfolioResult,
+  InstrumentInput, PositionInput, PriceInput, PortfolioResult, PortfolioSummary,
 } from './types'
+import { getFxRate } from '@/lib/providers/fx'
 
 // ─── DB row types (lecture seule, ce qu'on attend du SELECT) ────────────
 
@@ -55,9 +62,40 @@ interface PriceRow {
 
 // ─── Public ─────────────────────────────────────────────────────────────
 
-export interface BuildOptions extends Omit<ValuationOptions, 'now'> {
+/** Paire devise non résolue à la conversion, repliée à 1:1 dans le calcul. */
+export interface UnresolvedFxPair {
+  from:           CurrencyCode
+  to:             CurrencyCode
+  /** Nombre de positions actives dans la devise `from` impactées par le repli. */
+  positionsCount: number
+}
+
+/**
+ * Variante du résumé enrichie des paires FX non résolues.
+ *
+ * Compatible structurellement avec `PortfolioSummary` (extension stricte),
+ * donc consommable tel quel partout où un `PortfolioSummary` est attendu.
+ */
+export interface PortfolioSummaryWithFx extends PortfolioSummary {
+  /** Vide si toutes les paires ont été résolues. */
+  excludedForFx: UnresolvedFxPair[]
+}
+
+export interface PortfolioResultWithFx {
+  positions: PortfolioResult['positions']
+  summary:   PortfolioSummaryWithFx
+}
+
+/**
+ * Options publiques pour `buildPortfolioFromDb`.
+ * `fxConvert` est volontairement omis : la construction est gérée
+ * en interne à partir de `getFxRate` (cache mémoire + DB + API).
+ */
+export interface BuildOptions extends Omit<ValuationOptions, 'now' | 'fxConvert'> {
   now?: Date
 }
+
+const fxKey = (from: CurrencyCode, to: CurrencyCode) => `${from}/${to}`
 
 /**
  * Construit le résultat portefeuille pour un utilisateur.
@@ -66,13 +104,17 @@ export interface BuildOptions extends Omit<ValuationOptions, 'now'> {
  *  1. Charge les positions actives + closed du user (RLS appliquée)
  *  2. Charge les instruments référencés (table partagée, lecture publique)
  *  3. Charge le dernier prix par instrument via la vue / DISTINCT ON (priced_at)
- *  4. Délègue au moteur pur valuePortfolio.
+ *  4. Précharge les taux de change nécessaires en parallèle.
+ *  5. Délègue au moteur pur valuePortfolio avec un fxConvert tolérant
+ *     (fallback 1:1 + tracking des paires manquantes).
  */
 export async function buildPortfolioFromDb(
   supabase: SupabaseClient,
   userId:   string,
   options:  BuildOptions = {},
-): Promise<PortfolioResult> {
+): Promise<PortfolioResultWithFx> {
+  const ref = (options.referenceCurrency ?? 'EUR') as CurrencyCode
+
   // 1. Positions de l'utilisateur (toutes statuses, l'agrégateur filtre lui-même)
   const { data: posRows, error: posErr } = await supabase
     .from('positions')
@@ -81,11 +123,11 @@ export async function buildPortfolioFromDb(
 
   if (posErr) {
     console.error('[portfolio] failed to load positions', posErr)
-    return emptyResult(options.referenceCurrency ?? 'EUR')
+    return emptyResult(ref)
   }
 
   const positions = (posRows ?? []) as PositionRow[]
-  if (positions.length === 0) return emptyResult(options.referenceCurrency ?? 'EUR')
+  if (positions.length === 0) return emptyResult(ref)
 
   // 2. Instruments référencés
   const ids = Array.from(new Set(positions.map((p) => p.instrument_id)))
@@ -98,7 +140,7 @@ export async function buildPortfolioFromDb(
 
   if (instErr) {
     console.error('[portfolio] failed to load instruments', instErr)
-    return emptyResult(options.referenceCurrency ?? 'EUR')
+    return emptyResult(ref)
   }
 
   const instruments = (instRows ?? []) as InstrumentRow[]
@@ -119,7 +161,7 @@ export async function buildPortfolioFromDb(
     }
   }
 
-  // 4. Mapping vers les types purs + délégation
+  // 4. Mapping vers les types purs
   const positionInputs: PositionInput[] = positions.map((p) => ({
     id:              p.id,
     instrumentId:    p.instrument_id,
@@ -154,10 +196,81 @@ export async function buildPortfolioFromDb(
     confidence:   p.confidence,
   }))
 
-  return valuePortfolio(positionInputs, instrumentInputs, priceInputs, options)
+  // 5. Pré-chargement FX. On collecte les paires nécessaires :
+  //    - (positionCurrency → ref)         : aggrégat en devise de référence.
+  //    - (priceCurrency → positionCurrency): conversion locale quand le prix
+  //      arrive dans une devise différente de la position (provider qui
+  //      renvoie un cross USD au lieu du local par exemple).
+  const positionCurrencyByInstrumentId = new Map<string, CurrencyCode>()
+  for (const p of positionInputs) {
+    positionCurrencyByInstrumentId.set(p.instrumentId, p.currency)
+  }
+
+  const neededPairs = new Set<string>()
+  for (const p of positionInputs) {
+    if (p.currency !== ref) neededPairs.add(fxKey(p.currency, ref))
+  }
+  for (const pr of priceInputs) {
+    const posCcy = positionCurrencyByInstrumentId.get(pr.instrumentId)
+    if (posCcy && pr.currency !== posCcy) {
+      neededPairs.add(fxKey(pr.currency, posCcy))
+    }
+  }
+
+  // Résolution en parallèle. Une erreur (cache miss + API down par
+  // exemple) laisse la paire absente du map → fallback 1:1 + tracking.
+  const fxMap = new Map<string, number>()
+  await Promise.all(
+    Array.from(neededPairs).map(async (key) => {
+      const [from, to] = key.split('/') as [CurrencyCode, CurrencyCode]
+      try {
+        const rate = await getFxRate(from, to)
+        if (Number.isFinite(rate) && rate > 0) fxMap.set(key, rate)
+      } catch {
+        // Volontairement silencieux : remonté via excludedForFx ci-dessous.
+      }
+    }),
+  )
+
+  // 6. fxConvert tolérant : enregistre les paires non résolues plutôt
+  //    que de retourner null (qui ferait disparaître la position).
+  const unresolved = new Map<string, { from: CurrencyCode; to: CurrencyCode }>()
+  const fxConvert = (from: CurrencyCode, to: CurrencyCode): number => {
+    if (from === to) return 1
+    const key = fxKey(from, to)
+    const rate = fxMap.get(key)
+    if (rate !== undefined) return rate
+    unresolved.set(key, { from, to })
+    return 1  // Repli : on conserve la position quitte à signaler le biais à l'UI.
+  }
+
+  const result = valuePortfolio(positionInputs, instrumentInputs, priceInputs, {
+    ...options,
+    fxConvert,
+  })
+
+  // 7. Compose la liste des paires non résolues + le nb de positions impactées.
+  const activeByCurrency = new Map<CurrencyCode, number>()
+  for (const p of positionInputs) {
+    if (p.status !== 'active') continue
+    activeByCurrency.set(p.currency, (activeByCurrency.get(p.currency) ?? 0) + 1)
+  }
+
+  const excludedForFx: UnresolvedFxPair[] = Array.from(unresolved.values()).map(
+    ({ from, to }) => ({
+      from,
+      to,
+      positionsCount: activeByCurrency.get(from) ?? 0,
+    }),
+  )
+
+  return {
+    positions: result.positions,
+    summary:   { ...result.summary, excludedForFx },
+  }
 }
 
-function emptyResult(ref: CurrencyCode): PortfolioResult {
+function emptyResult(ref: CurrencyCode): PortfolioResultWithFx {
   return {
     positions: [],
     summary: {
@@ -172,6 +285,7 @@ function emptyResult(ref: CurrencyCode): PortfolioResult {
       allocationByClass:     [],
       allocationByEnvelope:  [],
       referenceCurrency:     ref,
+      excludedForFx:         [],
     },
   }
 }
