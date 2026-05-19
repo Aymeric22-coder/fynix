@@ -124,11 +124,16 @@ export function calculerImpotFoncier(inputs: ImpotFoncierInputs): ImpotFoncierRe
       break
 
     case 'lmnp_reel':
+      // D18 — Audit fix : les prélèvements sociaux (17,2 %) s'appliquent
+      // bien au LMNP réel non-pro sur le bénéfice positif (cf. art. L136-6
+      // CSS). L'ancienne version `tauxPct = tmiPct` seul minorait le
+      // cashflow net d'environ 17 points et gonflait artificiellement
+      // l'écart micro-BIC vs réel.
       base    = loyer - charges - interets - amortissement
-      tauxPct = tmiPct
+      tauxPct = tmiPct + PRELEVEMENTS_SOCIAUX_PCT
       notes   = valeurAmort > 0
-        ? `LMNP réel : base = loyer − charges − intérêts − amortissement (${LMNP_AMORT_DEFAULT_PCT} % du bâti), imposition TMI seul.`
-        : 'LMNP réel : base = loyer − charges − intérêts, imposition TMI seul. Amortissement non estimé (renseignez la valeur amortissable).'
+        ? `LMNP réel : base = loyer − charges − intérêts − amortissement (${LMNP_AMORT_DEFAULT_PCT} % du bâti), imposition TMI + 17,2 % PS sur bénéfice positif.`
+        : 'LMNP réel : base = loyer − charges − intérêts, imposition TMI + 17,2 % PS sur bénéfice positif. Amortissement non estimé (renseignez la valeur amortissable).'
       break
 
     case 'lmp':

@@ -34,6 +34,8 @@ import {
   AV_LONG_TERME_PCT,
   SWR_STANDARD_PCT,
   swrPctFromFireType,
+  calculerCiblePatrimoine,
+  RENDEMENT_PAR_CLASSE as RENDEMENT_CLASSE_SHARED,
 } from './constants'
 import { devWarn } from '../utils/devLog'
 
@@ -90,17 +92,21 @@ export function estimerTauxFiscalitePortefeuille(enveloppes: ReadonlyArray<strin
   return Math.round((total / count) * 10) / 10
 }
 
+// I10 audit : taux centralisés dans lib/analyse/constants.ts (RENDEMENT_PAR_CLASSE).
+// Mapping AnalyseAssetType → classe partagée. crypto/metaux gardés à 0 ici car
+// le calcul de rendement portefeuille les exclut explicitement plus bas (proxy
+// de long terme actions/ETF, plus stable pour le sliders init).
 const RENDEMENT_PAR_CLASSE: Record<AnalyseAssetType, number> = {
-  stock:   7,
-  etf:     7,
-  bond:    3,
-  scpi:    5,
-  metal:   2,
+  stock:   RENDEMENT_CLASSE_SHARED.actions * 100,
+  etf:     RENDEMENT_CLASSE_SHARED.etf * 100,
+  bond:    RENDEMENT_CLASSE_SHARED.obligataire * 100,
+  scpi:    RENDEMENT_CLASSE_SHARED.scpi * 100,
+  metal:   RENDEMENT_CLASSE_SHARED.metaux * 100,
   crypto:  0,
   unknown: 0,
 }
-const RENDEMENT_IMMO_DIRECT = 6
-const RENDEMENT_CASH        = 3
+const RENDEMENT_IMMO_DIRECT = RENDEMENT_CLASSE_SHARED.immo * 100
+const RENDEMENT_CASH        = RENDEMENT_CLASSE_SHARED.cash * 100
 
 // ─────────────────────────────────────────────────────────────────
 // Rendement central du portefeuille (utilisé pour les sliders init)
@@ -618,11 +624,14 @@ export function projectionGlobale(inputs: ProjectionInputs): ProjectionGlobaleRe
   const ecart = ageInd !== null ? ageInd - inputs.ageCible : null
 
   // ─── Cible inflation-adjusted à l'âge cible (Tâche 1) ─────────────
+  // I9 audit : formule centralisée dans lib/analyse/constants.ts pour
+  // éviter la divergence avec aggregateur/scores. Conserve la variable
+  // intermédiaire pour le calcul d'effort/cibleRevenu plus bas.
   const anneesJusquAgeCible        = Math.max(0, inputs.ageCible - inputs.ageActuel)
   const cibleRevenuMensuelFuturs   = inputs.revenuPassifCible * Math.pow(1 + inflationAnnuelle, anneesJusquAgeCible)
-  const ciblePatrimoineAjustee     = swrFraction > 0
-    ? (cibleRevenuMensuelFuturs * 12) / swrFraction
-    : 0
+  const ciblePatrimoineAjustee     = calculerCiblePatrimoine(
+    inputs.revenuPassifCible, anneesJusquAgeCible, inflationPct, swrPct,
+  )
 
   // ─── Revenu passif net projeté à l'âge cible (Tâche 2) ────────────
   // Loyers nets : on applique l'impôt foncier réel via calculerImpotFoncier

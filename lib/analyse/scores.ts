@@ -18,6 +18,10 @@ import type {
   PatrimoineComplet, Score, ScoresComplets, ScoreNiveau,
   AnalyseAssetType,
 } from '@/types/analyse'
+import {
+  calculerCiblePatrimoine, swrPctFromFireType, SWR_STANDARD_PCT,
+  RENDEMENT_PAR_CLASSE,
+} from './constants'
 import { trackingErrorScore, BENCHMARK_CLASSES_PATRIMOINE } from './benchmarks'
 import { normalizeStabiliteRevenus, type StabiliteRevenusId } from '../profil/calculs'
 
@@ -268,8 +272,8 @@ export function calculerCoherenceProfil(p: PatrimoineComplet): Score {
 // 3. Progression FIRE
 // ─────────────────────────────────────────────────────────────────
 
-/** Nombre d'années nécessaires pour atteindre `cible` à 7 % par an. */
-function anneesPourAtteindre(actuel: number, cible: number, mensualite: number, rendementAnnuel = 0.07): number {
+/** Nombre d'années nécessaires pour atteindre `cible` au rendement donné. */
+function anneesPourAtteindre(actuel: number, cible: number, mensualite: number, rendementAnnuel: number = RENDEMENT_PAR_CLASSE.actions): number {
   if (actuel >= cible) return 0
   if (mensualite <= 0) return 99
   const r = rendementAnnuel / 12
@@ -280,6 +284,33 @@ function anneesPourAtteindre(actuel: number, cible: number, mensualite: number, 
     mois++
   }
   return mois / 12
+}
+
+/**
+ * Rendement annuel estimé depuis la composition réelle du portefeuille
+ * (moyenne pondérée par valeur via RENDEMENT_PAR_CLASSE). Fallback actions
+ * (7 %) si patrimoine vide ou non typé.
+ */
+function rendementDepuisComposition(p: PatrimoineComplet): number {
+  const total = p.totalPortefeuille + p.totalCash + p.totalImmo
+  if (total <= 0) return RENDEMENT_PAR_CLASSE.actions
+  let pondere = 0
+  // Cash
+  pondere += p.totalCash * RENDEMENT_PAR_CLASSE.cash
+  // Immo (rendement long terme estimé indépendamment du brut locatif)
+  pondere += p.totalImmo * RENDEMENT_PAR_CLASSE.immo
+  // Portefeuille : par classe
+  for (const pos of p.positions) {
+    const cls =
+      pos.asset_type === 'crypto' ? 'crypto' :
+      pos.asset_type === 'bond'   ? 'obligataire' :
+      pos.asset_type === 'scpi'   ? 'scpi' :
+      pos.asset_type === 'metal'  ? 'metaux' :
+      'actions'
+    pondere += pos.current_value
+      * ((RENDEMENT_PAR_CLASSE as Record<string, number>)[cls] ?? RENDEMENT_PAR_CLASSE.actions)
+  }
+  return pondere / total
 }
 
 export function calculerProgressionFIRE(p: PatrimoineComplet): Score {
@@ -293,13 +324,19 @@ export function calculerProgressionFIRE(p: PatrimoineComplet): Score {
   // financier n'a besoin de générer que le RESTE.
   const revenuImmoMensuel    = Math.max(0, p.revenuPassifImmo)
   const cibleRestanteMensuel = Math.max(0, revenu_passif_cible - revenuImmoMensuel)
-  const cible                = cibleRestanteMensuel * 12 * 25
+  // I9 audit : cible calculée via formule centrale (constants.ts).
+  // TODO : intégrer anneesJusquaFIRE réel (cf. yearsToTarget dans aggregateur)
+  // — pour l'instant inflation=0 / yearsToTarget=0 reproduit l'ancien × 25.
+  const swrPct = swrPctFromFireType(null) || SWR_STANDARD_PCT
+  const cible  = calculerCiblePatrimoine(cibleRestanteMensuel, 0, 0, swrPct)
   // Patrimoine financier (les loyers immo couvrent déjà leur part).
   const actuel               = p.totalPortefeuille + p.totalCash
   const anneesObjectif       = age_cible - age
   if (anneesObjectif <= 0) return insufficientData('Progression FIRE')
 
-  const anneesNec = anneesPourAtteindre(actuel, cible, epargne_mensuelle)
+  // I10 audit : rendement issu de la composition réelle (avant : 7 % en dur).
+  const rendementCompo = rendementDepuisComposition(p)
+  const anneesNec = anneesPourAtteindre(actuel, cible, epargne_mensuelle, rendementCompo)
 
   let value: number
   if (actuel >= cible) {

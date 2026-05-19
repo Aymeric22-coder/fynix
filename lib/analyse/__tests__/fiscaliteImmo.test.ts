@@ -51,16 +51,17 @@ describe('calculerImpotFoncier', () => {
     expect(r.impot_annuel).toBe(2_832)
   })
 
-  it('lmnp_reel sans amortissement : base = loyer − charges − intérêts, TMI seul', () => {
+  it('lmnp_reel sans amortissement (D18) : base = loyer − charges − intérêts, TMI + PS 17,2 %', () => {
     const r = calculerImpotFoncier({ ...baseInputs, fiscal_regime: 'lmnp_reel' })
     expect(r.base_imposable).toBe(7_000)
-    // TMI seul → pas de PS
-    expect(r.taux_effectif_pct).toBeCloseTo(30, 1)
-    // impôt = 7 000 × 30 % = 2 100
-    expect(r.impot_annuel).toBe(2_100)
+    // D18 audit : TMI + PS — avant on appliquait TMI seul, ce qui minorait
+    // le cashflow net de 17 points.
+    expect(r.taux_effectif_pct).toBeCloseTo(30 + PRELEVEMENTS_SOCIAUX_PCT, 1)
+    // impôt = 7 000 × 47,2 % = 3 304
+    expect(r.impot_annuel).toBe(3_304)
   })
 
-  it('lmnp_reel AVEC amortissement : déduit aussi l\'amortissement du bâti', () => {
+  it('lmnp_reel AVEC amortissement (D18) : base réduite, toujours TMI + PS sur bénéfice positif', () => {
     // valeur amortissable 200 000 → amort = 200 000 × 2,5 % = 5 000
     const r = calculerImpotFoncier({
       ...baseInputs,
@@ -69,7 +70,38 @@ describe('calculerImpotFoncier', () => {
     })
     // base = 12 000 − 2 000 − 3 000 − 5 000 = 2 000
     expect(r.base_imposable).toBe(2_000)
-    expect(r.impot_annuel).toBe(600)        // 2 000 × 30 %
+    // 2 000 × 47,2 % = 944
+    expect(r.impot_annuel).toBe(944)
+  })
+
+  it('lmnp_reel D18 — déficit (charges + amortissement > loyers) → impôt = 0, pas de PS', () => {
+    const r = calculerImpotFoncier({
+      loyer_annuel:            10_000,
+      charges_annuelles:       5_000,
+      interets_credit_annuels: 4_000,
+      valeur_amortissable:     200_000,   // amort 5 000
+      tmi_rate:                30,
+      fiscal_regime:           'lmnp_reel',
+    })
+    // base = 10 000 − 5 000 − 4 000 − 5 000 = −4 000
+    expect(r.base_imposable).toBe(-4_000)
+    expect(r.impot_annuel).toBe(0)
+  })
+
+  it('lmnp_reel D18 — cashflow net < cashflow brut quand bénéfice > 0', () => {
+    // Loyer 12 000, charges 2 000, mensualité fictive 0 → brut = 10 000
+    const r = calculerImpotFoncier({
+      loyer_annuel:            12_000,
+      charges_annuelles:       2_000,
+      interets_credit_annuels: 0,
+      tmi_rate:                30,
+      fiscal_regime:           'lmnp_reel',
+    })
+    expect(r.base_imposable).toBe(10_000)
+    // L'impôt doit être > 0 (vérifie que PS contribue désormais)
+    expect(r.impot_annuel).toBeGreaterThan(0)
+    // À TMI seul (ancien comportement) : 3 000. Avec PS : 4 720. Doit être ≥ 4 700.
+    expect(r.impot_annuel).toBeGreaterThan(4_700)
   })
 
   it('sci_is : taux IS 25 % indépendant de la TMI', () => {

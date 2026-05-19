@@ -18,7 +18,10 @@ import { calculerTousLesScores } from './scores'
 import { genererRecommandations } from './recommandations'
 import { expandPositions, bucketsBySector, bucketsByZone, type ExpansionResult } from './expandETF'
 import { projectionGlobale, projectionFIREIntervalle, calculerRendementPortefeuille } from './projectionFIRE'
-import { swrPctFromFireType, INFLATION_DEFAUT_PCT } from './projectionFIRE'
+import { INFLATION_DEFAUT_PCT } from './projectionFIRE'
+import {
+  swrPctFromFireType, calculerCiblePatrimoine, RENDEMENT_PAR_CLASSE,
+} from './constants'
 import { devLog, devWarn } from '@/lib/utils/devLog'
 import { getEtfComposition } from './etfCompositions'
 import {
@@ -686,15 +689,24 @@ function rendementEstime(
 
   let weightedReturn = 0
   for (const b of biens) {
-    weightedReturn += (b.valeur / total) * b.rendement_brut
+    // Immo direct : on garde le rendement_brut réel par bien (loyers / valeur)
+    // car il dépend des inputs utilisateur. Fallback constante immo si NaN.
+    const r = Number.isFinite(b.rendement_brut) ? b.rendement_brut : RENDEMENT_PAR_CLASSE.immo * 100
+    weightedReturn += (b.valeur / total) * r
   }
-  // Cash : 1 % moyen (livret A en 2024-2026)
-  weightedReturn += (totalCash / total) * 1.0
-  // Portefeuille
-  const stockProxy = 5.0
+  // Cash : taux centralisé (I10 — avant 1 % en dur ici, 3 % ailleurs)
+  weightedReturn += (totalCash / total) * (RENDEMENT_PAR_CLASSE.cash * 100)
+  // Portefeuille : par classe (crypto via constante dédiée, fallback actions)
   for (const p of positions) {
-    const r = p.asset_type === 'crypto' ? 0 : stockProxy
-    weightedReturn += (p.current_value / total) * r
+    const cls =
+      p.asset_type === 'crypto' ? 'crypto' :
+      p.asset_type === 'bond'   ? 'obligataire' :
+      p.asset_type === 'scpi'   ? 'scpi' :
+      p.asset_type === 'metal'  ? 'metaux' :
+      'actions'
+    const r = (RENDEMENT_PAR_CLASSE as Record<string, number>)[cls]
+      ?? RENDEMENT_PAR_CLASSE.actions
+    weightedReturn += (p.current_value / total) * (r * 100)
   }
   return Math.round(weightedReturn * 100) / 100
 }
@@ -877,7 +889,6 @@ function computeProjectionSnapshot(i: ProjectionSnapshotInputs): import('@/types
   // C'est le meme helper que /analyse > ProjectionFIRE.tsx, donc Hero et
   // page Analyse affichent desormais la meme cible et le meme pourcentage.
   const swrPct = swrPctFromFireType(i.fireType)
-  const swrFraction = swrPct / 100
 
   const baseInputs = {
     ageActuel:                 i.ageActuel,
@@ -898,10 +909,12 @@ function computeProjectionSnapshot(i: ProjectionSnapshotInputs): import('@/types
   const interval = projectionFIREIntervalle(baseInputs)
 
   // Cible FIRE = revenu annuel cible / SWR, indexee sur l'inflation a
-  // l'horizon de l'age cible. Avant : x12x25 fige (= SWR 4% en dur).
+  // l'horizon de l'age cible. Formule unique via lib/analyse/constants.ts
+  // (I9 — audit fix : 3 implémentations divergentes consolidées).
   const yearsToTarget = Math.max(0, i.ageCible - i.ageActuel)
-  const patrimoineFireCible =
-    (i.revenuPassifCible * 12 / swrFraction) * Math.pow(1 + i.inflationPct / 100, yearsToTarget)
+  const patrimoineFireCible = calculerCiblePatrimoine(
+    i.revenuPassifCible, yearsToTarget, i.inflationPct, swrPct,
+  )
 
   // Si déjà sur la trajectoire (atteint la cible avant l'âge cible)
   // → pas de besoin d'épargne supplémentaire.

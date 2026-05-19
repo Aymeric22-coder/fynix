@@ -71,3 +71,65 @@ export function swrPctFromFireType(fireType: string | null | undefined): number 
       return SWR_STANDARD_PCT
   }
 }
+
+// ── Cible patrimoniale FIRE (I9 — formule unifiée) ───────────────────
+
+/**
+ * Cible patrimoine FIRE = revenu annuel cible × (1 + inflation)^N / SWR.
+ *
+ * Formule unique, à appeler depuis aggregateur, projectionFIRE et scores
+ * pour éviter les 3 implémentations divergentes pré-audit :
+ *   - aggregateur : `revenu × 12 / swr × (1 + i)^y`
+ *   - projectionFIRE : `revenu × (1 + i)^y × 12 / swrFraction`
+ *   - scores : `revenu × 12 × 25` (sans inflation, SWR figé 4 %)
+ *
+ * @param revenuMensuelCible   Revenu passif mensuel cible en € (montant actuel)
+ * @param anneesJusquaFIRE     Années entre maintenant et l'âge cible (0 = aujourd'hui)
+ * @param inflationAnnuellePct Taux d'inflation annuel en % (ex. 2 = 2 %)
+ * @param swrPct               Safe Withdrawal Rate en % (ex. 4 = 4 %)
+ * @returns Patrimoine total nécessaire à l'âge cible (€)
+ */
+export function calculerCiblePatrimoine(
+  revenuMensuelCible:   number,
+  anneesJusquaFIRE:     number,
+  inflationAnnuellePct: number,
+  swrPct:               number,
+): number {
+  if (swrPct <= 0) return 0
+  const swrFraction     = swrPct / 100
+  const facteurInflation = Math.pow(1 + inflationAnnuellePct / 100, Math.max(0, anneesJusquaFIRE))
+  return (revenuMensuelCible * 12 / swrFraction) * facteurInflation
+}
+
+// ── Rendements par classe d'actif (I10 — source unique) ──────────────
+
+/**
+ * Rendements annuels estimés par classe d'actif (en décimal, ex. 0.07 = 7 %).
+ * Source : données historiques long terme (MSCI World, JPM Guide to Markets,
+ * Banque de France IRL). À réviser annuellement (cf. NEXT_ACTIONS.md).
+ *
+ * Avant l'audit, 3 fichiers définissaient leurs propres taux :
+ *   - projectionFIRE : cash 3 %, immo 6 %, stock 7 %
+ *   - aggregateur :    cash 1 %, stock 5 %, crypto 0 %
+ *   - scores :         7 % en dur (anneesPourAtteindre)
+ * Désormais tous lisent ces constantes.
+ */
+export const RENDEMENT_PAR_CLASSE = {
+  cash:        0.03,
+  obligataire: 0.03,
+  immo:        0.06,
+  actions:     0.07,
+  etf:         0.07,
+  crypto:      0.05,
+  scpi:        0.045,
+  metaux:      0.02,
+} as const
+
+export type ClasseActif = keyof typeof RENDEMENT_PAR_CLASSE
+
+/** Lookup avec fallback `actions` quand la classe n'existe pas. */
+export function rendementParClasse(classe: ClasseActif | string): number {
+  return (RENDEMENT_PAR_CLASSE as Record<string, number>)[classe]
+    ?? RENDEMENT_PAR_CLASSE.actions
+}
+
