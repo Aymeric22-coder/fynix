@@ -438,3 +438,142 @@ describe('Tri + agrégation', () => {
     expect(r.opportunites).toHaveLength(8)
   })
 })
+
+// ─────────────────────────────────────────────────────────────────
+// D17 — Corrections audit calculs fiscaux
+// ─────────────────────────────────────────────────────────────────
+
+describe('D17a — PEA : gain réaliste (sans turnover fictif)', () => {
+  it('PEA non ouvert + 50 k€ ETF en CTO → gain ≈ 50 000 × 7% × 12.8% (pas × 20% × 7%)', () => {
+    const r = calculerOpportunitesFiscales({
+      patrimoine: patrimoine({
+        positions: [pos({ asset_type: 'etf', current_value: 50_000 })],
+        fireInputs: {
+          ...patrimoine().fireInputs,
+          enveloppes: [],   // pas de PEA
+          tmi_rate: 30,
+        },
+      }),
+    })
+    const opp = r.opportunites.find((o) => o.id === 'opp_pea')!
+    expect(opp.applicable).toBe(true)
+    // Gain attendu : 50 000 × 0.07 = 3 500 PV/an + dividendes CTO
+    // (dividendes = 50 000 × 1.0 × 0.02 = 1 000)
+    // Base = 4 500 ; économie = 4 500 × (30 − 17.2) / 100 = 576 €
+    // L'ancien calcul donnait : 50 000 × 0.20 × 0.07 = 700 PV/an → 89.6 € — beaucoup trop bas
+    expect(opp.gain_annuel_eur).toBeGreaterThan(500)
+    expect(opp.gain_annuel_eur).toBeLessThan(700)
+  })
+
+  it('PEA ouvert + 30 k€ ETF → gain basé sur dividendes seuls, pas sur turnover fictif', () => {
+    const r = calculerOpportunitesFiscales({
+      patrimoine: patrimoine({
+        positions: [pos({ asset_type: 'etf', current_value: 30_000 })],
+        fireInputs: {
+          ...patrimoine().fireInputs,
+          enveloppes: ['PEA'],
+          tmi_rate: 30,
+        },
+      }),
+    })
+    const opp = r.opportunites.find((o) => o.id === 'opp_pea')!
+    expect(opp.applicable).toBe(true)
+    // peaOuvert → pvAnnuellesEstimees = 0, dividendes = 30 000 × 0.3 × 0.02 = 180
+    // gain = 180 × 12.8 / 100 = 23 €
+    expect(opp.gain_annuel_eur).toBeLessThan(50)
+  })
+})
+
+describe('D17b — AV : gain sur abattement réalisable (pas PV latentes)', () => {
+  it('AV ouverte + TMI 30 → gain = 4 600 × 30% = 1 380 €', () => {
+    const r = calculerOpportunitesFiscales({
+      patrimoine: patrimoine({
+        fireInputs: {
+          ...patrimoine().fireInputs,
+          enveloppes: ['Assurance-vie'],
+          tmi_rate: 30,
+        },
+      }),
+    })
+    const opp = r.opportunites.find((o) => o.id === 'opp_assurance_vie')!
+    expect(opp.applicable).toBe(true)
+    expect(opp.gain_annuel_eur).toBe(1_380)
+  })
+
+  it('AV non ouverte → gain = 0', () => {
+    const r = calculerOpportunitesFiscales({
+      patrimoine: patrimoine({
+        fireInputs: {
+          ...patrimoine().fireInputs,
+          enveloppes: [],
+          tmi_rate: 30,
+        },
+      }),
+    })
+    const opp = r.opportunites.find((o) => o.id === 'opp_assurance_vie')!
+    expect(opp.applicable).toBe(false)
+    expect(opp.gain_annuel_eur).toBe(0)
+  })
+
+  it('AV ouverte mais TMI 0 → non applicable', () => {
+    const r = calculerOpportunitesFiscales({
+      patrimoine: patrimoine({
+        fireInputs: {
+          ...patrimoine().fireInputs,
+          enveloppes: ['Assurance-vie'],
+          tmi_rate: 0,
+        },
+      }),
+    })
+    const opp = r.opportunites.find((o) => o.id === 'opp_assurance_vie')!
+    expect(opp.applicable).toBe(false)
+    expect(opp.gain_annuel_eur).toBe(0)
+  })
+})
+
+describe('D17c — Démembrement : barème progressif + abattement 100 k€', () => {
+  it('immo PP 300 k€ + 55 ans (usufruit 50 %) → nue-prop 150 k€ − 100 k€ = 50 k€ base', () => {
+    const r = calculerOpportunitesFiscales({
+      patrimoine: patrimoine({
+        totalNet: 600_000,
+        fireInputs: { ...patrimoine().fireInputs, age: 55 },
+        biens: [bien({ equity: 300_000 })],
+      }),
+    })
+    const opp = r.opportunites.find((o) => o.id === 'opp_demembrement')!
+    expect(opp.applicable).toBe(true)
+    // age 55 → tauxUsufruit = 0.50 (61 > age ≥ 51)
+    // nuePropTransmise = 0.50 × 300 000 = 150 000
+    // base = 150 000 − 100 000 = 50 000
+    // droits = 1 380.75 + (50 000 − 15 932) × 0.20 ≈ 8 194 €
+    // gain_5ans = droits / 2 ≈ 4 097
+    expect(opp.gain_5ans_eur).toBeGreaterThan(3_500)
+    expect(opp.gain_5ans_eur).toBeLessThan(5_000)
+  })
+
+  it('immo PP 200 k€ + 55 ans (usufruit 50 %) → nue-prop 100 k€ = abattement → base 0', () => {
+    const r = calculerOpportunitesFiscales({
+      patrimoine: patrimoine({
+        totalNet: 600_000,
+        fireInputs: { ...patrimoine().fireInputs, age: 55 },
+        biens: [bien({ equity: 200_000 })],
+      }),
+    })
+    const opp = r.opportunites.find((o) => o.id === 'opp_demembrement')!
+    // 200 000 × 50 % = 100 000 ; après abattement 100 000 → base = 0 → droits = 0
+    expect(opp.applicable).toBe(true)
+    expect(opp.gain_5ans_eur).toBe(0)
+  })
+
+  it('mention "abattement" dans les conditions affichées', () => {
+    const r = calculerOpportunitesFiscales({
+      patrimoine: patrimoine({
+        totalNet: 600_000,
+        fireInputs: { ...patrimoine().fireInputs, age: 50 },
+        biens: [bien({ equity: 300_000 })],
+      }),
+    })
+    const opp = r.opportunites.find((o) => o.id === 'opp_demembrement')!
+    expect(opp.conditions.join(' ')).toMatch(/Abattement/i)
+  })
+})

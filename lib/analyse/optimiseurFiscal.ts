@@ -18,6 +18,7 @@ import {
   PFU_PCT,
   AV_LONG_TERME_PCT,
   AV_ABATTEMENT_CELIBATAIRE,
+  AV_ABATTEMENT_COUPLE,
   TMI_FALLBACK_PCT,
 } from './constants'
 
@@ -31,7 +32,7 @@ const PS_PCT = PRELEVEMENTS_SOCIAUX_PCT
 // Re-export des constantes communes (depuis lib/analyse/constants.ts)
 // pour que les imports historiques `from '@/lib/analyse/optimiseurFiscal'` continuent
 // de fonctionner.
-export { PFU_PCT, AV_LONG_TERME_PCT, AV_ABATTEMENT_CELIBATAIRE }
+export { PFU_PCT, AV_LONG_TERME_PCT, AV_ABATTEMENT_CELIBATAIRE, AV_ABATTEMENT_COUPLE }
 
 /** Plafond PEA en versements cumulés (hors PEA-PME). */
 export const PEA_PLAFOND_VERSEMENTS = 150_000
@@ -229,11 +230,19 @@ function evaluerPEA(p: PatrimoineComplet, profil: ProfilFiscal): OpportuniteFisc
     .filter((pos) => pos.asset_type === 'stock' || pos.asset_type === 'etf')
     .reduce((s, pos) => s + pos.current_value, 0)
 
-  // Dividendes annuels estimés + part PV qui serait réalisée en CTO
-  // (approximation : on suppose 20 % de turnover sur les positions CTO/an)
-  const dividendesCto   = profil.revenus_cto_annuels
-  const pvAnnualisees   = valActions * 0.20 * 0.07  // 20 % rotation × 7 % rendement
-  const baseImposable   = dividendesCto + (peaOuvert ? 0 : pvAnnualisees)
+  // Dividendes annuels estimés (toujours imposés à la flat tax en CTO)
+  const dividendesCto = profil.revenus_cto_annuels
+
+  // Estimation des PV qui seraient réalisées chaque année si le portefeuille
+  // restait en CTO. HYPOTHÈSE : l'utilisateur réalise SES gains chaque année
+  // (turnover 100 % = réinvestissement annuel, conservative — sans cela on
+  // sous-estime fortement l'avantage long-terme du PEA, qui capitalise sans
+  // friction fiscale jusqu'aux retraits après 5 ans).
+  // Avant : `valActions × 0.20 × 0.07` = turnover fictif 20 % × rendement 7 %,
+  // qui sous-évaluait le gain PEA d'un facteur 3 à 5.
+  const RENDEMENT_ESTIME = 0.07
+  const pvAnnuellesEstimees = peaOuvert ? 0 : valActions * RENDEMENT_ESTIME
+  const baseImposable       = dividendesCto + pvAnnuellesEstimees
 
   // Gain annuel = différentiel (PFU 30 %) − (PEA après 5 ans = 17,2 % PS uniquement)
   const gainAnnuel = baseImposable * ((PFU_PCT - PS_PCT) / 100)
@@ -537,17 +546,26 @@ function evaluerDeficitFoncier(p: PatrimoineComplet, profil: ProfilFiscal): Oppo
 
 function evaluerAssuranceVie(p: PatrimoineComplet, profil: ProfilFiscal): OpportuniteFiscale {
   const avOuverte = profil.enveloppes_ouvertes.includes('Assurance-vie')
+  const tmi       = profil.tmi_pct
 
-  // Gains latents estimés sur le portefeuille : on prend la +/-value latente totale
-  // (les positions sans prix ne comptent pas — unrealizedPnLPct null)
+  // Gains latents estimés sur le portefeuille (sert au libellé "potentiel arbitrable")
   const gainsLatents = p.positions
     .filter((pos) => pos.asset_type === 'stock' || pos.asset_type === 'etf')
     .reduce((s, pos) => s + Math.max(0, pos.gain_loss), 0)
 
-  // Différentiel CTO vs AV après 8 ans : 30 − 24,7 = 5,3 points sur les gains réalisés
-  const gainAnnuel = avOuverte ? gainsLatents * ((PFU_PCT - AV_LONG_TERME_PCT) / 100) : 0
+  // Gain réaliste de l'AV vs CTO après 8 ans :
+  // = abattement annuel × TMI (impôt économisé sur les retraits exonérés).
+  // Avant : `gainsLatents × (PFU − AV_LT) / 100` taxait des PV LATENTES qui ne
+  // sont imposées qu'à la sortie — l'horizon était factice et le gain surestimé.
+  // L'abattement (4 600 € / 9 200 €) est annuel et utilisable même hors arbitrage.
+  // L'AV doit avoir 8+ ans pour activer l'abattement ; sans date persistée
+  // dans `fireInputs`, on suppose ici que l'utilisateur soit l'a déjà,
+  // soit ouvre maintenant pour disposer de cet avantage dans 8 ans.
+  // Abattement célibataire par défaut (situation familiale non exposée dans fireInputs).
+  const abattementAnnuel = AV_ABATTEMENT_CELIBATAIRE
+  const gainAnnuel       = avOuverte ? abattementAnnuel * (tmi / 100) : 0
 
-  const applicable = avOuverte && gainsLatents > 5_000
+  const applicable = avOuverte && tmi >= 11
 
   return {
     id:        'opp_assurance_vie',
@@ -571,7 +589,7 @@ function evaluerAssuranceVie(p: PatrimoineComplet, profil: ProfilFiscal): Opport
     raison_non_applicable: !applicable
       ? (!avOuverte
           ? 'AV non encore ouverte — démarrez le compteur dès aujourd\'hui.'
-          : 'Plus-values latentes trop faibles pour justifier un arbitrage (< 5 000 €).')
+          : 'TMI trop faible (≤ 11 %) pour rendre l\'arbitrage AV vs CTO significatif.')
       : undefined,
   }
 }
@@ -645,12 +663,23 @@ function evaluerDemembrement(p: PatrimoineComplet, _profil: ProfilFiscal): Oppor
                      : age >= 41 ? 0.60
                      : 0.70
 
-  // Estimation grossière des droits évités via démembrement :
-  // donner la nue-propriété (en gardant l'usufruit) réduit la base imposable
-  // au taux d'usufruit. À 45 ans → on transmet 40 % au lieu de 100 %.
-  // Économie sur droits de succession = (1 - taux_usufruit) × patrimoine × taux_moyen_droits
-  const tauxDroitsMoyen = 0.20  // approximation pondérée tranches de succession
-  const gainTransmission = (1 - tauxUsufruit) * valeurImmoEnPP * tauxDroitsMoyen
+  // Économie réelle = droits de succession évités sur la PART DE NUE-PROPRIÉTÉ
+  // donnée. Calcul par BARÈME PROGRESSIF parent→enfant + abattement de
+  // 100 000 €/enfant tous les 15 ans (art. 779 CGI). L'ancien code utilisait
+  // un taux moyen 20 % en dur qui était faux pour ~80 % des cas (avant
+  // abattement, les premières tranches sont à 5–10 %, après abattement la
+  // base imposable peut être nulle).
+  const ABATTEMENT_PARENT_ENFANT = 100_000
+  // Donations déjà réalisées non exposées dans `PatrimoineComplet` aujourd'hui.
+  // On utilise 0 (abattement plein) avec une note pour l'utilisateur.
+  const donationsDejaRealisees = 0
+  const abattementRestant      = Math.max(0, ABATTEMENT_PARENT_ENFANT - donationsDejaRealisees)
+
+  // Base = valeur de la nue-propriété transmise (et non valeur en pleine
+  // propriété — c'est l'avantage clé du démembrement)
+  const nuePropTransmise = (1 - tauxUsufruit) * valeurImmoEnPP
+  const baseImposable    = Math.max(0, nuePropTransmise - abattementRestant)
+  const gainTransmission = droitsSuccession(baseImposable)
 
   const applicable = patrimoineNet >= 500_000 && age >= 45 && valeurImmoEnPP > 100_000
 
@@ -667,12 +696,13 @@ function evaluerDemembrement(p: PatrimoineComplet, _profil: ProfilFiscal): Oppor
     effort:           'eleve',
     priorite:         3,
     action_concrete:  applicable
-      ? `Avec ${Math.round(patrimoineNet).toLocaleString('fr-FR')} € de patrimoine net dont ${Math.round(valeurImmoEnPP).toLocaleString('fr-FR')} € en immobilier, le démembrement pourrait économiser ~${Math.round(gainTransmission).toLocaleString('fr-FR')} € de droits de succession à terme. Consultez un notaire pour une stratégie sur mesure.`
+      ? `Avec ${Math.round(patrimoineNet).toLocaleString('fr-FR')} € de patrimoine net dont ${Math.round(valeurImmoEnPP).toLocaleString('fr-FR')} € en immobilier, le démembrement pourrait économiser ~${Math.round(gainTransmission).toLocaleString('fr-FR')} € de droits de succession à terme (hypothèse : abattement parent→enfant de 100 000 € non encore utilisé — renseigne tes donations passées pour affiner). Consultez un notaire pour une stratégie sur mesure.`
       : 'Démembrement non prioritaire selon votre situation.',
     conditions: [
       `Patrimoine net : ${Math.round(patrimoineNet).toLocaleString('fr-FR')} €`,
       `Âge : ${age} ans (taux usufruit ${Math.round(tauxUsufruit * 100)} %)`,
       `Immobilier en PP : ${Math.round(valeurImmoEnPP).toLocaleString('fr-FR')} €`,
+      `Abattement restant supposé : ${ABATTEMENT_PARENT_ENFANT.toLocaleString('fr-FR')} €/enfant (15 ans)`,
     ],
     applicable,
     raison_non_applicable: !applicable
@@ -688,6 +718,30 @@ function evaluerDemembrement(p: PatrimoineComplet, _profil: ProfilFiscal): Oppor
 // ─────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────
+
+/**
+ * Barème progressif des droits de succession en ligne directe (parent → enfant).
+ * Application APRÈS abattement (100 000 €/enfant tous les 15 ans).
+ * Source : art. 777 CGI.
+ *
+ *   0–8 072 €      : 5 %
+ *   8 072–12 109   : 10 %
+ *   12 109–15 932  : 15 %
+ *   15 932–552 324 : 20 %
+ *   552 324–902 838: 30 %
+ *   902 838–1 805 677: 40 %
+ *   > 1 805 677    : 45 %
+ */
+export function droitsSuccession(base: number): number {
+  if (base <= 0) return 0
+  if (base <= 8_072)     return base * 0.05
+  if (base <= 12_109)    return 403.6   + (base - 8_072)    * 0.10
+  if (base <= 15_932)    return 807.3   + (base - 12_109)   * 0.15
+  if (base <= 552_324)   return 1_380.75 + (base - 15_932)  * 0.20
+  if (base <= 902_838)   return 88_677.35 + (base - 552_324) * 0.30
+  if (base <= 1_805_677) return 193_831.55 + (base - 902_838) * 0.40
+  return 555_007.35 + (base - 1_805_677) * 0.45
+}
 
 // Sprint 2 — D10 : helper isRegime centralise dans regimeFiscalImmo.ts.
 // On re-exporte ici pour conserver la surface d'API privee de ce module
