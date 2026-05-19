@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button'
 import { createClient } from '@/lib/supabase/client'
 import type { Profile } from '@/types/database.types'
 
-const TMI_OPTIONS = [0, 11, 30, 41, 45]
+// `null` = "Non renseigné" → fallback TMI 30 % côté fiscaliteImmo / optimiseur.
+const TMI_OPTIONS: Array<number | null> = [null, 0, 11, 30, 41, 45]
 const FISCAL_SITUATIONS = [
   { value: 'single',   label: 'Célibataire / Divorcé(e)' },
   { value: 'married',  label: 'Marié(e)' },
@@ -17,7 +18,8 @@ interface Props { profile: Profile | null; userEmail: string }
 
 export default function ParametresForm({ profile, userEmail }: Props) {
   const [displayName,     setDisplayName]     = useState(profile?.display_name ?? '')
-  const [tmiRate,         setTmiRate]         = useState(profile?.tmi_rate ?? 30)
+  // U11 — null = TMI non renseigné (fallback 30 % côté calcul, badge "estimée" affiché).
+  const [tmiRate,         setTmiRate]         = useState<number | null>(profile?.tmi_rate ?? null)
   const [fiscalSituation, setFiscalSituation] = useState(profile?.fiscal_situation ?? 'single')
   const [saving,          setSaving]          = useState(false)
   const [saved,           setSaved]           = useState(false)
@@ -89,6 +91,7 @@ export default function ParametresForm({ profile, userEmail }: Props) {
     const supabase = createClient()
     await supabase.from('profiles').update({
       display_name: displayName || null,
+      // U11 — `null` accepté côté DB (colonne nullable) ; fallback 30 % côté calculs.
       tmi_rate: tmiRate,
       fiscal_situation: fiscalSituation,
     }).eq('id', (await supabase.auth.getUser()).data.user!.id)
@@ -140,7 +143,7 @@ export default function ParametresForm({ profile, userEmail }: Props) {
           <div className="flex gap-2 flex-wrap">
             {TMI_OPTIONS.map((rate) => (
               <button
-                key={rate}
+                key={rate === null ? 'none' : rate}
                 type="button"
                 onClick={() => setTmiRate(rate)}
                 className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${
@@ -149,10 +152,15 @@ export default function ParametresForm({ profile, userEmail }: Props) {
                     : 'bg-surface-2 border-border text-secondary hover:text-primary'
                 }`}
               >
-                {rate} %
+                {rate === null ? 'Non renseigné' : `${rate} %`}
               </button>
             ))}
           </div>
+          {tmiRate === null && (
+            <p className="text-xs text-muted mt-2">
+              Estimation 30 % appliquée par défaut dans les calculs fiscaux.
+            </p>
+          )}
         </div>
 
         <div>
@@ -241,7 +249,10 @@ export default function ParametresForm({ profile, userEmail }: Props) {
             icon={Send}
             loading={sendingTest}
             onClick={handleSendTest}
-            disabled={sendingTest}
+            disabled={!emailMonthly || sendingTest}
+            title={!emailMonthly
+              ? 'Active les emails mensuels pour tester le rapport'
+              : undefined}
           >
             Recevoir un rapport test maintenant
           </Button>

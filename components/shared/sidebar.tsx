@@ -16,9 +16,9 @@ import { createClient } from '@/lib/supabase/client'
 // SCPI, fonds, REIT, obligations, métaux et actifs alternatifs sous un
 // modèle unique positions/instruments. Les anciennes routes /financier
 // et /scpi ont été supprimées (migration 012).
-// Les sections "Transactions" et "DCA" ont été retirées de la navigation —
-// l'historique reste en base (tables transactions / dca_plans / dca_occurrences)
-// mais n'est plus exposé dans l'UI.
+// Les sections "Transactions" et "DCA" ont été retirées de la navigation.
+// Migration 031 : tables d'investissement programmé droppées (feature
+// jamais activée). L'historique des transactions reste en base.
 const NAV = [
   { href: '/profil',       label: 'Profil',        icon: UserCircle2 },
   { href: '/dashboard',    label: 'Dashboard',     icon: LayoutDashboard },

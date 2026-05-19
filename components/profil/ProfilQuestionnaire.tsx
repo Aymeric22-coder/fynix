@@ -18,7 +18,8 @@
 'use client'
 
 import { useState } from 'react'
-import { ArrowLeft, ArrowRight, Flame, SkipForward } from 'lucide-react'
+import Link from 'next/link'
+import { ArrowLeft, ArrowRight, Flame, Info, SkipForward } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils/format'
 import { STEPS } from '@/lib/profil/calculs'
@@ -153,6 +154,20 @@ export function ProfilQuestionnaire({
       <div className="card p-6 sm:p-8">
         <h2 className="text-lg font-semibold text-primary mb-1">{meta.title}</h2>
         <p className="text-sm text-secondary mb-6 leading-relaxed">{meta.sub}</p>
+
+        {/* U10 — Bandeau "profil optionnel" sur la 1re étape */}
+        {step === 1 && (
+          <div className="text-xs text-secondary border border-border rounded-md p-3 mb-5 flex items-start gap-2">
+            <Info className="h-4 w-4 shrink-0 mt-0.5 text-muted" />
+            <span>
+              Ce questionnaire est optionnel.{' '}
+              <Link href="/dashboard" className="underline text-accent hover:text-accent-hover">
+                Accède au dashboard directement
+              </Link>{' '}
+              et complète-le plus tard quand tu veux.
+            </span>
+          </div>
+        )}
 
         <StepComp values={values} set={set} />
 

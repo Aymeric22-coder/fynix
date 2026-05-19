@@ -25,7 +25,6 @@ export type FiscalRegime = 'lmnp_reel' | 'lmnp_micro' | 'lmp' | 'sci_is' | 'sci_
 export type DataSource = 'manual' | 'api' | 'estimation' | 'import'
 export type ConfidenceLevel = 'high' | 'medium' | 'low'
 export type CurrencyCode = 'EUR' | 'USD' | 'GBP' | 'CHF' | 'JPY' | 'BTC' | 'ETH'
-export type DcaStatus = 'pending' | 'validated' | 'skipped' | 'cancelled'
 export type AuditAction = 'INSERT' | 'UPDATE' | 'DELETE'
 
 // ── Migration 007 — Portefeuille universel ─────────────────────
@@ -384,40 +383,8 @@ export interface PatrimonySnapshot {
   created_at: string
 }
 
-export interface DcaPlan {
-  id: string
-  user_id: string
-  asset_id: string | null
-  envelope_id: string | null
-  name: string
-  ticker: string
-  amount_per_period: number
-  currency: CurrencyCode
-  frequency: 'weekly' | 'biweekly' | 'monthly' | 'quarterly'
-  start_date: string
-  end_date: string | null
-  is_active: boolean
-  notes: string | null
-  created_at: string
-  updated_at: string
-}
-
-export interface DcaOccurrence {
-  id: string
-  dca_plan_id: string
-  user_id: string
-  scheduled_date: string
-  planned_amount: number
-  actual_amount: number | null
-  actual_price: number | null
-  actual_quantity: number | null
-  status: DcaStatus
-  validated_at: string | null
-  transaction_id: string | null
-  deviation_note: string | null
-  created_at: string
-  updated_at: string
-}
+// Migration 031 : tables d'investissement programmé supprimées.
+// Les interfaces correspondantes sont retirées (feature jamais activée).
 
 export interface AuditLog {
   id: string
@@ -460,11 +427,6 @@ export type FinancialEnvelopeUpdate = Partial<Omit<FinancialEnvelopeInsert, 'use
 
 export type CashAccountInsert = Omit<CashAccount, 'id' | 'created_at' | 'updated_at'>
 export type CashAccountUpdate = Partial<Omit<CashAccountInsert, 'user_id' | 'asset_id'>>
-
-export type DcaPlanInsert = Omit<DcaPlan, 'id' | 'created_at' | 'updated_at'>
-export type DcaPlanUpdate = Partial<Omit<DcaPlanInsert, 'user_id'>>
-
-export type DcaOccurrenceInsert = Omit<DcaOccurrence, 'id' | 'created_at' | 'updated_at'>
 
 // ─── Migration 007 — Portefeuille universel ──────────────────────────────────
 
