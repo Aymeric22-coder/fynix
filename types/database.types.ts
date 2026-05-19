@@ -297,6 +297,9 @@ export interface RealEstateLot {
   status: LotStatus
   rent_amount: number | null
   charges_amount: number
+  /** Migration 035 — loyer de marché estimé (HC mensuel) */
+  market_rent: number | null
+  market_rent_updated_at: string | null
   tenant_name: string | null
   lease_start_date: string | null
   lease_end_date: string | null

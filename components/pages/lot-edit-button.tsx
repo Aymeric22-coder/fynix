@@ -12,6 +12,7 @@ interface LotData {
   status:         string
   rent_amount:    number | null
   charges_amount: number | null
+  market_rent:    number | null
   tenant_name:    string | null
   lease_start_date:    string | null
   lease_end_date:      string | null

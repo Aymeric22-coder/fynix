@@ -15,6 +15,8 @@ interface InitialData {
   status:         string
   rent_amount:    number | null
   charges_amount: number | null
+  /** Migration 035 — loyer de marché estimé (HC mensuel) */
+  market_rent:    number | null
   tenant_name:    string | null
   lease_start_date:    string | null
   lease_end_date:      string | null
@@ -34,6 +36,7 @@ const INITIAL = {
   status:          'vacant'  as string,
   rent_amount:     undefined as number | undefined,
   charges_amount:  0         as number,
+  market_rent:     undefined as number | undefined,
   tenant_name:     '',
   lease_start_date:     '',
   lease_end_date:       '',
@@ -53,6 +56,7 @@ export function AddLotForm({ open, onClose, propertyId, initialData }: Props) {
           status:         initialData.status,
           rent_amount:    initialData.rent_amount     ?? undefined as number | undefined,
           charges_amount: initialData.charges_amount  ?? 0,
+          market_rent:    initialData.market_rent     ?? undefined as number | undefined,
           tenant_name:    initialData.tenant_name     ?? '',
           lease_start_date:    initialData.lease_start_date     ?? '',
           lease_end_date:      initialData.lease_end_date       ?? '',
@@ -76,6 +80,7 @@ export function AddLotForm({ open, onClose, propertyId, initialData }: Props) {
           status:         v.status,
           rent_amount:    v.rent_amount    ?? null,
           charges_amount: v.charges_amount ?? 0,
+          market_rent:    v.market_rent    ?? null,
           tenant_name:    v.tenant_name    || null,
           lease_start_date:    v.lease_start_date    || null,
           lease_end_date:      v.lease_end_date      || null,
@@ -155,6 +160,18 @@ export function AddLotForm({ open, onClose, propertyId, initialData }: Props) {
                 />
               </Field>
             </FormGrid>
+
+            <Field
+              label="Loyer de marché estimé (€/mois)"
+              hint="Optionnel — utilisé pour détecter un bien sous-loué et estimer le manque à gagner annuel."
+            >
+              <Input
+                type="number" step={0.01} min={0}
+                value={values.market_rent ?? ''}
+                onChange={(e) => setNumber('market_rent', e.target.value)}
+                placeholder="800"
+              />
+            </Field>
 
             {cashflow !== null && (
               <div className="bg-accent-muted border border-accent/20 rounded-lg px-4 py-3 text-sm">

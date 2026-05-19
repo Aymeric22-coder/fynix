@@ -16,6 +16,8 @@ import { RevisedForecastSection } from '@/components/real-estate/revised-forecas
 import { YearEndReportPanel } from '@/components/real-estate/year-end-report-panel'
 import { CreditTab } from '@/components/real-estate/credit-tab'
 import { MultiCreditList } from '@/components/real-estate/multi-credit-list'
+import { UnderRentAlerts } from '@/components/real-estate/under-rent-alerts'
+import { detectUnderRentAlerts } from '@/lib/real-estate/under-rent'
 import { AmortizationTable } from '@/components/real-estate/amortization-table'
 import type { ExistingCredit } from '@/components/real-estate/credit-form'
 import { loadActualData } from '@/lib/real-estate/actual'
@@ -265,6 +267,24 @@ export default async function ImmobilierDetailPage({ params }: Props) {
     ? multiCredit.totalRemainingCapital
     : 0
 
+  // ── Alertes sous-loyer (migration 035) ──────────────────────────────────
+  // Compare lot.rent_amount à lot.market_rent. Les lots sans market_rent
+  // ou sans rent_amount sont ignorés (filtre fait par detectUnderRentAlerts).
+  const underRentAlerts = isRental
+    ? detectUnderRentAlerts(
+        lots.map((l: {
+          id: string; name: string;
+          rent_amount: number | null;
+          market_rent?: number | null;
+        }) => ({
+          id:          l.id,
+          name:        l.name,
+          rent_amount: l.rent_amount,
+          market_rent: l.market_rent ?? null,
+        })),
+      )
+    : []
+
   // ── Synthèse : KPIs financiers globaux ──────────────────────────────────
   // Mensualité totale = somme des mensualités de tous les crédits actifs
   // (migration 034). Pour un bien avec un seul crédit, équivalent à l'ancien.
@@ -390,6 +410,11 @@ export default async function ImmobilierDetailPage({ params }: Props) {
             </div>
           </div>
 
+          {/* Alertes sous-loyer (migration 035) */}
+          {underRentAlerts.length > 0 && (
+            <UnderRentAlerts alerts={underRentAlerts} />
+          )}
+
           {/* Lots + Historique valorisations */}
           <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
             {isPrimaryRP ? (
@@ -411,6 +436,7 @@ export default async function ImmobilierDetailPage({ params }: Props) {
                   {lots.map((lot: {
                     id: string; name: string; lot_type: string | null; surface_m2: number | null;
                     status: string; rent_amount: number | null; charges_amount: number | null;
+                    market_rent: number | null;
                     tenant_name: string | null; lease_start_date: string | null; lease_end_date: string | null
                   }) => {
                     const statusInfo = LOT_STATUS[lot.status] ?? { label: lot.status, variant: 'muted' as const }
