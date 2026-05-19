@@ -741,6 +741,50 @@ export function parseBrokerCsv(csv: string, hint?: BrokerFormat): ParseResult {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// CUMP — Coût Unitaire Moyen Pondéré (convention FR / IFRS)
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Calcule la quantité résiduelle et le PRU selon la méthode CUMP.
+ *
+ * Règles :
+ *   - achat : PRU recalculé en pondération roulante, frais intégrés au
+ *             coût d'acquisition (numérateur).
+ *   - vente : quantité diminue, PRU INCHANGÉ. Si la position retombe à
+ *             zéro, le PRU est remis à 0 — un éventuel rachat repart
+ *             d'une base propre.
+ *   - autres (dividend, etc.) : ignorés.
+ *
+ * Tri chronologique strict sur `date` (YYYY-MM-DD). L'appelant doit
+ * fournir une liste déjà filtrée sur un seul titre.
+ */
+export function computeRunningCump(
+  txs: NormalizedTransaction[],
+): { finalQty: number; finalPru: number } {
+  const sorted = [...txs].sort((a, b) => a.date.localeCompare(b.date))
+
+  let qty = 0
+  let pru = 0
+
+  for (const t of sorted) {
+    if (t.transaction_type === 'buy') {
+      const buyQty = t.quantity
+      const newQty = qty + buyQty
+      if (newQty > 0) {
+        pru = (qty * pru + buyQty * t.unit_price + t.fees) / newQty
+      }
+      qty = newQty
+    } else if (t.transaction_type === 'sell') {
+      qty = Math.max(0, qty - t.quantity)
+      if (qty === 0) pru = 0
+    }
+    // dividend / autres types : sans effet sur (qty, pru)
+  }
+
+  return { finalQty: qty, finalPru: pru }
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // Agrégation : transactions → positions
 // ─────────────────────────────────────────────────────────────────────
 
@@ -772,19 +816,11 @@ export function aggregateToPositions(
 
   const out: AggregatedPosition[] = []
   for (const [, group] of groups) {
-    const buys  = group.filter((t) => t.transaction_type === 'buy')
-    const sells = group.filter((t) => t.transaction_type === 'sell')
-    const totalBuyQty  = buys.reduce((s, t) => s + t.quantity, 0)
-    const totalSellQty = sells.reduce((s, t) => s + t.quantity, 0)
-    const netQty       = totalBuyQty - totalSellQty
+    const { finalQty, finalPru } = computeRunningCump(group)
 
-    let pru = 0
-    if (totalBuyQty > 0) {
-      const totalCost = buys.reduce((s, t) => s + t.quantity * t.unit_price + t.fees, 0)
-      pru = totalCost / totalBuyQty
-    }
-
-    const firstBuy = [...buys].sort((a, b) => a.date.localeCompare(b.date))[0]
+    const firstBuy = group
+      .filter((t) => t.transaction_type === 'buy')
+      .sort((a, b) => a.date.localeCompare(b.date))[0]
     const ref = firstBuy ?? group[0]!
 
     out.push({
@@ -792,13 +828,13 @@ export function aggregateToPositions(
       ticker:           ref.ticker,
       name:             ref.name,
       asset_class:      ref.asset_class,
-      quantity:         Math.max(0, netQty),
-      unit_price:       Math.round(pru * 10000) / 10000,
+      quantity:         Math.max(0, finalQty),
+      unit_price:       Math.round(finalPru * 10000) / 10000,
       currency:         ref.currency,
       acquisition_date: firstBuy?.date ?? null,
       broker:           ref.broker,
       confidence:       group.some((t) => t.confidence === 'low') ? 'low' : 'high',
-      closed:           netQty <= 0,
+      closed:           finalQty <= 0,
     })
   }
   return out
