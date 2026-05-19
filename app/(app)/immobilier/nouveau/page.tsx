@@ -1,82 +1,357 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
-import { ArrowLeft } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { ArrowLeft, ArrowRight, Save, RotateCcw } from 'lucide-react'
 import Link from 'next/link'
-import { Button }    from '@/components/ui/button'
+import { Button } from '@/components/ui/button'
 import { Field, Input, Select, Textarea, FormGrid } from '@/components/ui/field'
-import { useForm }   from '@/hooks/use-form'
+import { Stepper } from '@/components/ui/stepper'
+import { formatCurrency } from '@/lib/utils/format'
+import { computeMonthlyPayment } from '@/lib/real-estate/amortization'
 
-const INITIAL = {
+// ─────────────────────────────────────────────────────────────────
+//  Types & état initial
+// ─────────────────────────────────────────────────────────────────
+
+type UsageType =
+  | 'primary_residence' | 'secondary_residence'
+  | 'long_term_rental' | 'short_term_rental' | 'mixed_use'
+
+type FiscalRegime =
+  | 'lmnp_reel' | 'lmnp_micro' | 'lmp'
+  | 'sci_is'    | 'sci_ir'
+  | 'foncier_nu' | 'foncier_micro' | ''
+
+type LoanKind =
+  | 'principal' | 'ptz' | 'travaux' | 'pel'
+  | 'action_logement' | 'relais' | 'in_fine' | 'autre'
+
+interface WizardDraft {
+  // Étape 1
+  name:              string
+  usage_type:        UsageType
+  property_type:     string
+  address_line1:     string
+  address_city:      string
+  address_zip:       string
+  surface_m2:        number | undefined
+  rooms:             number | undefined
+  construction_year: number | undefined
+  dpe_class:         string
+
+  // Étape 2
+  purchase_price:    number | undefined
+  purchase_fees:     number | undefined
+  works_amount:      number | undefined
+  furniture_amount:  number | undefined
+  acquisition_date:  string
+
+  // Étape 3 (facultative)
+  hasLoan:           boolean
+  loan_kind:         LoanKind
+  lender:            string
+  loan_principal:    number | undefined
+  loan_rate:         number | undefined
+  loan_duration:     number | undefined   // mois
+  loan_start_date:   string
+  insurance_rate:    number | undefined
+  insurance_quotite: number | undefined
+
+  // Étape 4
+  fiscal_regime:     FiscalRegime
+
+  // Étape 5
+  hasLot:            boolean
+  lot_name:          string
+  lot_rent:          number | undefined
+  lot_charges:       number | undefined
+  lot_market_rent:   number | undefined
+
+  notes:             string
+}
+
+const EMPTY_DRAFT: WizardDraft = {
   name:              '',
+  usage_type:        'long_term_rental',
   property_type:     'apartment',
-  usage_type:        'long_term_rental' as
-    | 'primary_residence' | 'secondary_residence'
-    | 'long_term_rental' | 'short_term_rental' | 'mixed_use',
   address_line1:     '',
   address_city:      '',
   address_zip:       '',
-  purchase_price:    undefined as number | undefined,
-  purchase_fees:     undefined as number | undefined,
-  works_amount:      undefined as number | undefined,
-  surface_m2:        undefined as number | undefined,
-  construction_year: undefined as number | undefined,
+  surface_m2:        undefined,
+  rooms:             undefined,
+  construction_year: undefined,
   dpe_class:         '',
-  fiscal_regime:     '',
-  is_multi_lot:      false,
+
+  purchase_price:    undefined,
+  purchase_fees:     undefined,
+  works_amount:      undefined,
+  furniture_amount:  undefined,
   acquisition_date:  '',
+
+  hasLoan:           false,
+  loan_kind:         'principal',
+  lender:            '',
+  loan_principal:    undefined,
+  loan_rate:         undefined,
+  loan_duration:     240,
+  loan_start_date:   '',
+  insurance_rate:    0.3,
+  insurance_quotite: 100,
+
+  fiscal_regime:     '',
+
+  hasLot:            false,
+  lot_name:          '',
+  lot_rent:          undefined,
+  lot_charges:       0,
+  lot_market_rent:   undefined,
+
   notes:             '',
 }
 
-export default function NouveauBienPage() {
-  const router = useRouter()
+const STEPS = [
+  { id: '1', label: 'Identification' },
+  { id: '2', label: 'Acquisition' },
+  { id: '3', label: 'Crédit', optional: true },
+  { id: '4', label: 'Régime fiscal' },
+  { id: '5', label: 'Lots & loyers', optional: true },
+]
 
-  const { values, set, setNumber, loading, error, handleSubmit } = useForm({
-    initialValues: INITIAL,
-    async onSubmit(v) {
-      // Le régime fiscal est requis pour pouvoir calculer la rentabilité nette
-      // et l'impôt estimé. Sans lui, la page détail afficherait des chiffres
-      // fondés sur un fallback arbitraire (foncier nu) — préférable d'imposer
-      // le choix dès la création.
-      if (!v.fiscal_regime) {
-        return { error: 'Le régime fiscal est requis pour calculer la rentabilité' }
+const FISCAL_REGIME_DESCRIPTIONS: Record<Exclude<FiscalRegime, ''>, { label: string; help: string }> = {
+  foncier_micro: { label: 'Micro-foncier',
+    help: 'Location nue. Abattement forfaitaire de 30 %. Plafond 15 000 €/an. Simple, sans déduction de charges.' },
+  foncier_nu: { label: 'Foncier réel',
+    help: 'Location nue avec déduction de toutes les charges réelles (intérêts, taxe foncière, travaux). Permet du déficit foncier.' },
+  lmnp_micro: { label: 'LMNP micro-BIC',
+    help: 'Location meublée. Abattement 50 % (71 % en tourisme classé). Plafond 77 700 €/an (188 700 € classé).' },
+  lmnp_reel: { label: 'LMNP réel',
+    help: 'Location meublée avec déduction de toutes les charges + amortissements du bien et du mobilier. Souvent le plus optimal fiscalement.' },
+  lmp: { label: 'LMP',
+    help: 'Loueur meublé professionnel : recettes > 23 000 €/an ET > revenus pro du foyer. Cotisations SSI, déficit imputable sans plafond.' },
+  sci_is: { label: 'SCI à l\'IS',
+    help: 'Société soumise à l\'impôt sur les sociétés (15 % jusqu\'à 42 500 €, 25 % au-delà). Amortissements possibles, déficit reportable indéfiniment.' },
+  sci_ir: { label: 'SCI à l\'IR',
+    help: 'Société transparente fiscalement : les revenus sont imposés à l\'IR de chaque associé, comme du foncier réel.' },
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  SessionStorage
+// ─────────────────────────────────────────────────────────────────
+
+const STORAGE_KEY = 'fynix_property_wizard_draft_v1'
+
+function loadDraft(): WizardDraft {
+  if (typeof window === 'undefined') return EMPTY_DRAFT
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY)
+    if (!raw) return EMPTY_DRAFT
+    return { ...EMPTY_DRAFT, ...JSON.parse(raw) }
+  } catch {
+    return EMPTY_DRAFT
+  }
+}
+
+function saveDraft(d: WizardDraft) {
+  if (typeof window === 'undefined') return
+  try { sessionStorage.setItem(STORAGE_KEY, JSON.stringify(d)) } catch { /* quota */ }
+}
+
+function clearDraft() {
+  if (typeof window === 'undefined') return
+  try { sessionStorage.removeItem(STORAGE_KEY) } catch { /* ignore */ }
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  Composant
+// ─────────────────────────────────────────────────────────────────
+
+export default function NouveauBienPage() {
+  const router       = useRouter()
+  const searchParams = useSearchParams()
+  const [step, setStep]       = useState(1)
+  const [draft, setDraft]     = useState<WizardDraft>(EMPTY_DRAFT)
+  const [error, setError]     = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  // Charge le brouillon (session ou query depuis le simulateur)
+  useEffect(() => {
+    // Si on arrive depuis le simulateur, on essaye d'hydrater depuis sessionStorage
+    // sous une clé dédiée (fynix_simulator_draft).
+    if (searchParams.get('from') === 'simulator' && typeof window !== 'undefined') {
+      const fromSim = sessionStorage.getItem('fynix_simulator_draft_v1')
+      if (fromSim) {
+        try { setDraft({ ...EMPTY_DRAFT, ...JSON.parse(fromSim) }); return } catch { /* ignore */ }
       }
-      const res = await fetch('/api/real-estate', {
+    }
+    setDraft(loadDraft())
+  }, [searchParams])
+
+  // Persiste à chaque modif
+  useEffect(() => { saveDraft(draft) }, [draft])
+
+  const set = <K extends keyof WizardDraft>(key: K, value: WizardDraft[K]) => {
+    setDraft(d => ({ ...d, [key]: value }))
+  }
+  const setNum = <K extends keyof WizardDraft>(key: K, raw: string) => {
+    setDraft(d => ({ ...d, [key]: (raw === '' ? undefined : Number(raw)) as WizardDraft[K] }))
+  }
+
+  // Validation par étape
+  function validateStep(s: number): string | null {
+    if (s === 1) {
+      if (!draft.name) return 'Le nom du bien est requis'
+      if (!draft.address_city) return 'La ville est requise'
+      if (!draft.surface_m2 || draft.surface_m2 <= 0) return 'La surface est requise'
+    }
+    if (s === 2) {
+      if (!draft.purchase_price || draft.purchase_price <= 0) return 'Le prix d\'achat est requis'
+      if (draft.purchase_fees == null) return 'Les frais de notaire sont requis (utilisez le bouton de calcul automatique au besoin)'
+      if (!draft.acquisition_date) return 'La date d\'acquisition est requise'
+    }
+    if (s === 3 && draft.hasLoan) {
+      if (!draft.loan_principal || draft.loan_principal <= 0) return 'Le montant emprunté est requis'
+      if (draft.loan_rate == null || draft.loan_rate < 0) return 'Le taux nominal est requis'
+      if (!draft.loan_duration || draft.loan_duration <= 0) return 'La durée du prêt est requise'
+      if (!draft.loan_start_date) return 'La date de début du prêt est requise'
+    }
+    if (s === 4) {
+      if (!draft.fiscal_regime) return 'Le régime fiscal est requis'
+    }
+    return null
+  }
+
+  function goNext() {
+    const err = validateStep(step)
+    if (err) { setError(err); return }
+    setError(null)
+    // Si on est sur l'étape 5 et que c'est une RP, on saute la saisie lot
+    setStep(s => Math.min(5, s + 1))
+  }
+
+  function goPrev() {
+    setError(null)
+    setStep(s => Math.max(1, s - 1))
+  }
+
+  // Soumission finale
+  async function submit() {
+    // Re-valide les étapes obligatoires
+    for (const s of [1, 2, 4]) {
+      const err = validateStep(s)
+      if (err) { setStep(s); setError(err); return }
+    }
+    if (draft.hasLoan) {
+      const err = validateStep(3); if (err) { setStep(3); setError(err); return }
+    }
+
+    setLoading(true)
+    setError(null)
+
+    try {
+      // 1. Créer le bien
+      const propRes = await fetch('/api/real-estate', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name:              v.name,
-          property_type:     v.property_type,
-          usage_type:        v.usage_type,
-          address_line1:     v.address_line1   || null,
-          address_city:      v.address_city    || null,
-          address_zip:       v.address_zip     || null,
-          purchase_price:    v.purchase_price   ?? null,
-          purchase_fees:     v.purchase_fees    ?? 0,
-          works_amount:      v.works_amount     ?? 0,
-          surface_m2:        v.surface_m2       ?? null,
-          construction_year: v.construction_year ?? null,
-          dpe_class:         v.dpe_class        || null,
-          fiscal_regime:     v.fiscal_regime    || null,
-          is_multi_lot:      v.is_multi_lot,
-          acquisition_date:  v.acquisition_date || null,
-          notes:             v.notes            || null,
+          name:              draft.name,
+          property_type:     draft.property_type,
+          usage_type:        draft.usage_type,
+          address_line1:     draft.address_line1 || null,
+          address_city:      draft.address_city  || null,
+          address_zip:       draft.address_zip   || null,
+          surface_m2:        draft.surface_m2    ?? null,
+          construction_year: draft.construction_year ?? null,
+          dpe_class:         draft.dpe_class     || null,
+          purchase_price:    draft.purchase_price ?? null,
+          purchase_fees:     draft.purchase_fees  ?? 0,
+          works_amount:      draft.works_amount   ?? 0,
+          fiscal_regime:     draft.fiscal_regime || null,
+          is_multi_lot:      false,
+          acquisition_date:  draft.acquisition_date || null,
+          notes:             draft.notes || null,
         }),
       })
-      const json = await res.json()
-      if (json.error) return { error: json.error }
-      return {}
-    },
-    onSuccess() { router.push('/immobilier') },
-  })
+      const propJson = await propRes.json()
+      if (propJson.error || !propJson.property?.id) {
+        setError(propJson.error ?? 'Erreur lors de la création du bien')
+        setLoading(false); return
+      }
+      const propertyId = propJson.property.id
+
+      // 2. Créer le crédit si saisi
+      if (draft.hasLoan && draft.loan_principal && draft.loan_rate != null && draft.loan_duration) {
+        await fetch(`/api/real-estate/${propertyId}/credit`, {
+          method:  'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name:              `Crédit ${draft.name}`,
+            lender:            draft.lender || null,
+            loan_kind:         draft.loan_kind,
+            initial_amount:    draft.loan_principal,
+            interest_rate:     draft.loan_rate,
+            insurance_rate:    draft.insurance_rate ?? 0,
+            duration_months:   draft.loan_duration,
+            start_date:        draft.loan_start_date,
+            insurance_quotite: draft.insurance_quotite ?? 100,
+          }),
+        })
+      }
+
+      // 3. Créer le lot par défaut si saisi
+      if (draft.hasLot && draft.lot_rent != null) {
+        await fetch(`/api/real-estate/${propertyId}/lots`, {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name:           draft.lot_name || draft.name,
+            lot_type:       draft.property_type === 'house' ? 'house' : 'apartment',
+            surface_m2:     draft.surface_m2 ?? null,
+            status:         'rented',
+            rent_amount:    draft.lot_rent,
+            charges_amount: draft.lot_charges ?? 0,
+            market_rent:    draft.lot_market_rent ?? null,
+          }),
+        })
+      }
+
+      clearDraft()
+      router.push(`/immobilier/${propertyId}`)
+    } catch {
+      setError('Erreur réseau. Réessayez.')
+      setLoading(false)
+    }
+  }
+
+  // ─── Helpers UI ─────────────────────────────────────────────────
+
+  function autoNotaryFees() {
+    if (!draft.purchase_price) return
+    const isNew = draft.construction_year && draft.construction_year > new Date().getFullYear() - 5
+    const pct = isNew ? 0.025 : 0.075
+    set('purchase_fees', Math.round(draft.purchase_price * pct))
+  }
+
+  const totalCost =
+    (draft.purchase_price ?? 0) +
+    (draft.purchase_fees  ?? 0) +
+    (draft.works_amount   ?? 0) +
+    (draft.furniture_amount ?? 0)
+
+  const loanPreview =
+    draft.hasLoan && draft.loan_principal && draft.loan_rate != null && draft.loan_duration
+      ? computeMonthlyPayment(draft.loan_principal, draft.loan_rate, draft.loan_duration / 12)
+      : null
+
+  const isRentalUsage = draft.usage_type === 'long_term_rental'
+                     || draft.usage_type === 'short_term_rental'
+                     || draft.usage_type === 'mixed_use'
+
+  // ─── Render ─────────────────────────────────────────────────────
 
   return (
-    <div className="max-w-2xl mx-auto space-y-8">
-      {/* Navigation */}
-      <Link
-        href="/immobilier"
-        className="flex items-center gap-2 text-sm text-secondary hover:text-primary transition-colors w-fit"
-      >
+    <div className="max-w-2xl mx-auto space-y-6">
+      <Link href="/immobilier" className="flex items-center gap-2 text-sm text-secondary hover:text-primary transition-colors w-fit">
         <ArrowLeft size={14} />
         Retour à l&apos;immobilier
       </Link>
@@ -84,220 +359,354 @@ export default function NouveauBienPage() {
       <div>
         <h1 className="text-2xl font-semibold text-primary">Ajouter un bien immobilier</h1>
         <p className="text-sm text-secondary mt-1">
-          Renseignez les informations de votre bien pour démarrer le suivi.
+          {step}/5 — vous pouvez revenir à n&apos;importe quelle étape précédente.
         </p>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Identification */}
-        <div className="card p-6 space-y-5">
-          <h2 className="text-sm font-medium text-secondary uppercase tracking-widest">Identification</h2>
-          <Field label="Nom du bien" required>
-            <Input
-              value={values.name}
-              onChange={(e) => set('name', e.target.value)}
-              placeholder="ex : Appartement Lyon 3ème"
-              required
-            />
-          </Field>
-          <Field
-            label="Type d'usage"
-            required
-            hint="Le type d'usage adapte les calculs affichés (loyers et rentabilité pour un locatif ; coût de possession pour une résidence principale)."
-          >
-            <Select
-              value={values.usage_type}
-              onChange={(e) => set('usage_type', e.target.value as typeof values.usage_type)}
-              required
-            >
-              <option value="long_term_rental">Investissement locatif — longue durée</option>
-              <option value="short_term_rental">Investissement locatif — courte durée (saisonnier)</option>
-              <option value="mixed_use">Usage mixte (occupé + loué)</option>
-              <option value="primary_residence">Résidence principale</option>
-              <option value="secondary_residence">Résidence secondaire</option>
-            </Select>
-          </Field>
+      <div className="card p-4">
+        <Stepper steps={STEPS} current={step} onJump={(i) => { if (i < step) setStep(i) }} />
+      </div>
 
-          <FormGrid>
-            <Field label="Type de bien" required>
-              <Select value={values.property_type} onChange={(e) => set('property_type', e.target.value)}>
-                <option value="apartment">Appartement</option>
-                <option value="house">Maison</option>
-                <option value="garage">Garage / Parking</option>
-                <option value="building">Immeuble</option>
-                <option value="commercial">Local commercial</option>
-                <option value="land">Terrain</option>
-                <option value="other">Autre</option>
+      <form onSubmit={(e) => { e.preventDefault(); if (step < 5) goNext(); else submit() }} className="space-y-6">
+
+        {/* ──────── Étape 1 — Identification ──────── */}
+        {step === 1 && (
+          <div className="card p-6 space-y-5">
+            <h2 className="text-sm font-medium text-secondary uppercase tracking-widest">Identification</h2>
+
+            <Field label="Nom du bien" required>
+              <Input value={draft.name} onChange={(e) => set('name', e.target.value)}
+                placeholder="ex : Appartement T3 Rennes" required />
+            </Field>
+
+            <Field label="Type d'usage" required
+              hint="Détermine les calculs affichés (loyers/rentabilité pour un locatif vs coût de possession pour une RP).">
+              <Select value={draft.usage_type}
+                onChange={(e) => set('usage_type', e.target.value as UsageType)} required>
+                <option value="long_term_rental">Investissement locatif — longue durée</option>
+                <option value="short_term_rental">Investissement locatif — courte durée (saisonnier)</option>
+                <option value="mixed_use">Usage mixte (occupé + loué)</option>
+                <option value="primary_residence">Résidence principale</option>
+                <option value="secondary_residence">Résidence secondaire</option>
               </Select>
             </Field>
-            <Field label="Date d'acquisition">
-              <Input
-                type="date"
-                value={values.acquisition_date}
-                onChange={(e) => set('acquisition_date', e.target.value)}
-              />
-            </Field>
-          </FormGrid>
-        </div>
 
-        {/* Adresse */}
-        <div className="card p-6 space-y-5">
-          <h2 className="text-sm font-medium text-secondary uppercase tracking-widest">Adresse</h2>
-          <Field label="Adresse">
-            <Input
-              value={values.address_line1}
-              onChange={(e) => set('address_line1', e.target.value)}
-              placeholder="12 rue de la Paix"
-            />
-          </Field>
-          <FormGrid>
-            <Field label="Code postal">
-              <Input
-                value={values.address_zip}
-                onChange={(e) => set('address_zip', e.target.value)}
-                placeholder="75001"
-              />
-            </Field>
-            <Field label="Ville">
-              <Input
-                value={values.address_city}
-                onChange={(e) => set('address_city', e.target.value)}
-                placeholder="Paris"
-              />
-            </Field>
-          </FormGrid>
-        </div>
+            <FormGrid>
+              <Field label="Type de bien" required>
+                <Select value={draft.property_type} onChange={(e) => set('property_type', e.target.value)}>
+                  <option value="apartment">Appartement</option>
+                  <option value="house">Maison</option>
+                  <option value="building">Immeuble de rapport</option>
+                  <option value="garage">Garage / Parking</option>
+                  <option value="commercial">Local commercial</option>
+                  <option value="land">Terrain</option>
+                  <option value="other">Autre</option>
+                </Select>
+              </Field>
+              <Field label="Surface (m²)" required>
+                <Input type="number" min={1} step={0.1}
+                  value={draft.surface_m2 ?? ''}
+                  onChange={(e) => setNum('surface_m2', e.target.value)}
+                  placeholder="65" required />
+              </Field>
+            </FormGrid>
 
-        {/* Prix & investissement */}
-        <div className="card p-6 space-y-5">
-          <h2 className="text-sm font-medium text-secondary uppercase tracking-widest">Prix & investissement</h2>
-          <FormGrid cols={3}>
-            <Field label="Prix net vendeur (€)" hint="Hors frais">
-              <Input
-                type="number" min={0}
-                value={values.purchase_price ?? ''}
-                onChange={(e) => setNumber('purchase_price', e.target.value)}
-                placeholder="200 000"
-              />
+            <Field label="Adresse">
+              <Input value={draft.address_line1}
+                onChange={(e) => set('address_line1', e.target.value)}
+                placeholder="12 rue de la Paix" />
             </Field>
-            <Field label="Frais de notaire (€)">
-              <Input
-                type="number" min={0}
-                value={values.purchase_fees ?? ''}
-                onChange={(e) => setNumber('purchase_fees', e.target.value)}
-                placeholder="16 000"
-              />
-            </Field>
-            <Field label="Travaux (€)">
-              <Input
-                type="number" min={0}
-                value={values.works_amount ?? ''}
-                onChange={(e) => setNumber('works_amount', e.target.value)}
-                placeholder="0"
-              />
-            </Field>
-          </FormGrid>
+            <FormGrid>
+              <Field label="Code postal">
+                <Input value={draft.address_zip}
+                  onChange={(e) => set('address_zip', e.target.value)} placeholder="75001" />
+              </Field>
+              <Field label="Ville" required>
+                <Input value={draft.address_city}
+                  onChange={(e) => set('address_city', e.target.value)} placeholder="Paris" required />
+              </Field>
+            </FormGrid>
 
-          {/* Coût total d'acquisition */}
-          {(values.purchase_price || values.purchase_fees || values.works_amount) && (
-            <div className="bg-surface-2 rounded-lg px-4 py-3 text-sm">
-              <span className="text-secondary">Coût total d&apos;acquisition : </span>
-              <span className="text-primary font-medium financial-value">
-                {(
-                  (values.purchase_price ?? 0) +
-                  (values.purchase_fees  ?? 0) +
-                  (values.works_amount   ?? 0)
-                ).toLocaleString('fr-FR', { minimumFractionDigits: 0 })} €
-              </span>
+            <FormGrid cols={3}>
+              <Field label="Nb pièces">
+                <Input type="number" min={0}
+                  value={draft.rooms ?? ''}
+                  onChange={(e) => setNum('rooms', e.target.value)}
+                  placeholder="3" />
+              </Field>
+              <Field label="Année construction">
+                <Input type="number" min={1800} max={2030}
+                  value={draft.construction_year ?? ''}
+                  onChange={(e) => setNum('construction_year', e.target.value)}
+                  placeholder="1990" />
+              </Field>
+              <Field label="DPE">
+                <Select value={draft.dpe_class} onChange={(e) => set('dpe_class', e.target.value)}>
+                  <option value="">—</option>
+                  {['A','B','C','D','E','F','G'].map(c => <option key={c} value={c}>{c}</option>)}
+                </Select>
+              </Field>
+            </FormGrid>
+          </div>
+        )}
+
+        {/* ──────── Étape 2 — Acquisition ──────── */}
+        {step === 2 && (
+          <div className="card p-6 space-y-5">
+            <h2 className="text-sm font-medium text-secondary uppercase tracking-widest">Acquisition & financement</h2>
+
+            <FormGrid>
+              <Field label="Prix net vendeur (€)" required>
+                <Input type="number" min={0}
+                  value={draft.purchase_price ?? ''}
+                  onChange={(e) => setNum('purchase_price', e.target.value)}
+                  placeholder="200 000" required />
+              </Field>
+              <Field label="Date d'acquisition" required>
+                <Input type="date" value={draft.acquisition_date}
+                  onChange={(e) => set('acquisition_date', e.target.value)} required />
+              </Field>
+            </FormGrid>
+
+            <Field label="Frais de notaire (€)" required>
+              <div className="flex items-center gap-2">
+                <Input type="number" min={0}
+                  value={draft.purchase_fees ?? ''}
+                  onChange={(e) => setNum('purchase_fees', e.target.value)}
+                  placeholder="16 000" required className="flex-1" />
+                <Button type="button" variant="secondary" size="sm" onClick={autoNotaryFees}>
+                  Calculer auto
+                </Button>
+              </div>
+            </Field>
+
+            <FormGrid>
+              <Field label="Travaux (€)">
+                <Input type="number" min={0}
+                  value={draft.works_amount ?? ''}
+                  onChange={(e) => setNum('works_amount', e.target.value)}
+                  placeholder="0" />
+              </Field>
+              {isRentalUsage && (
+                <Field label="Mobilier — LMNP (€)" hint="Amortissable séparément">
+                  <Input type="number" min={0}
+                    value={draft.furniture_amount ?? ''}
+                    onChange={(e) => setNum('furniture_amount', e.target.value)}
+                    placeholder="0" />
+                </Field>
+              )}
+            </FormGrid>
+
+            {totalCost > 0 && (
+              <div className="bg-surface-2 rounded-lg px-4 py-3 text-sm">
+                <span className="text-secondary">Prix de revient total : </span>
+                <span className="text-primary font-medium financial-value">
+                  {formatCurrency(totalCost, 'EUR')}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ──────── Étape 3 — Crédit (facultative) ──────── */}
+        {step === 3 && (
+          <div className="card p-6 space-y-5">
+            <div className="flex items-start justify-between gap-4">
+              <h2 className="text-sm font-medium text-secondary uppercase tracking-widest">Crédit immobilier</h2>
+              {!draft.hasLoan && (
+                <Button type="button" variant="secondary" size="sm" onClick={() => set('hasLoan', true)}>
+                  + Saisir un crédit
+                </Button>
+              )}
             </div>
-          )}
-        </div>
 
-        {/* Caractéristiques */}
-        <div className="card p-6 space-y-5">
-          <h2 className="text-sm font-medium text-secondary uppercase tracking-widest">Caractéristiques</h2>
-          <FormGrid cols={3}>
-            <Field label="Surface (m²)">
-              <Input
-                type="number" min={0} step={0.1}
-                value={values.surface_m2 ?? ''}
-                onChange={(e) => setNumber('surface_m2', e.target.value)}
-                placeholder="65"
-              />
-            </Field>
-            <Field label="Année construction">
-              <Input
-                type="number" min={1800} max={2030}
-                value={values.construction_year ?? ''}
-                onChange={(e) => setNumber('construction_year', e.target.value)}
-                placeholder="1990"
-              />
-            </Field>
-            <Field label="DPE">
-              <Select value={values.dpe_class} onChange={(e) => set('dpe_class', e.target.value)}>
-                <option value="">—</option>
-                {['A', 'B', 'C', 'D', 'E', 'F', 'G'].map((c) => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </Select>
-            </Field>
-          </FormGrid>
-          <FormGrid>
-            <Field
-              label="Régime fiscal"
-              required
-              hint="Pas sûr ? Choisissez « Micro-foncier » pour une location nue simple, « LMNP micro-BIC » pour du meublé, « SCI à l'IS » si vous détenez via une SCI."
-            >
-              <Select
-                value={values.fiscal_regime}
-                onChange={(e) => set('fiscal_regime', e.target.value)}
-                required
-              >
+            {!draft.hasLoan ? (
+              <p className="text-sm text-secondary">
+                Vous pouvez passer cette étape et renseigner votre crédit plus tard depuis la fiche du bien.
+              </p>
+            ) : (
+              <div className="space-y-5">
+                <FormGrid>
+                  <Field label="Type de prêt" required>
+                    <Select value={draft.loan_kind}
+                      onChange={(e) => set('loan_kind', e.target.value as LoanKind)} required>
+                      <option value="principal">Prêt principal</option>
+                      <option value="ptz">PTZ (Prêt à Taux Zéro)</option>
+                      <option value="travaux">Prêt travaux</option>
+                      <option value="pel">PEL / CEL</option>
+                      <option value="action_logement">Action Logement</option>
+                      <option value="relais">Prêt relais</option>
+                      <option value="in_fine">Prêt in fine</option>
+                      <option value="autre">Autre</option>
+                    </Select>
+                  </Field>
+                  <Field label="Organisme prêteur">
+                    <Input value={draft.lender}
+                      onChange={(e) => set('lender', e.target.value)}
+                      placeholder="Crédit Agricole" />
+                  </Field>
+                </FormGrid>
+                <FormGrid>
+                  <Field label="Montant emprunté (€)" required>
+                    <Input type="number" min={0}
+                      value={draft.loan_principal ?? ''}
+                      onChange={(e) => setNum('loan_principal', e.target.value)}
+                      placeholder="180 000" required />
+                  </Field>
+                  <Field label="Date de début" required>
+                    <Input type="date" value={draft.loan_start_date}
+                      onChange={(e) => set('loan_start_date', e.target.value)} required />
+                  </Field>
+                </FormGrid>
+                <FormGrid cols={3}>
+                  <Field label="Taux nominal (%)" required>
+                    <Input type="number" step={0.01} min={0}
+                      value={draft.loan_rate ?? ''}
+                      onChange={(e) => setNum('loan_rate', e.target.value)}
+                      placeholder="3.50" required />
+                  </Field>
+                  <Field label="Durée (mois)" required>
+                    <Input type="number" min={1} max={480}
+                      value={draft.loan_duration ?? ''}
+                      onChange={(e) => setNum('loan_duration', e.target.value)}
+                      placeholder="240" required />
+                  </Field>
+                  <Field label="Assurance (%)">
+                    <Input type="number" step={0.01} min={0}
+                      value={draft.insurance_rate ?? ''}
+                      onChange={(e) => setNum('insurance_rate', e.target.value)}
+                      placeholder="0.30" />
+                  </Field>
+                </FormGrid>
+                {loanPreview && (
+                  <div className="bg-surface-2 rounded-lg px-4 py-3 text-sm">
+                    <span className="text-secondary">Mensualité estimée (hors assurance) : </span>
+                    <span className="text-primary font-medium financial-value">
+                      {formatCurrency(loanPreview, 'EUR')} / mois
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ──────── Étape 4 — Régime fiscal ──────── */}
+        {step === 4 && (
+          <div className="card p-6 space-y-5">
+            <h2 className="text-sm font-medium text-secondary uppercase tracking-widest">Régime fiscal</h2>
+            <Field label="Quel est votre régime fiscal pour ce bien ?" required>
+              <Select value={draft.fiscal_regime}
+                onChange={(e) => set('fiscal_regime', e.target.value as FiscalRegime)} required>
                 <option value="" disabled>— Choisir un régime —</option>
-                <option value="lmnp_reel">LMNP Réel</option>
-                <option value="lmnp_micro">LMNP Micro-BIC</option>
-                <option value="lmp">LMP</option>
-                <option value="sci_is">SCI IS</option>
-                <option value="sci_ir">SCI IR</option>
-                <option value="foncier_nu">Foncier nu</option>
-                <option value="foncier_micro">Micro-foncier</option>
+                <option value="foncier_micro">Micro-foncier (location nue, &lt; 15 000 €/an)</option>
+                <option value="foncier_nu">Foncier réel (location nue)</option>
+                <option value="lmnp_micro">LMNP micro-BIC (meublé)</option>
+                <option value="lmnp_reel">LMNP réel (meublé avec amortissements)</option>
+                <option value="lmp">LMP (loueur professionnel)</option>
+                <option value="sci_is">SCI à l&apos;IS</option>
+                <option value="sci_ir">SCI à l&apos;IR</option>
               </Select>
             </Field>
-            <Field label="Immeuble multi-lots">
-              <Select
-                value={String(values.is_multi_lot)}
-                onChange={(e) => set('is_multi_lot', e.target.value === 'true')}
-              >
-                <option value="false">Non</option>
-                <option value="true">Oui — immeuble de rapport</option>
-              </Select>
-            </Field>
-          </FormGrid>
-        </div>
+            {draft.fiscal_regime !== '' && (
+              <div className="border border-accent/20 bg-accent/5 rounded-lg p-3 text-xs text-secondary">
+                <p className="font-medium text-primary mb-1">
+                  {FISCAL_REGIME_DESCRIPTIONS[draft.fiscal_regime].label}
+                </p>
+                {FISCAL_REGIME_DESCRIPTIONS[draft.fiscal_regime].help}
+              </div>
+            )}
+          </div>
+        )}
 
-        {/* Notes */}
-        <div className="card p-6">
-          <Field label="Notes">
-            <Textarea
-              value={values.notes}
-              onChange={(e) => set('notes', e.target.value)}
-              placeholder="Observations, contexte d'acquisition…"
-              rows={3}
-            />
-          </Field>
-        </div>
+        {/* ──────── Étape 5 — Lots & loyers ──────── */}
+        {step === 5 && (
+          <div className="card p-6 space-y-5">
+            <h2 className="text-sm font-medium text-secondary uppercase tracking-widest">Lots & loyers</h2>
+
+            {!isRentalUsage ? (
+              <p className="text-sm text-secondary">
+                Aucun loyer à saisir pour une résidence principale ou secondaire (vous pourrez en ajouter plus tard
+                si vous décidez de louer ponctuellement).
+              </p>
+            ) : !draft.hasLot ? (
+              <div className="space-y-3">
+                <p className="text-sm text-secondary">
+                  Vous pouvez ajouter un lot avec son loyer maintenant, ou le faire plus tard depuis la fiche du bien.
+                </p>
+                <Button type="button" variant="secondary" size="sm"
+                  onClick={() => { set('hasLot', true); set('lot_name', draft.name) }}>
+                  + Ajouter un lot loué
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <Field label="Nom du lot" required>
+                  <Input value={draft.lot_name}
+                    onChange={(e) => set('lot_name', e.target.value)}
+                    placeholder="ex : Appartement, T2 RDC, …" />
+                </Field>
+                <FormGrid>
+                  <Field label="Loyer mensuel HC (€)" required>
+                    <Input type="number" min={0}
+                      value={draft.lot_rent ?? ''}
+                      onChange={(e) => setNum('lot_rent', e.target.value)}
+                      placeholder="750" />
+                  </Field>
+                  <Field label="Charges locataire (€/mois)">
+                    <Input type="number" min={0}
+                      value={draft.lot_charges ?? ''}
+                      onChange={(e) => setNum('lot_charges', e.target.value)}
+                      placeholder="80" />
+                  </Field>
+                </FormGrid>
+                <Field label="Loyer de marché (€/mois)"
+                  hint="Optionnel — sert à détecter un bien sous-loué.">
+                  <Input type="number" min={0}
+                    value={draft.lot_market_rent ?? ''}
+                    onChange={(e) => setNum('lot_market_rent', e.target.value)}
+                    placeholder="800" />
+                </Field>
+              </div>
+            )}
+
+            <Field label="Notes (optionnel)">
+              <Textarea value={draft.notes}
+                onChange={(e) => set('notes', e.target.value)}
+                placeholder="Observations, contexte d'acquisition…" rows={2} />
+            </Field>
+          </div>
+        )}
 
         {error && (
           <p className="text-sm text-danger bg-danger-muted px-4 py-3 rounded-lg">{error}</p>
         )}
 
-        <div className="flex justify-end gap-3 pb-8">
-          <Button variant="secondary" type="button" onClick={() => router.push('/immobilier')}>
-            Annuler
+        {/* Actions */}
+        <div className="flex items-center justify-between gap-3 pb-8">
+          <Button type="button" variant="secondary"
+            onClick={() => { clearDraft(); setDraft(EMPTY_DRAFT); setStep(1); setError(null) }}
+            icon={RotateCcw}>
+            Réinitialiser
           </Button>
-          <Button type="submit" loading={loading}>
-            Enregistrer le bien
-          </Button>
+          <div className="flex gap-2">
+            {step > 1 && (
+              <Button type="button" variant="secondary" onClick={goPrev}>
+                <ArrowLeft size={14} />
+                Précédent
+              </Button>
+            )}
+            {step < 5 ? (
+              <Button type="submit">
+                Suivant
+                <ArrowRight size={14} />
+              </Button>
+            ) : (
+              <Button type="submit" loading={loading} icon={Save}>
+                Enregistrer le bien
+              </Button>
+            )}
+          </div>
         </div>
       </form>
     </div>

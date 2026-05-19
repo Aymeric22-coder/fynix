@@ -27,6 +27,7 @@ import { ok, err, withAuth } from '@/lib/utils/api'
 import type { User } from '@supabase/supabase-js'
 import {
   parseBrokerCsv, aggregateToPositions, decodeCsvBytes,
+  groupTransactionsByKey, buildTransactionRowsForImport,
   type BrokerFormat, type AggregatedPosition, type AssetClassNormalized,
 } from '@/lib/portfolio/csvImport'
 import { enrichISIN } from '@/lib/analyse/isinEnricher'
@@ -36,14 +37,18 @@ import { runInBatches } from '@/lib/email/batch'
 import type { AssetClass, CurrencyCode } from '@/types/database.types'
 
 interface ImportSummary {
-  broker_detected:    BrokerFormat
-  total_rows:         number
-  transactions_found: number
-  positions_imported: number
-  positions_updated:  number
-  positions_skipped:  number
-  errors:             Array<{ row?: number; isin?: string; reason: string }>
-  preview:            AggregatedPosition[]
+  broker_detected:       BrokerFormat
+  total_rows:            number
+  transactions_found:    number
+  positions_imported:    number
+  positions_updated:     number
+  positions_skipped:     number
+  /** Nb de lignes réellement insérées dans `transactions` (ignore les ON CONFLICT). */
+  transactions_inserted: number
+  /** Nb de NormalizedTransaction skippées (type non mappable vers la DB). */
+  transactions_skipped:  number
+  errors:                Array<{ row?: number; isin?: string; reason: string }>
+  preview:               AggregatedPosition[]
 }
 
 // ── Mapping classe normalisée → enum DB ───────────────────────────────
@@ -182,15 +187,23 @@ export const POST = withAuth(async (req: Request, user: User) => {
   const positions = aggregateToPositions(parsed.transactions, excludedKeys)
 
   const summary: ImportSummary = {
-    broker_detected:    parsed.broker,
-    total_rows:         parsed.total_rows,
-    transactions_found: parsed.transactions.length,
-    positions_imported: 0,
-    positions_updated:  0,
-    positions_skipped:  0,
-    errors:             [...parsed.errors.map((e) => ({ row: e.line, reason: e.reason }))],
-    preview:            positions,
+    broker_detected:        parsed.broker,
+    total_rows:             parsed.total_rows,
+    transactions_found:     parsed.transactions.length,
+    positions_imported:     0,
+    positions_updated:      0,
+    positions_skipped:      0,
+    transactions_inserted:  0,
+    transactions_skipped:   0,
+    errors:                 [...parsed.errors.map((e) => ({ row: e.line, reason: e.reason }))],
+    preview:                positions,
   }
+
+  // Grouping des transactions brutes par titre, pour les persister
+  // dans la table `transactions` au moment du upsert position (E5).
+  // Idempotence garantie par migration 033 (index unique partiel sur
+  // user_id + external_ref) + ON CONFLICT DO NOTHING ci-dessous.
+  const txGroupsForInsert = groupTransactionsByKey(parsed.transactions, excludedKeys)
 
   if (positions.length === 0) return ok(summary)
 
@@ -329,7 +342,10 @@ export const POST = withAuth(async (req: Request, user: User) => {
         continue
       }
 
-      // 3b — Upsert position
+      // 3b — Upsert position. On garde le position_id réel (resolvedPositionId)
+      //      pour pouvoir y rattacher les transactions en 3c.
+      let resolvedPositionId: string | null = null
+
       const existing = existingByInstrumentId.get(instrument.id)
       if (existing) {
         // PRU pondéré : (existQty × existPRU + importQty × importPRU) / total
@@ -349,8 +365,9 @@ export const POST = withAuth(async (req: Request, user: User) => {
           continue
         }
         summary.positions_updated++
+        resolvedPositionId = existing.id
       } else {
-        const { error: pe } = await supabase
+        const { data: inserted, error: pe } = await supabase
           .from('positions')
           .insert({
             user_id:          user.id,
@@ -362,16 +379,62 @@ export const POST = withAuth(async (req: Request, user: User) => {
             acquisition_date: pos.acquisition_date,
             status:           'active',
           })
-        if (pe) {
-          summary.errors.push({ isin: pos.isin ?? undefined, reason: `Insert position : ${pe.message}` })
+          .select('id')
+          .single()
+        if (pe || !inserted) {
+          summary.errors.push({ isin: pos.isin ?? undefined, reason: `Insert position : ${pe?.message ?? 'no row returned'}` })
           continue
         }
         summary.positions_imported++
+        resolvedPositionId = inserted.id as string
+        // On garde le VRAI id (corrige au passage l'ancien placeholder 'new'
+        // qui empechait l'UPDATE ulterieur si le meme instrument apparaissait
+        // 2 fois dans le meme CSV).
         existingByInstrumentId.set(instrument.id, {
-          id:            'new',
+          id:            resolvedPositionId,
           quantity:      pos.quantity,
           average_price: pos.unit_price,
         })
+      }
+
+      // 3c — Insert batch des transactions du groupe dans `transactions` (E5).
+      //      Isolé dans son propre try : si l'insert échoue, la position
+      //      reste créée (l'import ne doit pas régresser sur l'existant).
+      if (resolvedPositionId) {
+        try {
+          const key      = (pos.isin ?? pos.ticker ?? pos.name).toUpperCase()
+          const groupTxs = txGroupsForInsert.get(key) ?? []
+          const { rows, skipped } = buildTransactionRowsForImport(groupTxs, {
+            userId:       user.id,
+            positionId:   resolvedPositionId,
+            instrumentId: instrument.id,
+          })
+
+          if (skipped.length > 0) {
+            console.warn(
+              `[import] ${skipped.length} transaction(s) skippee(s) (type non mappable) pour ${pos.name} :`,
+              skipped.map((t) => t.transaction_type),
+            )
+            summary.transactions_skipped += skipped.length
+          }
+
+          if (rows.length > 0) {
+            const { data: insertedTxs, error: txErr } = await supabase
+              .from('transactions')
+              .upsert(rows, {
+                onConflict:       'user_id,external_ref',
+                ignoreDuplicates: true,
+              })
+              .select('id')
+            if (txErr) {
+              console.warn(`[import] transactions insert failed for ${pos.name}:`, txErr.message)
+            } else {
+              summary.transactions_inserted += insertedTxs?.length ?? 0
+            }
+          }
+        } catch (txException) {
+          console.warn(`[import] transactions insert exception for ${pos.name}:`, (txException as Error).message)
+        }
       }
     } catch (e) {
       summary.errors.push({ isin: pos.isin ?? undefined, reason: (e as Error).message })
