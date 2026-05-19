@@ -8,7 +8,10 @@ import { Badge }                         from '@/components/ui/badge'
 import { ChargesWarningBanner }          from '@/components/ui/charges-warning-banner'
 import { ImmobilierActions }             from '@/components/pages/immobilier-actions'
 import { ReventeButton }                 from '@/components/real-estate/revente-button'
-import type { TypeUsageBien }            from '@/lib/real-estate/plusValue'
+import {
+  mapFiscalRegimeToRevente,
+  type TypeUsageBien,
+} from '@/lib/real-estate/plusValue'
 import { computeRealEstatePortfolio }    from '@/lib/real-estate/portfolio'
 import { formatCurrency, formatPercent, ASSET_TYPE_LABELS } from '@/lib/utils/format'
 
@@ -268,6 +271,7 @@ export default async function ImmobilierPage() {
                           dateAchat:        asset.acquisition_date,
                           valeurActuelle:   asset.current_value,
                           typeUsage:        inferTypeUsage(p.fiscal_regime),
+                          regimeFiscal:     mapFiscalRegimeToRevente(p.fiscal_regime),
                           fraisAcquisitionReels: p.purchase_fees > 0 ? p.purchase_fees : undefined,
                           travauxReels:          p.works_amount   > 0 ? p.works_amount   : undefined,
                         }}

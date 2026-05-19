@@ -1,37 +1,30 @@
 /**
  * Calcul de la plus-value immobilière française et impact sur la
- * trajectoire d'indépendance financière.
+ * trajectoire d'indépendance financière — gestion multi-régimes.
+ *
+ * Régimes supportés :
+ *   - particulier / foncier_nu / scpi  → PV des particuliers (art. 150 U du CGI)
+ *     Frais 7,5 % + travaux 15 %, abattements IR (19 %) et PS (17,2 %),
+ *     surtaxe sur PV nette IR > 50 000 €, exonérations RP / PV ≤ 15 k€ /
+ *     1re cession hors RP.
+ *
+ *   - lmnp / micro_bic  → LMNP loi de finances 2025
+ *     Amortissements pratiqués RÉINTÉGRÉS à la PV imposable
+ *     (VNC = base d'acquisition corrigée − amortissements cumulés).
+ *     Taxation reste au régime des particuliers (mêmes abattements + surtaxe).
+ *
+ *   - lmp  → professionnel (art. 151 septies CGI)
+ *     PV pro = vente − VNC. Décomposée en CT (à hauteur des amortissements,
+ *     taxée TMI + 17,2 % cotisations sociales) et LT (12,8 % PFU).
+ *     Exonération totale si CA moyen 2 ans < 90 k€, dégressive jusqu'à 126 k€.
+ *
+ *   - sci_is  → IS au niveau société (15/25 %) puis sortie PFU 30 %
+ *     ou remboursement de comptes courants d'associés (CCA) sans imposition.
+ *     Pas d'abattement pour durée de détention.
  *
  * Fonction PURE — pas d'I/O, pas de hook React. Réutilise uniquement
- * les constantes communes (PRELEVEMENTS_SOCIAUX_PCT) et la projection
- * d'onboarding pour estimer l'impact FIRE du réinvestissement.
- *
- * Règles fiscales implémentées (France, 2026) :
- *
- *   1. PV brute = Prix vente − Prix acquisition corrigé
- *      Prix acquisition corrigé = Prix achat
- *        + frais d'acquisition (réels OU forfait 7,5 %)
- *        + travaux (réels OU forfait 15 % si détention > 5 ans
- *          ET travaux réels < 15 % du prix d'achat)
- *
- *   2. Abattements pour durée de détention (années révolues) :
- *      IR (taux 19 %)  : 0 %    avant 6 ans,
- *                        +6 %/an du 6e au 21e an,
- *                        +4 % au 22e an → exonération totale au-delà.
- *      PS (taux 17,2 %): 0 %    avant 6 ans,
- *                        +1,65 %/an du 6e au 21e an,
- *                        +1,60 % au 22e an,
- *                        +9 %/an du 23e au 30e an → exo totale au-delà.
- *
- *   3. Surtaxe sur PV nette IR > 50 000 € (paliers 2 / 3 / 4 / 5 / 6 %).
- *
- *   4. Exonérations totales :
- *      - Résidence principale (toujours)
- *      - 1re cession d'une résidence autre que principale par un non
- *        propriétaire de sa RP depuis 4 ans (sous conditions)
- *      - PV nette ≤ 15 000 €
- *
- *   5. Net vendeur = Prix vente − Frais agence − Impôt total.
+ * `PRELEVEMENTS_SOCIAUX_PCT` (lib/analyse/constants) et
+ * `calculerQuickProjection` (lib/onboarding) pour estimer l'impact FIRE.
  */
 
 import { PRELEVEMENTS_SOCIAUX_PCT } from '../analyse/constants'
@@ -41,35 +34,54 @@ import {
 } from '../onboarding/quickProjection'
 
 // ─────────────────────────────────────────────────────────────────
-// Constantes fiscales spécifiques à la PV immo
+// Constantes fiscales
 // ─────────────────────────────────────────────────────────────────
 
 /** Taux IR fixe applicable à la PV immobilière (19 %). */
 export const TAUX_IR_PV_IMMO = 19
-/** Forme décimale du taux IR (0.19) — utile pour les multiplications. */
+/** Forme décimale du taux IR (0.19). */
 export const TAUX_IR_PV_IMMO_PCT = TAUX_IR_PV_IMMO / 100
+
+/** Taux IS normal (25 %) sous forme décimale. */
+export const TAUX_IS_NORMAL_PCT = 0.25
+/** Taux IS réduit PME (15 %, bénéfice < 42 500 €). */
+export const TAUX_IS_REDUIT_PCT = 0.15
+
+/** PFU global (12,8 % IR + 17,2 % PS = 30 %). */
+export const TAUX_PFU_PCT = 0.30
+/** Part IR du PFU (12,8 %) — utilisée pour la PV LT en LMP. */
+export const TAUX_PFU_IR_PCT = 0.128
 
 /** Taux PS (17,2 %) sous forme décimale. */
 const TAUX_PS_PCT = PRELEVEMENTS_SOCIAUX_PCT / 100
 
 /** Forfait frais d'acquisition (7,5 % du prix d'achat). */
-export const FRAIS_ACQ_FORFAIT_PCT  = 7.5
+export const FORFAIT_FRAIS_ACQUISITION_PCT = 0.075
 /** Forfait travaux (15 % du prix d'achat) si détention > 5 ans. */
-export const TRAVAUX_FORFAIT_PCT    = 15
+export const FORFAIT_TRAVAUX_PCT = 0.15
 /** Détention minimale (années révolues) pour le forfait travaux. */
 export const TRAVAUX_FORFAIT_MIN_ANS = 5
 
-/** Seuil d'exonération applicable à la PV nette (≤ 15 000 €). */
-export const SEUIL_EXO_PV_FAIBLE_EUR = 15_000
+/** Seuil d'exonération applicable à la PV brute (≤ 15 000 €). */
+export const SEUIL_EXO_PV_EUR = 15_000
+/** Plafond exonération LMP totale (CA moyen sur 2 ans). */
+export const PLAFOND_EXO_LMP_TOTAL = 90_000
+/** Plafond exonération LMP dégressive (CA moyen sur 2 ans). */
+export const PLAFOND_EXO_LMP_PARTIELLE = 126_000
 
-/** Surtaxe progressive sur PV nette IR > 50 000 €. */
-const SURTAXE_PALIERS: ReadonlyArray<{ min: number; max: number; tauxPct: number }> = [
-  { min:  50_001, max: 100_000, tauxPct: 2 },
-  { min: 100_001, max: 150_000, tauxPct: 3 },
-  { min: 150_001, max: 200_000, tauxPct: 4 },
-  { min: 200_001, max: 250_000, tauxPct: 5 },
-  { min: 250_001, max: Number.POSITIVE_INFINITY, tauxPct: 6 },
-]
+/** Amortissement annuel par défaut quand l'utilisateur ne renseigne rien
+ *  (2,5 %/an du prix d'achat × quote-part amortissable). */
+export const AMORTISSEMENT_ANNUEL_ESTIME_PCT = 0.025
+/** Quote-part amortissable typique (85 % de la valeur = bâti hors terrain). */
+export const QUOTE_PART_AMORTISSABLE_PCT = 0.85
+
+// Aliases rétro-compatibles (anciens noms exportés par cette lib).
+/** @deprecated Utilisez SEUIL_EXO_PV_EUR. */
+export const SEUIL_EXO_PV_FAIBLE_EUR = SEUIL_EXO_PV_EUR
+/** @deprecated Utilisez FORFAIT_FRAIS_ACQUISITION_PCT × 100. */
+export const FRAIS_ACQ_FORFAIT_PCT = FORFAIT_FRAIS_ACQUISITION_PCT * 100
+/** @deprecated Utilisez FORFAIT_TRAVAUX_PCT × 100. */
+export const TRAVAUX_FORFAIT_PCT = FORFAIT_TRAVAUX_PCT * 100
 
 // ─────────────────────────────────────────────────────────────────
 // Types publics
@@ -77,77 +89,163 @@ const SURTAXE_PALIERS: ReadonlyArray<{ min: number; max: number; tauxPct: number
 
 export type TypeUsageBien = 'residence_principale' | 'locatif' | 'secondaire'
 
+export type RegimeFiscalRevente =
+  | 'particulier'
+  | 'lmnp'
+  | 'lmp'
+  | 'sci_is'
+  | 'foncier_nu'
+  | 'scpi'
+  | 'micro_bic'
+
+export const REGIME_LABELS: Record<RegimeFiscalRevente, string> = {
+  particulier: 'Particulier / Foncier nu / SCI à l\'IR',
+  lmnp:        'LMNP réel (loi finances 2025)',
+  lmp:         'LMP (loueur meublé professionnel)',
+  sci_is:      'SCI à l\'IS',
+  foncier_nu:  'Foncier nu',
+  scpi:        'SCPI',
+  micro_bic:   'Micro-BIC (assimilé particulier)',
+}
+
 export interface SimulationReventeInput {
   /** Prix d'achat hors honoraires (€). */
   prixAchat:               number
-  /** Date d'achat (sert au calcul de la durée de détention). */
+  /** Date d'achat. */
   dateAchat:               Date
   /** Prix de vente envisagé (€). */
   prixVenteEstime:         number
-  /** Date de cession envisagée (€). */
+  /** Date de cession envisagée. */
   dateCessionEstimee:      Date
 
-  /** Frais d'acquisition réels (€). Si omis → forfait 7,5 % du prix d'achat. */
+  /** Régime fiscal d'exploitation du bien.
+   *  Défaut 'particulier' pour rétro-compat des appels existants. */
+  regimeFiscal?:           RegimeFiscalRevente
+
+  /** Amortissements cumulés (€) — utilisés pour LMNP / LMP / SCI IS.
+   *  Si omis et régime amortissable : estimation 2,5 %/an × 85 %. */
+  amortissementsCumules?:  number
+  /** Comptes courants d'associés (SCI IS uniquement) — remboursables hors PFU. */
+  comptesCourantsAssocies?: number
+  /** Taux IS (% entier). Défaut 25. PME : 15. */
+  tauxIS?:                 number
+  /** CA moyen sur 2 ans (LMP) — sert au calcul d'exonération art. 151 septies. */
+  caLmpMoyenSur2Ans?:      number
+  /** TMI en % (LMP uniquement). Défaut 30. */
+  tmiLmp?:                 number
+
+  /** Frais d'acquisition réels (€). Si omis → forfait 7,5 %. */
   fraisAcquisitionReels?:  number
-  /** Travaux réels engagés (€). Si omis ET détention > 5 ans, forfait 15 %. */
+  /** Travaux réels (€). Si omis ET détention > 5 ans → forfait 15 %. */
   travauxReels?:           number
-  /** Frais d'agence (€) à déduire du prix de vente pour le net vendeur. */
+  /** Frais d'agence (€) à déduire du prix de vente. */
   fraisAgenceVente?:       number
 
-  /** Type d'usage du bien — détermine les exonérations. */
+  /** Type d'usage — détermine les exonérations RP. */
   typeUsage:               TypeUsageBien
-  /** 1re cession d'une résidence autre que principale, vendeur sans RP
-   *  depuis 4 ans → exonération (article 150-U II-1° bis du CGI). */
+  /** 1re cession hors RP, vendeur sans RP depuis 4 ans. */
   estPremiereCessionHorsRP?: boolean
 
-  // ── Impact projection (optionnels) ────────────────────────────────
-  /** Patrimoine financier actuel (€) — pour l'impact FIRE. */
+  /** Patrimoine financier actuel (€) — impact FIRE. */
   patrimoineActuel?:       number
   /** Épargne mensuelle (€/mois). */
   epargneMensuelle?:       number
-  /** Revenu mensuel net (€/mois) — utilisé pour estimer la cible FIRE
-   *  via calculerQuickProjection. */
+  /** Revenu mensuel net (€/mois). */
   revenuMensuelNet?:       number
-  /** Âge actuel — requis pour l'impact FIRE. */
+  /** Âge actuel. */
   ageActuel?:              number
 }
 
+/** Détail spécifique SCI IS. */
+export interface SciIsDetail {
+  /** Net SCI après IS (avant distribution). */
+  netApresIS:                       number
+  /** Net pour l'associé après distribution en dividendes (PFU 30 %). */
+  netApresDistributionDividendes:   number
+  /** Net pour l'associé après remboursement CCA prioritaire (PFU 30 % sur le solde). */
+  netApresRemboursementCCA:         number
+  /** Montant effectivement remboursable du CCA (≤ net après IS). */
+  montantCCARemboursable:           number
+  /** Taux IS appliqué. */
+  tauxISPct:                        number
+}
+
+/** Détail spécifique LMP. */
+export interface LmpDetail {
+  /** PV court terme = min(PV totale, amortissements cumulés). */
+  pvCourtTerme:             number
+  /** PV long terme = PV totale − PV CT. */
+  pvLongTerme:              number
+  /** Impôt CT (TMI sur PV CT après éventuelle exo). */
+  impotCourtTerme:          number
+  /** Cotisations sociales sur PV CT (17,2 %). */
+  cotisationsSocialesLMP:   number
+  /** Impôt LT (PFU IR 12,8 %). */
+  impotLongTerme:           number
+  /** Exonération applicable (art. 151 septies). */
+  exonerationApplicable:    boolean
+  /** Taux d'exonération en %, 100 = totale. */
+  tauxExonerationPct:       number
+  /** Raison exo si applicable. */
+  raisonExoneration?:       string
+}
+
+/** Comparaison rapide avec les autres régimes. */
+export interface ComparaisonRegime {
+  regime:          RegimeFiscalRevente
+  regimeLabel:     string
+  impotTotal:      number
+  netVendeur:      number
+  estRegimeActuel: boolean
+}
+
 export interface SimulationReventeImpactFIRE {
-  /** Capital net réinvesti après vente (= netVendeur). */
   gainPatrimoineNet:        number
-  /** Différence en années sur l'âge d'indépendance financière.
-   *  Positive = on avance la date, null si calcul impossible. */
   gainAnneesFIRE:           number | null
-  /** Nouvel âge d'indépendance estimé après réinvestissement. */
   nouvelAgeIndependance:    number | null
-  /** Âge d'indépendance sans la vente (référence). */
   ageIndependanceSansVente: number | null
 }
 
 export interface SimulationReventeResult {
-  // Durée
+  /** Régime utilisé pour ce calcul. */
+  regime:                   RegimeFiscalRevente
+  regimeLabel:              string
+
   /** Années révolues entre dateAchat et dateCessionEstimee. */
   anneesDetention:          number
 
-  // PV brute
+  // Reconstitution du prix d'acquisition
   fraisAcquisitionRetenus:  number
   travauxRetenus:           number
   prixAcquisitionCorriges:  number
+
+  // Amortissements (régimes assimilés BIC / IS)
+  vnc?:                       number
+  amortissementsCumulesUtilises: number
+  amortissementsEstimes:        boolean
+
+  // Plus-value brute (avant fiscalité)
   pvBrute:                  number
+  pvImposable:              number
 
-  // Abattements
+  // ── Champs régime particulier / LMNP (rétro-compat) ─────────────
+  /** % d'abattement IR appliqué. 0 hors régime particulier/LMNP. */
   abattementIRPct:          number
+  /** % d'abattement PS appliqué. 0 hors régime particulier/LMNP. */
   abattementPSPct:          number
+  /** PV nette après abattement IR (€). 0 hors régime particulier/LMNP. */
   pvNettePourIR:            number
+  /** PV nette après abattement PS (€). 0 hors régime particulier/LMNP. */
   pvNettePourPS:            number
-
-  // Impôts
+  /** Impôt IR (régime particulier/LMNP) ou impôt principal du régime. */
   impotIR:                  number
+  /** Impôt PS (régime particulier/LMNP). */
   impotPS:                  number
+  /** Surtaxe (régime particulier/LMNP). */
   surtaxe:                  number
-  impotTotal:               number
 
-  // Net
+  // Totaux
+  impotTotal:               number
   netVendeur:               number
   tauxImpositionEffectifPct: number
 
@@ -155,17 +253,28 @@ export interface SimulationReventeResult {
   exonere:                  boolean
   raisonExoneration?:       string
 
-  // Impact projection (optionnel)
+  // Détails par régime (présents seulement si pertinents)
+  sciIsDetail?:             SciIsDetail
+  lmpDetail?:               LmpDetail
+
+  // Pédagogie + conseils
+  avertissements:           string[]
+  comparaisonRegimes?:      ComparaisonRegime[]
+  conseilAttente?: {
+    dateOptimale: Date
+    gainEstime:   number
+    explication:  string
+  }
+
+  // Impact projection
   impactFIRE?:              SimulationReventeImpactFIRE
 }
 
 // ─────────────────────────────────────────────────────────────────
-// Helpers
+// Helpers exportés (rétro-compat tests existants)
 // ─────────────────────────────────────────────────────────────────
 
-/** Années révolues entre deux dates (jour près). 1er → 2e date :
- *  diff calendaire en années, moins 1 si la date d'anniversaire n'est
- *  pas encore atteinte. Ne peut pas être négatif. */
+/** Années révolues entre deux dates (jour près). */
 export function anneesRevolues(dateDebut: Date, dateFin: Date): number {
   let years = dateFin.getUTCFullYear() - dateDebut.getUTCFullYear()
   const m = dateFin.getUTCMonth() - dateDebut.getUTCMonth()
@@ -179,210 +288,70 @@ export function anneesRevolues(dateDebut: Date, dateFin: Date): number {
 export function abattementIRPct(annees: number): number {
   if (annees < 6)  return 0
   if (annees >= 22) return 100
-  // 6e au 21e an : 6 %/an cumulé (palier annuel)
-  // 22e an : +4 %
-  const pal6a21 = Math.min(annees - 5, 16) * 6  // 6, 12, … 96 % à 21 ans
+  const pal6a21 = Math.min(annees - 5, 16) * 6  // 6 à 96 % de l'année 6 à l'année 21
   if (annees <= 21) return pal6a21
-  // annees === 21+ géré au-dessus; cas annees === 22 (entre exo et palier 21)
-  return pal6a21 + 4  // 96 + 4 = 100 → exo
+  return pal6a21 + 4  // année 22 → 96 + 4 = 100 (capturé par >= 22 ci-dessus)
 }
 
-/** Taux d'abattement PS sur la PV (%) en fonction des années révolues. */
+/** Taux d'abattement PS sur la PV (%). */
 export function abattementPSPct(annees: number): number {
   if (annees < 6)   return 0
   if (annees >= 30) return 100
-  // 6e au 21e an : 1,65 %/an
   const pal6a21 = Math.min(annees - 5, 16) * 1.65
   if (annees <= 21) return pal6a21
-  // 22e an : +1,60
   if (annees === 22) return pal6a21 + 1.60
-  // 23e au 30e an : 9 %/an (cumul à partir du 23e)
   const palAfter22 = (annees - 22) * 9
-  // pal6a21 ici = 16 × 1,65 = 26,4 ; +1,60 = 28 ; + 9/an = 100 à 30 ans
   return pal6a21 + 1.60 + palAfter22
 }
 
-/** Calcule la surtaxe sur la PV nette IR (€). Renvoie 0 si ≤ 50 000 €. */
+/** Surtaxe progressive sur la PV nette IR (€). */
 export function calculerSurtaxe(pvNetteIR: number): number {
-  if (pvNetteIR <= 50_000) return 0
-  const palier = SURTAXE_PALIERS.find((p) => pvNetteIR >= p.min && pvNetteIR <= p.max)
-  if (!palier) return 0
-  return Math.round(pvNetteIR * (palier.tauxPct / 100))
+  if (pvNetteIR <= 50_000)  return 0
+  if (pvNetteIR <= 100_000) return Math.round(pvNetteIR * 0.02)
+  if (pvNetteIR <= 150_000) return Math.round(pvNetteIR * 0.03)
+  if (pvNetteIR <= 200_000) return Math.round(pvNetteIR * 0.04)
+  if (pvNetteIR <= 250_000) return Math.round(pvNetteIR * 0.05)
+  return Math.round(pvNetteIR * 0.06)
 }
 
-// ─────────────────────────────────────────────────────────────────
-// API publique
-// ─────────────────────────────────────────────────────────────────
-
-export function calculerPlusValue(input: SimulationReventeInput): SimulationReventeResult {
-  const {
-    prixAchat, dateAchat, prixVenteEstime, dateCessionEstimee,
-    fraisAcquisitionReels, travauxReels, fraisAgenceVente = 0,
-    typeUsage, estPremiereCessionHorsRP,
-  } = input
-
-  const anneesDetention = anneesRevolues(dateAchat, dateCessionEstimee)
-
-  // ── Résidence principale → exonération totale ───────────────────────
-  if (typeUsage === 'residence_principale') {
-    return buildExonereResult({
-      input, anneesDetention,
-      raisonExoneration: 'Résidence principale — exonération totale (art. 150 U II-1° du CGI).',
-    })
-  }
-
-  // ── Calcul du prix d'acquisition corrigé ────────────────────────────
-  const fraisAcquisitionRetenus = fraisAcquisitionReels !== undefined && fraisAcquisitionReels > 0
-    ? fraisAcquisitionReels
-    : Math.round(prixAchat * (FRAIS_ACQ_FORFAIT_PCT / 100))
-
-  // Forfait travaux : applicable si détention > 5 ans ET travaux réels <
-  // 15 % du prix d'achat (ou pas de travaux réels saisis).
-  const travauxForfait = Math.round(prixAchat * (TRAVAUX_FORFAIT_PCT / 100))
-  const seuilTravauxReels = travauxForfait
-  let travauxRetenus = 0
-  if (travauxReels !== undefined && travauxReels >= seuilTravauxReels) {
-    travauxRetenus = travauxReels
-  } else if (anneesDetention > TRAVAUX_FORFAIT_MIN_ANS) {
-    // Détention > 5 ans → forfait 15 % automatique (même si pas de travaux saisis)
-    travauxRetenus = travauxForfait
-  } else if (travauxReels !== undefined && travauxReels > 0) {
-    // Détention < 5 ans : on prend les réels (forfait pas autorisé)
-    travauxRetenus = travauxReels
-  }
-
-  const prixAcquisitionCorriges = prixAchat + fraisAcquisitionRetenus + travauxRetenus
-  const pvBrute = Math.max(0, prixVenteEstime - prixAcquisitionCorriges)
-
-  // ── Pas de plus-value → exonération automatique ─────────────────────
-  if (pvBrute <= 0) {
-    return buildExonereResult({
-      input, anneesDetention,
-      raisonExoneration: 'Pas de plus-value (prix de vente ≤ prix d\'acquisition corrigé).',
-      fraisAcquisitionRetenus, travauxRetenus, prixAcquisitionCorriges,
-    })
-  }
-
-  // ── Abattements ─────────────────────────────────────────────────────
-  const aIRPct = abattementIRPct(anneesDetention)
-  const aPSPct = abattementPSPct(anneesDetention)
-  const pvNettePourIR = Math.max(0, pvBrute * (1 - aIRPct / 100))
-  const pvNettePourPS = Math.max(0, pvBrute * (1 - aPSPct / 100))
-
-  // ── Exonérations totales pour PV nette faible ───────────────────────
-  // S'applique sur la PV brute (régime simplifié 150 U II-6° du CGI).
-  if (pvBrute <= SEUIL_EXO_PV_FAIBLE_EUR) {
-    return buildExonereResult({
-      input, anneesDetention,
-      raisonExoneration: `Plus-value brute ≤ ${SEUIL_EXO_PV_FAIBLE_EUR.toLocaleString('fr-FR')} € — exonérée.`,
-      fraisAcquisitionRetenus, travauxRetenus, prixAcquisitionCorriges,
-      pvBrute, abattementIRPct: aIRPct, abattementPSPct: aPSPct,
-      pvNettePourIR, pvNettePourPS,
-    })
-  }
-
-  // ── 1re cession hors RP avec vendeur non propriétaire RP depuis 4 ans
-  if (estPremiereCessionHorsRP) {
-    return buildExonereResult({
-      input, anneesDetention,
-      raisonExoneration: '1re cession d\'un bien autre que la RP, vendeur sans RP depuis 4 ans — exonérée (art. 150 U II-1° bis).',
-      fraisAcquisitionRetenus, travauxRetenus, prixAcquisitionCorriges,
-      pvBrute, abattementIRPct: aIRPct, abattementPSPct: aPSPct,
-      pvNettePourIR, pvNettePourPS,
-    })
-  }
-
-  // ── Impôts ──────────────────────────────────────────────────────────
-  const impotIR  = Math.round(pvNettePourIR * TAUX_IR_PV_IMMO_PCT)
-  const impotPS  = Math.round(pvNettePourPS * TAUX_PS_PCT)
-  const surtaxe  = calculerSurtaxe(pvNettePourIR)
-  const impotTotal = impotIR + impotPS + surtaxe
-
-  // ── Net vendeur ─────────────────────────────────────────────────────
-  const netVendeur = prixVenteEstime - fraisAgenceVente - impotTotal
-  const tauxImpositionEffectifPct = pvBrute > 0
-    ? Math.round((impotTotal / pvBrute) * 1000) / 10
-    : 0
-
-  const result: SimulationReventeResult = {
-    anneesDetention,
-    fraisAcquisitionRetenus,
-    travauxRetenus,
-    prixAcquisitionCorriges,
-    pvBrute,
-    abattementIRPct: aIRPct,
-    abattementPSPct: aPSPct,
-    pvNettePourIR,
-    pvNettePourPS,
-    impotIR,
-    impotPS,
-    surtaxe,
-    impotTotal,
-    netVendeur,
-    tauxImpositionEffectifPct,
-    exonere: false,
-  }
-
-  // ── Impact FIRE (optionnel) ─────────────────────────────────────────
-  const impactFIRE = computeImpactFIRE(input, netVendeur)
-  if (impactFIRE) result.impactFIRE = impactFIRE
-
-  return result
+/** Estimation d'amortissements quand l'utilisateur ne saisit rien. */
+export function estimerAmortissements(prixAchat: number, annees: number): number {
+  return Math.round(
+    prixAchat * QUOTE_PART_AMORTISSABLE_PCT * AMORTISSEMENT_ANNUEL_ESTIME_PCT * annees,
+  )
 }
 
 // ─────────────────────────────────────────────────────────────────
 // Helpers internes
 // ─────────────────────────────────────────────────────────────────
 
-interface ExoBuildOpts {
-  input:                    SimulationReventeInput
-  anneesDetention:          number
-  raisonExoneration:        string
-  fraisAcquisitionRetenus?: number
-  travauxRetenus?:          number
-  prixAcquisitionCorriges?: number
-  pvBrute?:                 number
-  abattementIRPct?:         number
-  abattementPSPct?:         number
-  pvNettePourIR?:           number
-  pvNettePourPS?:           number
-}
+function calculerFraisEtTravaux(input: SimulationReventeInput, annees: number): {
+  fraisAcquisitionRetenus: number
+  travauxRetenus:          number
+} {
+  const { prixAchat, fraisAcquisitionReels, travauxReels } = input
 
-function buildExonereResult(opts: ExoBuildOpts): SimulationReventeResult {
-  const { input } = opts
-  const fraisAgence = input.fraisAgenceVente ?? 0
-  const netVendeur = input.prixVenteEstime - fraisAgence
+  const fraisAcquisitionRetenus = fraisAcquisitionReels !== undefined && fraisAcquisitionReels > 0
+    ? fraisAcquisitionReels
+    : Math.round(prixAchat * FORFAIT_FRAIS_ACQUISITION_PCT)
 
-  const result: SimulationReventeResult = {
-    anneesDetention:          opts.anneesDetention,
-    fraisAcquisitionRetenus:  opts.fraisAcquisitionRetenus ?? 0,
-    travauxRetenus:           opts.travauxRetenus ?? 0,
-    prixAcquisitionCorriges:  opts.prixAcquisitionCorriges ?? input.prixAchat,
-    pvBrute:                  opts.pvBrute ?? 0,
-    abattementIRPct:          opts.abattementIRPct ?? 0,
-    abattementPSPct:          opts.abattementPSPct ?? 0,
-    pvNettePourIR:            opts.pvNettePourIR ?? 0,
-    pvNettePourPS:            opts.pvNettePourPS ?? 0,
-    impotIR:                  0,
-    impotPS:                  0,
-    surtaxe:                  0,
-    impotTotal:               0,
-    netVendeur,
-    tauxImpositionEffectifPct: 0,
-    exonere:                  true,
-    raisonExoneration:        opts.raisonExoneration,
+  const forfaitTravaux = Math.round(prixAchat * FORFAIT_TRAVAUX_PCT)
+  let travauxRetenus = 0
+  if (travauxReels !== undefined && travauxReels >= forfaitTravaux) {
+    travauxRetenus = travauxReels
+  } else if (annees > TRAVAUX_FORFAIT_MIN_ANS) {
+    travauxRetenus = forfaitTravaux
+  } else if (travauxReels !== undefined && travauxReels > 0) {
+    travauxRetenus = travauxReels
   }
 
-  const impactFIRE = computeImpactFIRE(input, netVendeur)
-  if (impactFIRE) result.impactFIRE = impactFIRE
-  return result
+  return { fraisAcquisitionRetenus, travauxRetenus }
 }
 
 function computeImpactFIRE(
   input: SimulationReventeInput,
   netVendeur: number,
 ): SimulationReventeImpactFIRE | undefined {
-  // Tous les inputs FIRE requis : sinon on n'estime pas l'impact.
   if (
     input.patrimoineActuel === undefined
     || input.epargneMensuelle === undefined
@@ -412,5 +381,642 @@ function computeImpactFIRE(
     gainAnneesFIRE:           gainAnnees,
     nouvelAgeIndependance:    avecVente.ageIndependance,
     ageIndependanceSansVente: baseline.ageIndependance,
+  }
+}
+
+function calculerConseilAttente(
+  input:              SimulationReventeInput,
+  anneesActuelles:    number,
+  abattIRActuel:      number,
+  abattPSActuel:      number,
+  pvBrute:            number,
+): SimulationReventeResult['conseilAttente'] | undefined {
+  if (anneesActuelles >= 30) return undefined
+
+  for (let anneesTest = anneesActuelles + 1; anneesTest <= 30; anneesTest++) {
+    const abattIRTest = abattementIRPct(anneesTest)
+    const abattPSTest = abattementPSPct(anneesTest)
+    const gainAbattIR = abattIRTest - abattIRActuel
+    if (gainAbattIR < 6) continue
+
+    const pvNetteIRActuel = pvBrute * (1 - abattIRActuel / 100)
+    const pvNetteIRTest   = pvBrute * (1 - abattIRTest   / 100)
+    const economieIR = (pvNetteIRActuel - pvNetteIRTest) * TAUX_IR_PV_IMMO_PCT
+
+    const pvNettePSActuel = pvBrute * (1 - abattPSActuel / 100)
+    const pvNettePSTest   = pvBrute * (1 - abattPSTest   / 100)
+    const economiePS = (pvNettePSActuel - pvNettePSTest) * TAUX_PS_PCT
+
+    const gainEstime = Math.round(economieIR + economiePS)
+    if (gainEstime < 500) continue
+
+    const dateOptimale = new Date(input.dateAchat.getTime())
+    dateOptimale.setUTCFullYear(dateOptimale.getUTCFullYear() + anneesTest + 1)
+
+    return {
+      dateOptimale,
+      gainEstime,
+      explication:
+        `En attendant ${dateOptimale.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}, `
+        + `tu gagnes +${gainAbattIR} points d'abattement IR, soit ~${gainEstime.toLocaleString('fr-FR')} € d'impôts économisés.`,
+    }
+  }
+  return undefined
+}
+
+interface CalcOptions {
+  /** Si true → ne calcule ni `comparaisonRegimes` ni `conseilAttente`
+   *  ni `impactFIRE` (évite la récursion infinie côté comparaison). */
+  pourComparaison?: boolean
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Calculateur — régime particulier / foncier_nu / scpi / micro_bic
+// ─────────────────────────────────────────────────────────────────
+
+function calculerPVParticulier(
+  input: SimulationReventeInput,
+  opts:  CalcOptions = {},
+): SimulationReventeResult {
+  const regime = input.regimeFiscal ?? 'particulier'
+  const annees = anneesRevolues(input.dateAchat, input.dateCessionEstimee)
+  const fraisAgence = input.fraisAgenceVente ?? 0
+  const avertissements: string[] = []
+
+  const { fraisAcquisitionRetenus, travauxRetenus } = calculerFraisEtTravaux(input, annees)
+  const prixAcquisitionCorriges = input.prixAchat + fraisAcquisitionRetenus + travauxRetenus
+  const pvBrute = Math.max(0, input.prixVenteEstime - prixAcquisitionCorriges)
+
+  // ── Exonération RP ────────────────────────────────────────────────
+  if (input.typeUsage === 'residence_principale') {
+    return baseExonere(input, regime, annees, prixAcquisitionCorriges,
+      fraisAcquisitionRetenus, travauxRetenus,
+      'Résidence principale — exonération totale (art. 150 U II-1° du CGI).',
+      pvBrute, avertissements)
+  }
+
+  // ── Moins-value ───────────────────────────────────────────────────
+  if (pvBrute <= 0) {
+    return baseExonere(input, regime, annees, prixAcquisitionCorriges,
+      fraisAcquisitionRetenus, travauxRetenus,
+      'Pas de plus-value (prix de vente ≤ prix d\'acquisition corrigé).',
+      pvBrute, avertissements)
+  }
+
+  // Abattements (calculés ici pour pouvoir les exposer même en cas d'exonération PV faible)
+  const abattIR = abattementIRPct(annees)
+  const abattPS = abattementPSPct(annees)
+  const pvNettePourIR = Math.max(0, pvBrute * (1 - abattIR / 100))
+  const pvNettePourPS = Math.max(0, pvBrute * (1 - abattPS / 100))
+
+  // ── Exonération PV ≤ 15 000 € ─────────────────────────────────────
+  if (pvBrute <= SEUIL_EXO_PV_EUR) {
+    const r = baseExonere(input, regime, annees, prixAcquisitionCorriges,
+      fraisAcquisitionRetenus, travauxRetenus,
+      `Plus-value brute ≤ ${SEUIL_EXO_PV_EUR.toLocaleString('fr-FR')} € — exonérée.`,
+      pvBrute, avertissements)
+    r.abattementIRPct = abattIR
+    r.abattementPSPct = abattPS
+    r.pvNettePourIR = pvNettePourIR
+    r.pvNettePourPS = pvNettePourPS
+    return r
+  }
+
+  // ── 1re cession hors RP ───────────────────────────────────────────
+  if (input.estPremiereCessionHorsRP) {
+    const r = baseExonere(input, regime, annees, prixAcquisitionCorriges,
+      fraisAcquisitionRetenus, travauxRetenus,
+      '1re cession d\'un bien autre que la RP, vendeur sans RP depuis 4 ans — exonérée (art. 150 U II-1° bis).',
+      pvBrute, avertissements)
+    r.abattementIRPct = abattIR
+    r.abattementPSPct = abattPS
+    r.pvNettePourIR = pvNettePourIR
+    r.pvNettePourPS = pvNettePourPS
+    return r
+  }
+
+  // ── Calcul impôt standard ─────────────────────────────────────────
+  const impotIR = Math.round(pvNettePourIR * TAUX_IR_PV_IMMO_PCT)
+  const impotPS = Math.round(pvNettePourPS * TAUX_PS_PCT)
+  const surtaxe = calculerSurtaxe(pvNettePourIR)
+  const impotTotal = impotIR + impotPS + surtaxe
+
+  const netVendeur = input.prixVenteEstime - fraisAgence - impotTotal
+  const tauxImpositionEffectifPct = pvBrute > 0
+    ? Math.round((impotTotal / pvBrute) * 1000) / 10
+    : 0
+
+  const result: SimulationReventeResult = {
+    regime,
+    regimeLabel: REGIME_LABELS[regime],
+    anneesDetention: annees,
+    fraisAcquisitionRetenus,
+    travauxRetenus,
+    prixAcquisitionCorriges,
+    amortissementsCumulesUtilises: 0,
+    amortissementsEstimes: false,
+    pvBrute,
+    pvImposable: pvBrute,
+    abattementIRPct: abattIR,
+    abattementPSPct: abattPS,
+    pvNettePourIR,
+    pvNettePourPS,
+    impotIR,
+    impotPS,
+    surtaxe,
+    impotTotal,
+    netVendeur,
+    tauxImpositionEffectifPct,
+    exonere: false,
+    avertissements,
+  }
+
+  if (!opts.pourComparaison) {
+    const conseil = calculerConseilAttente(input, annees, abattIR, abattPS, pvBrute)
+    if (conseil) result.conseilAttente = conseil
+    const impactFIRE = computeImpactFIRE(input, netVendeur)
+    if (impactFIRE) result.impactFIRE = impactFIRE
+  }
+  return result
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Calculateur — LMNP réel (loi finances 2025)
+// ─────────────────────────────────────────────────────────────────
+
+function calculerPVLmnp(
+  input: SimulationReventeInput,
+  opts:  CalcOptions = {},
+): SimulationReventeResult {
+  const regime = input.regimeFiscal ?? 'lmnp'
+  const annees = anneesRevolues(input.dateAchat, input.dateCessionEstimee)
+  const fraisAgence = input.fraisAgenceVente ?? 0
+  const avertissements: string[] = []
+
+  const { fraisAcquisitionRetenus, travauxRetenus } = calculerFraisEtTravaux(input, annees)
+  const baseCorrigee = input.prixAchat + fraisAcquisitionRetenus + travauxRetenus
+
+  let amortissementsCumules = input.amortissementsCumules
+  let amortissementsEstimes = false
+  if (amortissementsCumules === undefined) {
+    amortissementsCumules = estimerAmortissements(input.prixAchat, annees)
+    amortissementsEstimes = true
+    avertissements.push(
+      `Amortissements estimés à ${(AMORTISSEMENT_ANNUEL_ESTIME_PCT * 100).toFixed(1)} %/an `
+      + `× ${(QUOTE_PART_AMORTISSABLE_PCT * 100).toFixed(0)} % amortissable, soit `
+      + `${amortissementsCumules.toLocaleString('fr-FR')} € sur ${annees} an${annees > 1 ? 's' : ''}. `
+      + 'Renseigne le montant comptable réel pour plus de précision.',
+    )
+  }
+
+  avertissements.push(
+    'Loi de finances 2025 : les amortissements pratiqués en LMNP réel sont '
+    + 'désormais réintégrés au calcul de la plus-value imposable. La taxation '
+    + 'reste au régime des particuliers (abattements pour durée applicables).',
+  )
+
+  // VNC LMNP = base corrigée − amortissements cumulés
+  const vnc = Math.max(0, baseCorrigee - amortissementsCumules)
+  const pvBrute = Math.max(0, input.prixVenteEstime - vnc)
+
+  // ── Exonération RP ────────────────────────────────────────────────
+  if (input.typeUsage === 'residence_principale') {
+    const r = baseExonere(input, regime, annees, vnc,
+      fraisAcquisitionRetenus, travauxRetenus,
+      'Résidence principale — exonération totale.',
+      pvBrute, avertissements)
+    r.vnc = vnc
+    r.amortissementsCumulesUtilises = amortissementsCumules
+    r.amortissementsEstimes = amortissementsEstimes
+    return r
+  }
+
+  if (pvBrute <= 0) {
+    const r = baseExonere(input, regime, annees, vnc,
+      fraisAcquisitionRetenus, travauxRetenus,
+      'Pas de plus-value (vente ≤ VNC).',
+      pvBrute, avertissements)
+    r.vnc = vnc
+    r.amortissementsCumulesUtilises = amortissementsCumules
+    r.amortissementsEstimes = amortissementsEstimes
+    return r
+  }
+
+  const abattIR = abattementIRPct(annees)
+  const abattPS = abattementPSPct(annees)
+  const pvNettePourIR = Math.max(0, pvBrute * (1 - abattIR / 100))
+  const pvNettePourPS = Math.max(0, pvBrute * (1 - abattPS / 100))
+
+  if (pvBrute <= SEUIL_EXO_PV_EUR) {
+    const r = baseExonere(input, regime, annees, vnc,
+      fraisAcquisitionRetenus, travauxRetenus,
+      `Plus-value brute ≤ ${SEUIL_EXO_PV_EUR.toLocaleString('fr-FR')} € — exonérée.`,
+      pvBrute, avertissements)
+    r.vnc = vnc
+    r.amortissementsCumulesUtilises = amortissementsCumules
+    r.amortissementsEstimes = amortissementsEstimes
+    r.abattementIRPct = abattIR
+    r.abattementPSPct = abattPS
+    r.pvNettePourIR = pvNettePourIR
+    r.pvNettePourPS = pvNettePourPS
+    return r
+  }
+
+  const impotIR = Math.round(pvNettePourIR * TAUX_IR_PV_IMMO_PCT)
+  const impotPS = Math.round(pvNettePourPS * TAUX_PS_PCT)
+  const surtaxe = calculerSurtaxe(pvNettePourIR)
+  const impotTotal = impotIR + impotPS + surtaxe
+
+  const netVendeur = input.prixVenteEstime - fraisAgence - impotTotal
+  const tauxImpositionEffectifPct = pvBrute > 0
+    ? Math.round((impotTotal / pvBrute) * 1000) / 10
+    : 0
+
+  const result: SimulationReventeResult = {
+    regime,
+    regimeLabel: REGIME_LABELS[regime],
+    anneesDetention: annees,
+    fraisAcquisitionRetenus,
+    travauxRetenus,
+    prixAcquisitionCorriges: vnc,
+    vnc,
+    amortissementsCumulesUtilises: amortissementsCumules,
+    amortissementsEstimes,
+    pvBrute,
+    pvImposable: pvBrute,
+    abattementIRPct: abattIR,
+    abattementPSPct: abattPS,
+    pvNettePourIR,
+    pvNettePourPS,
+    impotIR,
+    impotPS,
+    surtaxe,
+    impotTotal,
+    netVendeur,
+    tauxImpositionEffectifPct,
+    exonere: false,
+    avertissements,
+  }
+
+  if (!opts.pourComparaison) {
+    const conseil = calculerConseilAttente(input, annees, abattIR, abattPS, pvBrute)
+    if (conseil) result.conseilAttente = conseil
+    const impactFIRE = computeImpactFIRE(input, netVendeur)
+    if (impactFIRE) result.impactFIRE = impactFIRE
+  }
+  return result
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Calculateur — LMP (loueur meublé professionnel)
+// ─────────────────────────────────────────────────────────────────
+
+function calculerPVLmp(
+  input: SimulationReventeInput,
+  opts:  CalcOptions = {},
+): SimulationReventeResult {
+  const regime: RegimeFiscalRevente = 'lmp'
+  const annees = anneesRevolues(input.dateAchat, input.dateCessionEstimee)
+  const fraisAgence = input.fraisAgenceVente ?? 0
+  const avertissements: string[] = []
+  const tmi = (input.tmiLmp ?? 30) / 100
+
+  // Amortissements
+  let amortissementsCumules = input.amortissementsCumules
+  let amortissementsEstimes = false
+  if (amortissementsCumules === undefined) {
+    amortissementsCumules = estimerAmortissements(input.prixAchat, annees)
+    amortissementsEstimes = true
+    avertissements.push(
+      `Amortissements estimés à ${amortissementsCumules.toLocaleString('fr-FR')} €. `
+      + 'Renseigne le montant comptable réel.',
+    )
+  }
+
+  avertissements.push(
+    'En LMP, la PV court terme (à hauteur des amortissements) est taxée à votre '
+    + 'TMI + 17,2 % de cotisations sociales. La PV long terme est taxée à 12,8 % '
+    + '(PFU IR). Pas d\'abattement pour durée de détention.',
+  )
+
+  const vnc = Math.max(0, input.prixAchat - amortissementsCumules)
+  const pvTotale = Math.max(0, input.prixVenteEstime - vnc)
+  const pvBrute = input.prixVenteEstime - input.prixAchat  // PV "marché" (info)
+
+  // Exonération art. 151 septies — basée sur CA moyen sur 2 ans
+  const ca = input.caLmpMoyenSur2Ans ?? 0
+  let exonerationApplicable = false
+  let tauxExonerationPct = 0
+  let raisonExo: string | undefined
+  if (ca > 0 && ca < PLAFOND_EXO_LMP_TOTAL) {
+    exonerationApplicable = true
+    tauxExonerationPct = 100
+    raisonExo = `CA < ${PLAFOND_EXO_LMP_TOTAL.toLocaleString('fr-FR')} € — exonération totale (art. 151 septies CGI).`
+  } else if (ca >= PLAFOND_EXO_LMP_TOTAL && ca <= PLAFOND_EXO_LMP_PARTIELLE) {
+    exonerationApplicable = true
+    tauxExonerationPct = ((PLAFOND_EXO_LMP_PARTIELLE - ca) / 36_000) * 100
+    raisonExo = `CA ${ca.toLocaleString('fr-FR')} € entre 90 k et 126 k — exonération dégressive (${tauxExonerationPct.toFixed(0)} %).`
+  }
+
+  if (input.typeUsage === 'residence_principale') {
+    return baseExonere(input, regime, annees, vnc, 0, 0,
+      'Résidence principale — exonération totale.', pvBrute, avertissements)
+  }
+
+  if (pvTotale <= 0) {
+    return baseExonere(input, regime, annees, vnc, 0, 0,
+      'Pas de plus-value (vente ≤ VNC).', pvBrute, avertissements)
+  }
+
+  // PV court terme = min(PV totale, amortissements pratiqués)
+  const pvCourtTerme = Math.min(pvTotale, amortissementsCumules)
+  const pvLongTerme  = Math.max(0, pvTotale - pvCourtTerme)
+
+  // Application de l'exonération (réduit les bases CT et LT proportionnellement)
+  const facteurExo = exonerationApplicable ? (1 - tauxExonerationPct / 100) : 1
+  const pvCTImposable = pvCourtTerme * facteurExo
+  const pvLTImposable = pvLongTerme  * facteurExo
+
+  const impotCT = Math.round(pvCTImposable * tmi)
+  const cotisationsSocialesLMP = Math.round(pvCTImposable * TAUX_PS_PCT)
+  const impotLT = Math.round(pvLTImposable * TAUX_PFU_IR_PCT)
+  const impotTotal = impotCT + cotisationsSocialesLMP + impotLT
+  const netVendeur = input.prixVenteEstime - fraisAgence - impotTotal
+
+  const lmpDetail: LmpDetail = {
+    pvCourtTerme,
+    pvLongTerme,
+    impotCourtTerme: impotCT,
+    cotisationsSocialesLMP,
+    impotLongTerme: impotLT,
+    exonerationApplicable,
+    tauxExonerationPct,
+    raisonExoneration: raisonExo,
+  }
+
+  const result: SimulationReventeResult = {
+    regime,
+    regimeLabel: REGIME_LABELS[regime],
+    anneesDetention: annees,
+    fraisAcquisitionRetenus: 0,
+    travauxRetenus: 0,
+    prixAcquisitionCorriges: vnc,
+    vnc,
+    amortissementsCumulesUtilises: amortissementsCumules,
+    amortissementsEstimes,
+    pvBrute,
+    pvImposable: pvCTImposable + pvLTImposable,
+    abattementIRPct: 0,
+    abattementPSPct: 0,
+    pvNettePourIR: 0,
+    pvNettePourPS: 0,
+    impotIR: impotCT + impotLT,
+    impotPS: cotisationsSocialesLMP,
+    surtaxe: 0,
+    impotTotal,
+    netVendeur,
+    tauxImpositionEffectifPct: pvTotale > 0
+      ? Math.round((impotTotal / pvTotale) * 1000) / 10 : 0,
+    exonere: exonerationApplicable && tauxExonerationPct === 100,
+    raisonExoneration: exonerationApplicable && tauxExonerationPct === 100 ? raisonExo : undefined,
+    lmpDetail,
+    avertissements,
+  }
+
+  if (!opts.pourComparaison) {
+    const impactFIRE = computeImpactFIRE(input, netVendeur)
+    if (impactFIRE) result.impactFIRE = impactFIRE
+  }
+  return result
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Calculateur — SCI à l'IS
+// ─────────────────────────────────────────────────────────────────
+
+function calculerPVSciIs(
+  input: SimulationReventeInput,
+  opts:  CalcOptions = {},
+): SimulationReventeResult {
+  const regime: RegimeFiscalRevente = 'sci_is'
+  const annees = anneesRevolues(input.dateAchat, input.dateCessionEstimee)
+  const fraisAgence = input.fraisAgenceVente ?? 0
+  const avertissements: string[] = []
+  const tauxIS = (input.tauxIS ?? 25) / 100
+  const cca = input.comptesCourantsAssocies ?? 0
+
+  // Amortissements
+  let amortissementsCumules = input.amortissementsCumules
+  let amortissementsEstimes = false
+  if (amortissementsCumules === undefined) {
+    amortissementsCumules = estimerAmortissements(input.prixAchat, annees)
+    amortissementsEstimes = true
+    avertissements.push(
+      `Amortissements estimés à ${amortissementsCumules.toLocaleString('fr-FR')} €. `
+      + 'Renseigne le montant comptable réel pour plus de précision.',
+    )
+  }
+
+  avertissements.push(
+    'En SCI à l\'IS, pas d\'abattement pour durée de détention. La VNC (prix '
+    + 'd\'achat − amortissements) est la base de calcul. La PV est taxée à '
+    + 'l\'IS au niveau de la société puis au PFU (30 %) en cas de distribution. '
+    + 'Le remboursement des comptes courants d\'associés (CCA) se fait sans imposition.',
+  )
+
+  const vnc = Math.max(0, input.prixAchat - amortissementsCumules)
+  const pvImposableIS = Math.max(0, input.prixVenteEstime - vnc)
+  const pvBrute = input.prixVenteEstime - input.prixAchat
+
+  if (input.typeUsage === 'residence_principale') {
+    return baseExonere(input, regime, annees, vnc, 0, 0,
+      'Résidence principale — exonération totale.', pvBrute, avertissements)
+  }
+
+  const impotIS = Math.round(pvImposableIS * tauxIS)
+  const netApresIS = input.prixVenteEstime - fraisAgence - impotIS
+
+  // Scénario A : distribution dividendes (PFU 30 % sur tout le net après IS)
+  const netApresDistributionDividendes = Math.round(netApresIS * (1 - TAUX_PFU_PCT))
+
+  // Scénario B : remboursement CCA prioritaire (sans imposition), PFU sur le solde
+  const ccaRemboursable = Math.min(cca, Math.max(0, netApresIS))
+  const soldeApresCCA = Math.max(0, netApresIS - ccaRemboursable)
+  const netApresRemboursementCCA = Math.round(ccaRemboursable + soldeApresCCA * (1 - TAUX_PFU_PCT))
+
+  // netVendeur de référence : si CCA fourni > 0, on prend le scénario CCA (meilleur).
+  const netVendeur = cca > 0 ? netApresRemboursementCCA : netApresDistributionDividendes
+
+  const sciIsDetail: SciIsDetail = {
+    netApresIS,
+    netApresDistributionDividendes,
+    netApresRemboursementCCA,
+    montantCCARemboursable: ccaRemboursable,
+    tauxISPct: tauxIS * 100,
+  }
+
+  // Impôt total côté associé = écart entre prix de vente − frais agence et net en poche
+  const impotTotal = (input.prixVenteEstime - fraisAgence) - netVendeur
+
+  const result: SimulationReventeResult = {
+    regime,
+    regimeLabel: REGIME_LABELS[regime],
+    anneesDetention: annees,
+    fraisAcquisitionRetenus: 0,
+    travauxRetenus: 0,
+    prixAcquisitionCorriges: vnc,
+    vnc,
+    amortissementsCumulesUtilises: amortissementsCumules,
+    amortissementsEstimes,
+    pvBrute,
+    pvImposable: pvImposableIS,
+    abattementIRPct: 0,
+    abattementPSPct: 0,
+    pvNettePourIR: 0,
+    pvNettePourPS: 0,
+    impotIR: impotIS,                                  // « IR » au sens largo = impôt principal (ici IS)
+    impotPS: Math.max(0, impotTotal - impotIS),        // reste = PFU effectif
+    surtaxe: 0,
+    impotTotal,
+    netVendeur,
+    tauxImpositionEffectifPct: pvBrute > 0
+      ? Math.round((impotTotal / Math.max(pvBrute, 1)) * 1000) / 10 : 0,
+    exonere: false,
+    sciIsDetail,
+    avertissements,
+  }
+
+  if (!opts.pourComparaison) {
+    const impactFIRE = computeImpactFIRE(input, netVendeur)
+    if (impactFIRE) result.impactFIRE = impactFIRE
+  }
+  return result
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Helper exonération générique
+// ─────────────────────────────────────────────────────────────────
+
+function baseExonere(
+  input:                    SimulationReventeInput,
+  regime:                   RegimeFiscalRevente,
+  annees:                   number,
+  prixAcquisitionCorriges:  number,
+  fraisAcquisitionRetenus:  number,
+  travauxRetenus:           number,
+  raisonExoneration:        string,
+  pvBrute:                  number,
+  avertissements:           string[],
+): SimulationReventeResult {
+  const fraisAgence = input.fraisAgenceVente ?? 0
+  const netVendeur = input.prixVenteEstime - fraisAgence
+  const result: SimulationReventeResult = {
+    regime,
+    regimeLabel: REGIME_LABELS[regime],
+    anneesDetention: annees,
+    fraisAcquisitionRetenus,
+    travauxRetenus,
+    prixAcquisitionCorriges,
+    amortissementsCumulesUtilises: 0,
+    amortissementsEstimes: false,
+    pvBrute,
+    pvImposable: 0,
+    abattementIRPct: 0,
+    abattementPSPct: 0,
+    pvNettePourIR: 0,
+    pvNettePourPS: 0,
+    impotIR: 0,
+    impotPS: 0,
+    surtaxe: 0,
+    impotTotal: 0,
+    netVendeur,
+    tauxImpositionEffectifPct: 0,
+    exonere: true,
+    raisonExoneration,
+    avertissements,
+  }
+  const impactFIRE = computeImpactFIRE(input, netVendeur)
+  if (impactFIRE) result.impactFIRE = impactFIRE
+  return result
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Comparaison inter-régimes
+// ─────────────────────────────────────────────────────────────────
+
+/** Calcule la PV pour chaque régime applicable avec les mêmes inputs
+ *  (utile pour montrer à l'utilisateur l'impact du choix de régime). */
+export function calculerComparaisonRegimes(
+  input: SimulationReventeInput,
+): ComparaisonRegime[] {
+  const regimeActuel = input.regimeFiscal ?? 'particulier'
+  const regimes: RegimeFiscalRevente[] = ['particulier', 'lmnp', 'lmp', 'sci_is']
+
+  return regimes
+    .map((regime) => {
+      const result = dispatchCalc({ ...input, regimeFiscal: regime }, { pourComparaison: true })
+      return {
+        regime,
+        regimeLabel:     REGIME_LABELS[regime],
+        impotTotal:      result.impotTotal,
+        netVendeur:      result.netVendeur,
+        estRegimeActuel: regime === regimeActuel,
+      }
+    })
+    .sort((a, b) => b.netVendeur - a.netVendeur)
+}
+
+/** Dispatch interne — ne calcule pas la comparaison croisée pour éviter
+ *  toute récursion infinie. */
+function dispatchCalc(
+  input: SimulationReventeInput,
+  opts:  CalcOptions = {},
+): SimulationReventeResult {
+  const regime = input.regimeFiscal ?? 'particulier'
+  switch (regime) {
+    case 'lmnp':
+    case 'micro_bic':
+      return calculerPVLmnp(input, opts)
+    case 'lmp':
+      return calculerPVLmp(input, opts)
+    case 'sci_is':
+      return calculerPVSciIs(input, opts)
+    case 'particulier':
+    case 'foncier_nu':
+    case 'scpi':
+    default:
+      return calculerPVParticulier(input, opts)
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// API publique principale
+// ─────────────────────────────────────────────────────────────────
+
+export function calculerPlusValue(input: SimulationReventeInput): SimulationReventeResult {
+  const result = dispatchCalc(input)
+  // Comparaison inter-régimes (toujours, sauf si déjà calculée pour comparaison)
+  result.comparaisonRegimes = calculerComparaisonRegimes(input)
+  return result
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Helper de mapping DB → régime de revente
+// ─────────────────────────────────────────────────────────────────
+
+/** Mappe un `fiscal_regime` stocké en DB (cf. types/database.types.ts
+ *  FiscalRegime) vers le régime de revente correspondant.
+ *  Défaut → 'particulier'. */
+export function mapFiscalRegimeToRevente(fiscalRegime: string | null | undefined): RegimeFiscalRevente {
+  if (!fiscalRegime) return 'particulier'
+  switch (fiscalRegime) {
+    case 'lmnp_reel':     return 'lmnp'
+    case 'lmnp_micro':    return 'micro_bic'
+    case 'lmp':           return 'lmp'
+    case 'sci_is':        return 'sci_is'
+    case 'sci_ir':        return 'particulier'
+    case 'foncier_nu':    return 'foncier_nu'
+    case 'foncier_micro': return 'particulier'
+    default:              return 'particulier'
   }
 }
