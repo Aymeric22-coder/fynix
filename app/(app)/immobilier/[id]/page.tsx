@@ -10,6 +10,7 @@ import { Tabs, type TabItem } from '@/components/ui/tabs'
 import { PropertyLotActions, PropertyValuationActions } from '@/components/pages/property-detail-actions'
 import { LotEditButton } from '@/components/pages/lot-edit-button'
 import { SimulationPanel } from '@/components/real-estate/simulation-panel'
+import { RegimeComparator } from '@/components/real-estate/regime-comparator'
 import { ActualVsSimulation } from '@/components/real-estate/actual-vs-simulation'
 import { DriftAlerts } from '@/components/real-estate/drift-alerts'
 import { RevisedForecastSection } from '@/components/real-estate/revised-forecast-section'
@@ -559,15 +560,31 @@ export default async function ImmobilierDetailPage({ params }: Props) {
       label: 'Rentabilité & Cash-flow',
       icon:  <TrendingUp size={14} />,
       content: (
-        <SimulationPanel
-          propertyId={prop.id}
-          property={dbProperty}
-          asset={dbAsset}
-          lots={dbLots}
-          charges={dbCharges}
-          debt={dbDebt}
-          profile={dbProfile}
-        />
+        <div className="space-y-6">
+          <SimulationPanel
+            propertyId={prop.id}
+            property={dbProperty}
+            asset={dbAsset}
+            lots={dbLots}
+            charges={dbCharges}
+            debt={dbDebt}
+            profile={dbProfile}
+          />
+          {isRental && !simResult.incompleteData && (
+            <RegimeComparator
+              base={{
+                property:    simInput.property,
+                // Si loan partiel, on l'ignore (le comparateur fonctionne aussi sans).
+                loan:        loanForCalc ?? undefined,
+                rent:        simInput.rent,
+                charges:     simInput.charges,
+                downPayment: simInput.downPayment,
+                horizonYears: simInput.horizonYears,
+              }}
+              defaultTmiPct={dbProfile?.tmi_rate ?? 30}
+            />
+          )}
+        </div>
       ),
     },
 
