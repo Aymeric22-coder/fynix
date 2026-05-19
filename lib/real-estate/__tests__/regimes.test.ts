@@ -10,6 +10,8 @@
 
 import { describe, it, expect } from 'vitest'
 import { runSimulation } from '..'
+import { LMNP_MICRO_ABATTEMENTS, makeLmnpMicroCalculator } from '../fiscal/lmnp-micro'
+import { makeInitialCarryForward, PRELEVEMENTS_SOCIAUX_PCT } from '../fiscal/common'
 import type { FiscalRegime, SimulationInput } from '../types'
 
 const BASE_INPUT = (regime: FiscalRegime): SimulationInput => ({
@@ -107,10 +109,62 @@ describe('LMNP micro-BIC (abattement 50 %)', () => {
 })
 
 describe('LMNP micro-BIC meublé tourisme classé (abattement 71 %)', () => {
+  // Conservé pour rétro-compatibilité : un utilisateur peut encore saisir 71 %
+  // manuellement (cas zones non tendues éligibles à l'ancien régime).
+  // LF 2025 par défaut : tourisme classé = 50 % / 77 700 €.
   const r = runSimulation(BASE_INPUT({ kind: 'lmnp_micro', tmiPct: 30, abattementPct: 71 }))
   it('a une base imposable = 29 % des loyers nets', () => {
     const y1 = r.projection[0]!
     expect(y1.taxableBase).toBeCloseTo(y1.netRent * 0.29, 0)
+  })
+})
+
+describe('LF 2025 — LMNP micro-BIC : plafonds et basculements', () => {
+  // Test direct du calculateur (le ceiling n'est pas encore propagé via
+  // runSimulation — Sprint 1).
+  const TMI = 30
+
+  /** Construit un YearAccountingInputs minimal avec des loyers nets donnés. */
+  const inputs = (netRent: number) => ({
+    yearIndex: 1, netRent,
+    pno: 0, gli: 0, propertyTax: 0, cfe: 0, accountant: 0, condoFees: 0,
+    management: 0, maintenance: 0, other: 0,
+    loanInterest: 0, loanInsurance: 0,
+    amortBuilding: 0, amortWorks: 0, amortFurniture: 0,
+    exceptionalFees: 0,
+  })
+
+  it('expose des constantes LF 2025 cohérentes', () => {
+    expect(LMNP_MICRO_ABATTEMENTS.classic).toEqual({ rate: 0.50, ceiling: 77_700 })
+    expect(LMNP_MICRO_ABATTEMENTS.tourism_unclassified).toEqual({ rate: 0.30, ceiling: 15_000 })
+    expect(LMNP_MICRO_ABATTEMENTS.tourism_classified).toEqual({ rate: 0.50, ceiling: 77_700 })
+  })
+
+  it('meublé tourisme NON classé, recettes 12 000 € : abattement 30 %, impôt correct', () => {
+    const { rate, ceiling } = LMNP_MICRO_ABATTEMENTS.tourism_unclassified
+    const calc = makeLmnpMicroCalculator(TMI, rate * 100, ceiling)
+    const out = calc(inputs(12_000), makeInitialCarryForward())
+    // base = 12000 × (1 − 0,30) = 8400 ; impôt = 8400 × (30 + 17,2) %
+    expect(out.taxableBase).toBeCloseTo(12_000 * (1 - rate), 2)
+    expect(out.taxPaid).toBeCloseTo(8_400 * (TMI + PRELEVEMENTS_SOCIAUX_PCT) / 100, 2)
+    expect(out.forcedRegimeSwitch).toBeUndefined()
+  })
+
+  it('meublé tourisme classé, recettes 60 000 € : abattement 50 %, impôt correct', () => {
+    const { rate, ceiling } = LMNP_MICRO_ABATTEMENTS.tourism_classified
+    const calc = makeLmnpMicroCalculator(TMI, rate * 100, ceiling)
+    const out = calc(inputs(60_000), makeInitialCarryForward())
+    // base = 60000 × 0,5 = 30 000
+    expect(out.taxableBase).toBeCloseTo(30_000, 2)
+    expect(out.taxPaid).toBeCloseTo(30_000 * (TMI + PRELEVEMENTS_SOCIAUX_PCT) / 100, 2)
+    expect(out.forcedRegimeSwitch).toBeUndefined()
+  })
+
+  it('meublé tourisme NON classé, recettes 20 000 € : forcedRegimeSwitch = true (plafond 15 000 € dépassé)', () => {
+    const { rate, ceiling } = LMNP_MICRO_ABATTEMENTS.tourism_unclassified
+    const calc = makeLmnpMicroCalculator(TMI, rate * 100, ceiling)
+    const out = calc(inputs(20_000), makeInitialCarryForward())
+    expect(out.forcedRegimeSwitch).toBe(true)
   })
 })
 

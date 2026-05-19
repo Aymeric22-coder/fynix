@@ -43,22 +43,24 @@ export function computeKPIs(
     charges.condoFees + charges.maintenance + charges.other
   const totalChargesY1 = fixedChargesY1 + gliY1 + managementY1
 
-  // Rentabilités
+  // Rentabilités — exprimées en pourcentage (5 pour 5 %), cohérent avec
+  // tmiPct / interestRate / propertyIndexPct utilisés ailleurs.
+  // `formatPercent` attend une valeur déjà en %.
   const acquisitionCost = property.purchasePrice + property.notaryFees + property.worksAmount
 
   const grossYieldOnPrice = property.purchasePrice > 0
-    ? grossYearRent / property.purchasePrice
+    ? (grossYearRent / property.purchasePrice) * 100
     : 0
   const grossYieldFAI = acquisitionCost > 0
-    ? grossYearRent / acquisitionCost
+    ? (grossYearRent / acquisitionCost) * 100
     : 0
   const netYield = acquisitionCost > 0
-    ? (netRentY1 - totalChargesY1) / acquisitionCost
+    ? ((netRentY1 - totalChargesY1) / acquisitionCost) * 100
     : 0
   // Renta nette-nette = (CF après impôt + capital remboursé année 1) / coût total
   const y1 = projection[0]
   const netNetYield = totalCost > 0 && y1
-    ? (y1.cashFlowAfterTax + y1.principalRepaid) / totalCost
+    ? ((y1.cashFlowAfterTax + y1.principalRepaid) / totalCost) * 100
     : 0
 
   const annualCashFlowY1  = y1?.cashFlowAfterTax ?? 0

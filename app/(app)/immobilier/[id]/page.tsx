@@ -1,6 +1,6 @@
 import { Metadata } from 'next'
 import { notFound }   from 'next/navigation'
-import { ArrowLeft, ArrowDownRight, ArrowUpRight, Home, Banknote, Receipt, TrendingUp, FileSpreadsheet, Activity } from 'lucide-react'
+import { ArrowLeft, ArrowDownRight, ArrowUpRight, Home, Banknote, Receipt, TrendingUp, FileSpreadsheet, Activity, AlertTriangle } from 'lucide-react'
 import Link from 'next/link'
 import { createServerClient } from '@/lib/supabase/server'
 import { PageHeader }     from '@/components/shared/page-header'
@@ -27,6 +27,7 @@ import { buildSimulationInputFromDb, runSimulation } from '@/lib/real-estate'
 import { formatCurrency, formatPercent, formatDate } from '@/lib/utils/format'
 import type { LoanInput } from '@/lib/real-estate/types'
 import type { DbProperty, DbAsset, DbLot, DbCharges, DbDebt, DbProfile } from '@/lib/real-estate/build-from-db'
+import type { RealEstateProperty } from '@/types/database.types'
 
 export const metadata: Metadata = { title: 'Détail bien' }
 
@@ -53,6 +54,12 @@ export default async function ImmobilierDetailPage({ params }: Props) {
     .single()
 
   if (!prop) notFound()
+
+  // Le client Supabase n'étant pas typé via le générique `Database`, `prop`
+  // ressort en `any`. On l'aligne ici sur le type généré dans
+  // types/database.types.ts (toutes les colonnes des migrations 005 et 006
+  // y sont présentes) pour éliminer les casts `Record<string, unknown>`.
+  const propTyped = prop as RealEstateProperty & typeof prop
 
   // ── Crédit lié à cet asset (s'il existe) ───────────────────────────────
   // Note : on utilise select('*') plutôt que de lister les colonnes
@@ -105,26 +112,29 @@ export default async function ImmobilierDetailPage({ params }: Props) {
   }
 
   // ── Données typées pour SimulationPanel ─────────────────────────────────
+  // Toutes les colonnes des migrations 005 / 006 sont déjà déclarées dans
+  // RealEstateProperty (types/database.types.ts). On accède directement via
+  // `propTyped` sans cast individuel.
   const dbProperty: DbProperty = {
-    purchase_price:               prop.purchase_price,
-    purchase_fees:                prop.purchase_fees,
-    works_amount:                 prop.works_amount,
-    furniture_amount:             (prop as Record<string,unknown>).furniture_amount as number ?? 0,
-    fiscal_regime:                prop.fiscal_regime,
-    rental_index_pct:             (prop as Record<string,unknown>).rental_index_pct as number ?? 2.0,
-    charges_index_pct:            (prop as Record<string,unknown>).charges_index_pct as number ?? 2.0,
-    property_index_pct:           (prop as Record<string,unknown>).property_index_pct as number ?? 1.0,
-    land_share_pct:               (prop as Record<string,unknown>).land_share_pct as number ?? 15,
-    amort_building_years:         (prop as Record<string,unknown>).amort_building_years as number ?? 30,
-    amort_works_years:            (prop as Record<string,unknown>).amort_works_years as number ?? 15,
-    amort_furniture_years:        (prop as Record<string,unknown>).amort_furniture_years as number ?? 7,
-    gli_pct:                      (prop as Record<string,unknown>).gli_pct as number ?? 0,
-    management_pct:               (prop as Record<string,unknown>).management_pct as number ?? 0,
-    vacancy_months:               (prop as Record<string,unknown>).vacancy_months as number ?? 0,
-    lmp_ssi_rate:                 (prop as Record<string,unknown>).lmp_ssi_rate as number ?? 35,
-    acquisition_fees_treatment:   (prop as Record<string,unknown>).acquisition_fees_treatment as string ?? 'expense_y1',
-    lmnp_micro_abattement_pct:    (prop as Record<string,unknown>).lmnp_micro_abattement_pct as number ?? 50,
-    assumed_total_rent:           (prop as Record<string,unknown>).assumed_total_rent as number | null ?? null,
+    purchase_price:               propTyped.purchase_price,
+    purchase_fees:                propTyped.purchase_fees,
+    works_amount:                 propTyped.works_amount,
+    furniture_amount:             propTyped.furniture_amount ?? 0,
+    fiscal_regime:                propTyped.fiscal_regime,
+    rental_index_pct:             propTyped.rental_index_pct ?? 2.0,
+    charges_index_pct:            propTyped.charges_index_pct ?? 2.0,
+    property_index_pct:           propTyped.property_index_pct ?? 1.0,
+    land_share_pct:               propTyped.land_share_pct ?? 15,
+    amort_building_years:         propTyped.amort_building_years ?? 30,
+    amort_works_years:            propTyped.amort_works_years ?? 15,
+    amort_furniture_years:        propTyped.amort_furniture_years ?? 7,
+    gli_pct:                      propTyped.gli_pct ?? 0,
+    management_pct:               propTyped.management_pct ?? 0,
+    vacancy_months:               propTyped.vacancy_months ?? 0,
+    lmp_ssi_rate:                 propTyped.lmp_ssi_rate ?? 35,
+    acquisition_fees_treatment:   propTyped.acquisition_fees_treatment ?? 'expense_y1',
+    lmnp_micro_abattement_pct:    propTyped.lmnp_micro_abattement_pct ?? 50,
+    assumed_total_rent:           propTyped.assumed_total_rent ?? null,
   }
 
   const dbAsset: DbAsset | null = prop.asset ? { current_value: prop.asset.current_value } : null
@@ -566,6 +576,8 @@ export default async function ImmobilierDetailPage({ params }: Props) {
   // Petite garde TS : éviter l'erreur "annualCashFlow declared but unused" si on ne l'affiche pas
   void annualCashFlow
 
+  const fiscalRegimeMissing = !prop.fiscal_regime
+
   return (
     <div className="space-y-6">
       <Link href="/immobilier" className="flex items-center gap-2 text-sm text-secondary hover:text-primary transition-colors w-fit">
@@ -578,6 +590,21 @@ export default async function ImmobilierDetailPage({ params }: Props) {
         subtitle={[prop.address_zip, prop.address_city].filter(Boolean).join(' ') || undefined}
         action={<ConfidenceBadge level={prop.asset?.confidence ?? 'medium'} />}
       />
+
+      {fiscalRegimeMissing && (
+        <div className="card border-warning/40 bg-warning/5 p-4 flex items-start gap-3">
+          <AlertTriangle size={18} className="text-warning shrink-0 mt-0.5" />
+          <div className="text-sm">
+            <p className="font-medium text-primary">Régime fiscal non défini</p>
+            <p className="text-secondary mt-1">
+              La rentabilité nette et l&apos;impôt estimé affichés ci-dessous ne peuvent
+              pas être calculés de manière fiable tant qu&apos;un régime fiscal n&apos;est
+              pas associé à ce bien. Recréez ce bien en sélectionnant un régime
+              (LMNP, SCI à l&apos;IS, foncier réel, etc.) pour obtenir une projection exacte.
+            </p>
+          </div>
+        </div>
+      )}
 
       <Tabs tabs={tabs} urlParam="tab" />
     </div>

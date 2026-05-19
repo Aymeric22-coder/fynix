@@ -31,6 +31,13 @@ export default function NouveauBienPage() {
   const { values, set, setNumber, loading, error, handleSubmit } = useForm({
     initialValues: INITIAL,
     async onSubmit(v) {
+      // Le régime fiscal est requis pour pouvoir calculer la rentabilité nette
+      // et l'impôt estimé. Sans lui, la page détail afficherait des chiffres
+      // fondés sur un fallback arbitraire (foncier nu) — préférable d'imposer
+      // le choix dès la création.
+      if (!v.fiscal_regime) {
+        return { error: 'Le régime fiscal est requis pour calculer la rentabilité' }
+      }
       const res = await fetch('/api/real-estate', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -214,9 +221,17 @@ export default function NouveauBienPage() {
             </Field>
           </FormGrid>
           <FormGrid>
-            <Field label="Régime fiscal">
-              <Select value={values.fiscal_regime} onChange={(e) => set('fiscal_regime', e.target.value)}>
-                <option value="">Non défini</option>
+            <Field
+              label="Régime fiscal"
+              required
+              hint="Pas sûr ? Choisissez « Micro-foncier » pour une location nue simple, « LMNP micro-BIC » pour du meublé, « SCI à l'IS » si vous détenez via une SCI."
+            >
+              <Select
+                value={values.fiscal_regime}
+                onChange={(e) => set('fiscal_regime', e.target.value)}
+                required
+              >
+                <option value="" disabled>— Choisir un régime —</option>
                 <option value="lmnp_reel">LMNP Réel</option>
                 <option value="lmnp_micro">LMNP Micro-BIC</option>
                 <option value="lmp">LMP</option>

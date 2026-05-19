@@ -92,16 +92,17 @@ describe('Cas de référence SCI à l\'IS', () => {
   })
 
   it('a une rentabilité brute sur prix ≈ 15,48 %', () => {
-    expect(kpis.grossYieldOnPrice * 100).toBeCloseTo(15.48, 1)
+    // KPI exprimé en % (15.48 = 15,48 %)
+    expect(kpis.grossYieldOnPrice).toBeCloseTo(15.48, 1)
   })
 
   it('a une rentabilité brute FAI ≈ 8,35 %', () => {
-    expect(kpis.grossYieldFAI * 100).toBeCloseTo(8.35, 1)
+    expect(kpis.grossYieldFAI).toBeCloseTo(8.35, 1)
   })
 
   it('a une rentabilité nette ≈ 6,57 %', () => {
     // (loyersA1 net − chargesA1) / coûtAcquisitionFAI (200k+17k+154k = 371 000)
-    expect(kpis.netYield * 100).toBeCloseTo(6.57, 1)
+    expect(kpis.netYield).toBeCloseTo(6.57, 1)
   })
 
   it('a un cash flow année 1 après IS ≈ +1 641 €/an (tolérance 200 €)', () => {

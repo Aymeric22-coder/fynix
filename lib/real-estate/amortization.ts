@@ -228,10 +228,12 @@ export function computeRemainingCapitalAt(
   const start = loan.startDate
   if (simulationDate <= start) return loan.principal
 
-  // Nombre de mois écoulés (entiers) depuis le début du prêt
+  // Nombre de mois écoulés (entiers) depuis le début du prêt.
+  // Calcul en UTC pour être indépendant du fuseau horaire de l'utilisateur
+  // (cohérent avec credit.ts:moisEntreDates).
   const monthsElapsed =
-    (simulationDate.getFullYear() - start.getFullYear()) * 12 +
-    (simulationDate.getMonth() - start.getMonth())
+    (simulationDate.getUTCFullYear() - start.getUTCFullYear()) * 12 +
+    (simulationDate.getUTCMonth() - start.getUTCMonth())
   if (monthsElapsed <= 0) return loan.principal
 
   const schedule = buildAmortizationSchedule(loan)

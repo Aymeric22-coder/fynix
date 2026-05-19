@@ -106,6 +106,12 @@ export interface YearTaxOutput {
   taxPaid:          number
   /** État cumulé après cette année (à passer à l'année suivante) */
   carryForward:     CarryForwardState
+  /**
+   * Signale qu'un seuil légal de basculement a été dépassé (typiquement micro-BIC
+   * → réel quand les recettes dépassent le plafond LF 2025). L'UI peut alerter
+   * l'utilisateur sans modifier le calcul.
+   */
+  forcedRegimeSwitch?: boolean
 }
 
 export type FiscalCalculator = (

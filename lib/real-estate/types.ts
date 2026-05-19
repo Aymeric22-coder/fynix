@@ -275,11 +275,11 @@ export interface PropertyKPIs {
   downPayment:              number   // apport
   monthlyPayment:           number   // mensualité totale (capital + intérêts + assurance)
   monthlyInsurance:         number
-  // Rentabilités
-  grossYieldOnPrice:        number   // loyers annuels bruts / prix d’acquisition
-  grossYieldFAI:            number   // loyers annuels bruts / coût total opération
-  netYield:                 number   // (loyers nets − charges) / coût total opération
-  netNetYield:              number   // CF après impôt + capital remboursé / coût total opération
+  // Rentabilités — toutes exprimées en pourcentage (5 pour 5 %)
+  grossYieldOnPrice:        number   // loyers annuels bruts / prix d’acquisition (en %)
+  grossYieldFAI:            number   // loyers annuels bruts / coût total opération (en %)
+  netYield:                 number   // (loyers nets − charges) / coût total opération (en %)
+  netNetYield:              number   // CF après impôt + capital remboursé / coût total opération (en %)
   // Cash flow année 1
   monthlyCashFlowYear1:     number
   annualCashFlowYear1:      number

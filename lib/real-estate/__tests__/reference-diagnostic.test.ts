@@ -35,7 +35,8 @@ describe('DIAGNOSTIC — Cas de référence SCI IS (valeurs réelles)', () => {
     const r = runSimulation(REF)
     const k = r.kpis
     const fmt = (n: number) => n.toFixed(2).replace('.', ',') + ' €'
-    const pct = (n: number) => (n * 100).toFixed(2) + ' %'
+    // KPIs déjà en pourcentage (5 pour 5 %) — pas de × 100
+    const pct = (n: number) => n.toFixed(2) + ' %'
 
     console.log('\n══════════════ KPIs ══════════════')
     console.log(`  Coût total opération     : ${fmt(k.totalCost)}             [attendu 376 800 €]`)
