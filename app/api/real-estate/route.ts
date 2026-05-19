@@ -23,6 +23,10 @@ interface CreatePropertyBody {
   works_amount?: number
   fiscal_regime?: string
   is_multi_lot?: boolean
+  // Migration 033 — type d'usage du bien
+  usage_type?:
+    | 'primary_residence' | 'secondary_residence'
+    | 'long_term_rental' | 'short_term_rental' | 'mixed_use'
 }
 
 // GET /api/real-estate — liste les biens immobiliers avec leur valorisation courante
@@ -106,6 +110,7 @@ export const POST = withAuth(async (req: Request, user: User) => {
       works_amount: body.works_amount ?? 0,
       fiscal_regime: body.fiscal_regime ?? null,
       is_multi_lot: body.is_multi_lot ?? false,
+      usage_type: body.usage_type ?? 'long_term_rental',
     })
     .select()
     .single()

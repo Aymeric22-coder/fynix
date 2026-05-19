@@ -27,7 +27,8 @@ import { buildSimulationInputFromDb, runSimulation } from '@/lib/real-estate'
 import { formatCurrency, formatPercent, formatDate } from '@/lib/utils/format'
 import type { LoanInput } from '@/lib/real-estate/types'
 import type { DbProperty, DbAsset, DbLot, DbCharges, DbDebt, DbProfile } from '@/lib/real-estate/build-from-db'
-import type { RealEstateProperty } from '@/types/database.types'
+import type { RealEstateProperty, PropertyUsageType } from '@/types/database.types'
+import { USAGE_TYPE_LABELS, isRentalUsage } from '@/types/database.types'
 
 export const metadata: Metadata = { title: 'Détail bien' }
 
@@ -60,6 +61,14 @@ export default async function ImmobilierDetailPage({ params }: Props) {
   // types/database.types.ts (toutes les colonnes des migrations 005 et 006
   // y sont présentes) pour éliminer les casts `Record<string, unknown>`.
   const propTyped = prop as RealEstateProperty & typeof prop
+
+  // Migration 033 : type d'usage du bien (résidence principale / secondaire /
+  // locatif). Fallback `long_term_rental` pour les biens existants avant la
+  // migration ou pour les rangs où la colonne n'est pas encore présente.
+  const usageType: PropertyUsageType =
+    (propTyped.usage_type as PropertyUsageType | undefined) ?? 'long_term_rental'
+  const isRental    = isRentalUsage(usageType)
+  const isPrimaryRP = usageType === 'primary_residence'
 
   // ── Crédit lié à cet asset (s'il existe) ───────────────────────────────
   // Note : on utilise select('*') plutôt que de lister les colonnes
@@ -218,7 +227,13 @@ export default async function ImmobilierDetailPage({ params }: Props) {
   // ── Synthèse : KPIs financiers globaux ──────────────────────────────────
   const monthlyLoanPayment = schedule?.totalMonthly ?? 0
   const monthlyCharges     = annualCharges / 12
-  const monthlyCashFlow    = monthlyRents - monthlyCharges - monthlyLoanPayment
+  // Pour un bien locatif : cash-flow = loyers − charges − crédit.
+  // Pour une RP / résidence secondaire sans location : pas de loyers, le KPI
+  // équivalent est le « coût mensuel de possession » (charges + crédit), signe
+  // négatif puisqu'il s'agit d'une sortie de trésorerie.
+  const monthlyCashFlow    = isRental
+    ? monthlyRents - monthlyCharges - monthlyLoanPayment
+    : -(monthlyCharges + monthlyLoanPayment)
   const annualCashFlow     = monthlyCashFlow * 12
   const netPropertyValue   = currentVal - crdNow
 
@@ -294,19 +309,35 @@ export default async function ImmobilierDetailPage({ params }: Props) {
               <p className="text-xs text-secondary mt-1">valeur − CRD</p>
             </div>
             <div className="card p-5">
-              <p className="text-xs text-secondary uppercase tracking-widest">Cash-flow mensuel</p>
+              <p className="text-xs text-secondary uppercase tracking-widest">
+                {isRental ? 'Cash-flow mensuel' : 'Coût mensuel de possession'}
+              </p>
               <p className={`text-xl font-semibold financial-value mt-2 ${monthlyCashFlow >= 0 ? 'text-accent' : 'text-danger'}`}>
                 {formatCurrency(monthlyCashFlow, 'EUR')}
               </p>
-              <p className="text-xs text-secondary mt-1">loyers − charges − crédit</p>
-            </div>
-            <div className="card p-5">
-              <p className="text-xs text-secondary uppercase tracking-widest">Rendement brut</p>
-              <p className="text-xl font-semibold financial-value text-primary mt-2">
-                {grossYield > 0 ? formatPercent(grossYield) : '—'}
+              <p className="text-xs text-secondary mt-1">
+                {isRental ? 'loyers − charges − crédit' : 'charges + crédit'}
               </p>
-              <p className="text-xs text-secondary mt-1">Net : {netYield > 0 ? formatPercent(netYield) : '—'}</p>
             </div>
+            {isRental ? (
+              <div className="card p-5">
+                <p className="text-xs text-secondary uppercase tracking-widest">Rendement brut</p>
+                <p className="text-xl font-semibold financial-value text-primary mt-2">
+                  {grossYield > 0 ? formatPercent(grossYield) : '—'}
+                </p>
+                <p className="text-xs text-secondary mt-1">Net : {netYield > 0 ? formatPercent(netYield) : '—'}</p>
+              </div>
+            ) : (
+              <div className="card p-5">
+                <p className="text-xs text-secondary uppercase tracking-widest">Type d&apos;usage</p>
+                <p className="text-sm font-medium text-primary mt-2">
+                  {USAGE_TYPE_LABELS[usageType]}
+                </p>
+                <p className="text-xs text-secondary mt-1">
+                  Pas de calcul de rentabilité pour ce type d&apos;usage.
+                </p>
+              </div>
+            )}
             <div className="card p-5">
               <p className="text-xs text-secondary uppercase tracking-widest">Plus-value latente</p>
               <p className={`text-xl font-semibold financial-value mt-2 ${latentGain >= 0 ? 'text-accent' : 'text-danger'}`}>
@@ -318,6 +349,11 @@ export default async function ImmobilierDetailPage({ params }: Props) {
 
           {/* Lots + Historique valorisations */}
           <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+            {isPrimaryRP ? (
+              <div className="lg:col-span-3 card p-6 text-sm text-secondary">
+                Résidence principale — pas de lots locatifs.
+              </div>
+            ) : (
             <div className="lg:col-span-3 card p-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-sm font-medium text-primary">
@@ -355,6 +391,7 @@ export default async function ImmobilierDetailPage({ params }: Props) {
                 </div>
               )}
             </div>
+            )}
 
             <div className="lg:col-span-2 card p-6">
               <div className="flex items-center justify-between mb-4">

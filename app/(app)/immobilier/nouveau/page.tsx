@@ -10,6 +10,9 @@ import { useForm }   from '@/hooks/use-form'
 const INITIAL = {
   name:              '',
   property_type:     'apartment',
+  usage_type:        'long_term_rental' as
+    | 'primary_residence' | 'secondary_residence'
+    | 'long_term_rental' | 'short_term_rental' | 'mixed_use',
   address_line1:     '',
   address_city:      '',
   address_zip:       '',
@@ -44,6 +47,7 @@ export default function NouveauBienPage() {
         body: JSON.stringify({
           name:              v.name,
           property_type:     v.property_type,
+          usage_type:        v.usage_type,
           address_line1:     v.address_line1   || null,
           address_city:      v.address_city    || null,
           address_zip:       v.address_zip     || null,
@@ -96,6 +100,24 @@ export default function NouveauBienPage() {
               required
             />
           </Field>
+          <Field
+            label="Type d'usage"
+            required
+            hint="Le type d'usage adapte les calculs affichés (loyers et rentabilité pour un locatif ; coût de possession pour une résidence principale)."
+          >
+            <Select
+              value={values.usage_type}
+              onChange={(e) => set('usage_type', e.target.value as typeof values.usage_type)}
+              required
+            >
+              <option value="long_term_rental">Investissement locatif — longue durée</option>
+              <option value="short_term_rental">Investissement locatif — courte durée (saisonnier)</option>
+              <option value="mixed_use">Usage mixte (occupé + loué)</option>
+              <option value="primary_residence">Résidence principale</option>
+              <option value="secondary_residence">Résidence secondaire</option>
+            </Select>
+          </Field>
+
           <FormGrid>
             <Field label="Type de bien" required>
               <Select value={values.property_type} onChange={(e) => set('property_type', e.target.value)}>

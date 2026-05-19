@@ -22,6 +22,29 @@ export type EnvelopeType = 'pea' | 'cto' | 'assurance_vie' | 'per' | 'wallet_cry
 export type HoldingMode = 'direct' | 'assurance_vie' | 'sci' | 'other'
 export type LotStatus = 'rented' | 'vacant' | 'owner_occupied' | 'works'
 export type FiscalRegime = 'lmnp_reel' | 'lmnp_micro' | 'lmp' | 'sci_is' | 'sci_ir' | 'foncier_nu' | 'foncier_micro'
+
+// ── Migration 033 — Type d'usage d'un bien immobilier ─────────────
+export type PropertyUsageType =
+  | 'primary_residence'
+  | 'secondary_residence'
+  | 'long_term_rental'
+  | 'short_term_rental'
+  | 'mixed_use'
+
+export const USAGE_TYPE_LABELS: Record<PropertyUsageType, string> = {
+  primary_residence:    'Résidence principale',
+  secondary_residence:  'Résidence secondaire',
+  long_term_rental:     'Investissement locatif — longue durée',
+  short_term_rental:    'Investissement locatif — courte durée (saisonnier)',
+  mixed_use:            'Usage mixte (occupé + loué)',
+}
+
+/** Renvoie true si l'usage_type est un investissement locatif (loyers attendus). */
+export function isRentalUsage(usage: PropertyUsageType | null | undefined): boolean {
+  return usage === 'long_term_rental'
+      || usage === 'short_term_rental'
+      || usage === 'mixed_use'
+}
 export type DataSource = 'manual' | 'api' | 'estimation' | 'import'
 export type ConfidenceLevel = 'high' | 'medium' | 'low'
 export type CurrencyCode = 'EUR' | 'USD' | 'GBP' | 'CHF' | 'JPY' | 'BTC' | 'ETH'
@@ -236,6 +259,8 @@ export interface RealEstateProperty {
   lmp_ssi_rate: number
   acquisition_fees_treatment: AcquisitionFeesTreatment
   lmnp_micro_abattement_pct: number
+  // ── Migration 033 — Type d'usage du bien ────────────────────
+  usage_type: PropertyUsageType
   created_at: string
   updated_at: string
 }
