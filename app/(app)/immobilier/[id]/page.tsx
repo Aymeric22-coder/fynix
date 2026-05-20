@@ -756,6 +756,7 @@ export default async function ImmobilierDetailPage({ params }: Props) {
       label: 'Dispositif fiscal',
       icon:  <Sparkles size={14} />,
       content: <IncentiveTabContent
+        propertyId={prop.id}
         incentive={incentiveRow as IncentiveRow | null}
         annualRentHC={annualRents}
         purchasePrice={prop.purchase_price ?? 0}

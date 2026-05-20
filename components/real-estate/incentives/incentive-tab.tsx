@@ -4,6 +4,7 @@ import { PinelPanel } from './pinel-panel'
 import { DenormandiePanel } from './denormandie-panel'
 import { LocAvantagesPanel } from './loc-avantages-panel'
 import { MhPanel } from './mh-panel'
+import { IncentiveForm } from './incentive-form'
 
 /**
  * Ligne `property_tax_incentives` (migration 038).
@@ -31,6 +32,7 @@ export interface IncentiveRow {
 }
 
 interface Props {
+  propertyId:    string
   incentive:     IncentiveRow | null
   annualRentHC:  number
   purchasePrice: number
@@ -44,28 +46,41 @@ interface Props {
  * configuré, affiche un message d'incitation.
  */
 export function IncentiveTabContent({
-  incentive, annualRentHC, purchasePrice, surfaceM2, tmiPct,
+  propertyId, incentive, annualRentHC, purchasePrice, surfaceM2, tmiPct,
 }: Props) {
   if (!incentive) {
     return (
-      <div className="card p-8 text-center space-y-3">
-        <p className="text-sm text-secondary">
-          Aucun dispositif de défiscalisation actif sur ce bien.
-        </p>
-        <p className="text-xs text-muted">
-          Dispositifs supportés : Pinel / Pinel+, Denormandie, Loc&apos;Avantages,
-          Monuments Historiques.
-        </p>
-        <p className="text-xs text-muted">
-          L&apos;ajout d&apos;un dispositif se fait directement en base
-          via la table <code className="bg-surface-2 px-1 py-0.5 rounded">property_tax_incentives</code>
-          (formulaire d&apos;édition à venir).
-        </p>
+      <div className="space-y-4">
+        <div className="card p-6 text-center space-y-2">
+          <p className="text-sm text-secondary">
+            Aucun dispositif de défiscalisation actif sur ce bien.
+          </p>
+          <p className="text-xs text-muted">
+            Dispositifs supportés : Pinel / Pinel+, Denormandie, Loc&apos;Avantages,
+            Monuments Historiques, Malraux.
+          </p>
+        </div>
+        <IncentiveForm propertyId={propertyId} existing={null} />
       </div>
     )
   }
 
-  // Dispatch selon le type
+  // Encart d'édition + dispatcher de panel selon le type
+  return (
+    <div className="space-y-4">
+      <IncentiveForm propertyId={propertyId} existing={incentive} />
+      {renderIncentivePanel(incentive, annualRentHC, purchasePrice, surfaceM2, tmiPct)}
+    </div>
+  )
+}
+
+function renderIncentivePanel(
+  incentive:     IncentiveRow,
+  annualRentHC:  number,
+  purchasePrice: number,
+  surfaceM2:     number,
+  tmiPct:        number,
+) {
   switch (incentive.kind) {
     case 'pinel':
     case 'pinel_plus': {
