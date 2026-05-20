@@ -17,9 +17,10 @@ import { buildIncentiveReductionPerYear } from '@/lib/real-estate/fiscal/incenti
 import { DeletePropertyButton } from '@/components/real-estate/delete-property-button'
 import { ChargesForm } from '@/components/real-estate/charges-form'
 import { TaxReductionDecomposition } from '@/components/real-estate/tax-reduction-decomposition'
-import { ActualVsSimulation } from '@/components/real-estate/actual-vs-simulation'
-import { DriftAlerts } from '@/components/real-estate/drift-alerts'
-import { RevisedForecastSection } from '@/components/real-estate/revised-forecast-section'
+import { RealTrackingPanel } from '@/components/real-estate/real-tracking-panel'
+// ActualVsSimulation / DriftAlerts / RevisedForecastSection : conservés en code
+// mais désactivés dans l'UI (le nouveau RealTrackingPanel remplace tout).
+// YearEndReportPanel reste utilisé pour les bilans des années passées.
 import { YearEndReportPanel } from '@/components/real-estate/year-end-report-panel'
 import { CreditTab } from '@/components/real-estate/credit-tab'
 import { MultiCreditList } from '@/components/real-estate/multi-credit-list'
@@ -29,8 +30,6 @@ import { AmortizationTable } from '@/components/real-estate/amortization-table'
 import type { ExistingCredit } from '@/components/real-estate/credit-form'
 import { loadActualData } from '@/lib/real-estate/actual'
 import { compareActualToSimulation } from '@/lib/real-estate/compare'
-import { detectDriftAlerts } from '@/lib/real-estate/insights'
-import { computeRevisedForecast } from '@/lib/real-estate/forecast'
 import { buildYearEndReport } from '@/lib/real-estate/year-end-report'
 import { buildAmortizationSchedule } from '@/lib/real-estate/amortization'
 import { aggregateLoans } from '@/lib/real-estate/multi-credit'
@@ -340,13 +339,31 @@ export default async function ImmobilierDetailPage({ params }: Props) {
     supabase, user!.id, prop.asset_id, prop.id, debtRow?.id ?? null,
   )
 
+  // ── Événements suivi réel (migration 041) ──────────────────────────────
+  // Filtre par année courante. Le nouveau RealTrackingPanel utilise cette
+  // liste avec la base (loyers + charges + crédit) pour calculer le réel.
+  const trackingYear = new Date().getUTCFullYear()
+  const { data: eventsRows } = await supabase
+    .from('property_events')
+    .select('*')
+    .eq('property_id', prop.id)
+    .eq('user_id', user!.id)
+    .gte('event_date', `${trackingYear}-01-01`)
+    .lte('event_date', `${trackingYear}-12-31`)
+    .order('event_date', { ascending: false })
+  const propertyEvents = (eventsRows ?? []) as import('@/types/database.types').PropertyEvent[]
+
   const simStartYear = debtRow?.start_date
     ? new Date(debtRow.start_date).getUTCFullYear()
     : (actualData.firstYear ?? new Date().getUTCFullYear())
 
-  const comparison      = compareActualToSimulation(simResult, actualData, simStartYear)
-  const driftAlerts     = detectDriftAlerts(comparison)
-  const revisedForecast = computeRevisedForecast(simResult, actualData, simStartYear)
+  // Legacy : ces calculs alimentaient ActualVsSimulation / DriftAlerts /
+  // RevisedForecast — désactivés dans l'UI (nouveau RealTrackingPanel).
+  // Le `comparison` reste utilisé par YearEndReportPanel pour les bilans
+  // d'années passées. Les variables driftAlerts / revisedForecast ne sont
+  // plus consommées — voir hist commit pour rétablir si besoin.
+  const comparison = compareActualToSimulation(simResult, actualData, simStartYear)
+  void comparison   // explicitement marqué utilisé pour ne pas casser le calcul
 
   const reportCutoffYear = new Date().getUTCFullYear()
   const yearEndReports = actualData.years
@@ -704,47 +721,30 @@ export default async function ImmobilierDetailPage({ params }: Props) {
       ),
     },
 
-    // ── 6. Suivi réel (Phase 2) ───────────────────────────────────────────
+    // ── 6. Suivi réel — refonte modèle base + événements (migration 041) ──
     {
       id:    'suivi-reel',
       label: 'Suivi réel',
       icon:  <Activity size={14} />,
-      badge: driftAlerts.length > 0 ? (
-        <span className="ml-1.5 text-[10px] bg-warning/20 text-warning rounded-full px-1.5 py-0.5">
-          {driftAlerts.length}
-        </span>
-      ) : undefined,
       content: (
         <div className="space-y-6">
-          {driftAlerts.length > 0 && <DriftAlerts alerts={driftAlerts} />}
-          <ActualVsSimulation
-            comparison={comparison}
-            propertyName={prop.asset?.name}
-            assetId={prop.asset_id}
-            debtId={debtRow?.id ?? null}
+          <RealTrackingPanel
             propertyId={prop.id}
-            monthlyRentSuggested={monthlyRents}
-            monthlyPaymentSuggested={schedule?.totalMonthly ?? null}
-            existingCharges={(prop.charges ?? []).map((c: {
-              year: number; taxe_fonciere: number; insurance: number; accountant: number;
-              cfe: number; condo_fees: number; maintenance: number; other: number
-            }) => ({
-              year:          c.year,
-              taxe_fonciere: c.taxe_fonciere,
-              insurance:     c.insurance,
-              accountant:    c.accountant,
-              cfe:           c.cfe,
-              condo_fees:    c.condo_fees,
-              maintenance:   c.maintenance,
-              other:         c.other,
+            year={trackingYear}
+            lots={lots.map((l: { id: string; name: string; rent_amount: number | null; status: string }) => ({
+              id:          l.id,
+              name:        l.name,
+              rent_amount: l.rent_amount,
             }))}
-            purchasePrice={prop.purchase_price ?? null}
+            monthlyRent={monthlyRents}
+            annualCharges={annualCharges}
+            monthlyLoanPayment={schedule?.totalMonthly ?? 0}
+            events={propertyEvents}
           />
-          {!revisedForecast.isEmpty && (
-            <div className="border-t border-border pt-6">
-              <RevisedForecastSection revised={revisedForecast} original={simResult.projection} />
-            </div>
-          )}
+
+          {/* Vues complémentaires (legacy) — laissé en arrière-plan pour
+              ceux qui ont déjà des transactions. À supprimer dans un sprint
+              ultérieur une fois le nouveau modèle validé. */}
           {yearEndReports.length > 0 && (
             <div className="border-t border-border pt-6">
               <YearEndReportPanel reports={yearEndReports} />
