@@ -2,6 +2,7 @@
 
 import { PinelPanel } from './pinel-panel'
 import { DenormandiePanel } from './denormandie-panel'
+import { LocAvantagesPanel } from './loc-avantages-panel'
 
 /**
  * Ligne `property_tax_incentives` (migration 038).
@@ -78,6 +79,21 @@ export function IncentiveTabContent({
           surfaceM2={surfaceM2}
           startYear={incentive.start_year ?? new Date().getFullYear()}
           annualRentHC={annualRentHC}
+          tmiPct={tmiPct}
+        />
+      )
+    }
+    case 'loc_avantages': {
+      const convention = (incentive.convention_type ?? 'loc1') as 'loc1' | 'loc2' | 'loc3'
+      const startDate = incentive.convention_start ? new Date(incentive.convention_start) : new Date()
+      const endDate   = incentive.convention_end   ? new Date(incentive.convention_end)   : new Date()
+      return (
+        <LocAvantagesPanel
+          convention={convention}
+          annualRentHC={annualRentHC}
+          marketRentAnnual={incentive.market_rent_annual ?? 0}
+          conventionStartDate={startDate}
+          conventionEndDate={endDate}
           tmiPct={tmiPct}
         />
       )
