@@ -18,10 +18,21 @@ export function computeKPIs(
 ): PropertyKPIs {
   const { property, loan, rent, charges, downPayment } = input
 
+  // ─── Prix de revient total ─────────────────────────────────────
+  // Réf : tous les rendements (sauf grossYieldOnPrice qui garde sa
+  // sémantique "sur prix d'achat") utilisent ce dénominateur unifié.
+  // Inclut : prix net vendeur + frais notaire + travaux + mobilier
+  // (LMNP/LMP — vit sur le régime, pas la propriété) + frais bancaires
+  // et de garantie du prêt s'il y en a un.
+  const regimeFurniture =
+    'furnitureAmount' in input.regime
+      ? (input.regime as { furnitureAmount?: number }).furnitureAmount ?? 0
+      : 0
   const totalCost =
     property.purchasePrice +
     property.notaryFees +
     property.worksAmount +
+    regimeFurniture +
     (loan?.bankFees ?? 0) +
     (loan?.guaranteeFees ?? 0)
 
@@ -31,33 +42,46 @@ export function computeKPIs(
   const monthlyPayment   = (amortization?.monthlyPayment ?? 0) + (amortization?.monthlyInsurance ?? 0)
   const monthlyInsurance = amortization?.monthlyInsurance ?? 0
 
-  // Loyers et charges année 1 pour les rentabilités
+  // ─── Loyers et charges année 1 pour les rentabilités ──────────
+  // Le rendement BRUT n'inclut PAS la vacance : c'est un risque qui
+  // impacte le réel (net-net via projection), pas la théorie d'exploitation.
   const grossYearRent = rent.monthlyRent * 12
-  // Charges A1 estimées (sans indexation, GLI/management calculés sur netRent A1)
-  const vacancyLossY1 = rent.monthlyRent * rent.vacancyMonths
-  const netRentY1     = grossYearRent - vacancyLossY1
-  const gliY1         = netRentY1 * (charges.gliPct        / 100)
-  const managementY1  = netRentY1 * (charges.managementPct / 100)
+  const netRentForGliMgmt = grossYearRent   // base GLI / gestion = loyer théorique
+  const gliY1         = netRentForGliMgmt * (charges.gliPct        / 100)
+  const managementY1  = netRentForGliMgmt * (charges.managementPct / 100)
   const fixedChargesY1 =
     charges.pno + charges.propertyTax + charges.cfe + charges.accountant +
     charges.condoFees + charges.maintenance + charges.other
   const totalChargesY1 = fixedChargesY1 + gliY1 + managementY1
 
-  // Rentabilités — exprimées en pourcentage (5 pour 5 %), cohérent avec
-  // tmiPct / interestRate / propertyIndexPct utilisés ailleurs.
-  // `formatPercent` attend une valeur déjà en %.
-  const acquisitionCost = property.purchasePrice + property.notaryFees + property.worksAmount
-
+  // ─── Rendements (% entiers, ex 5 pour 5 %) ────────────────────
+  // grossYieldOnPrice : "rendement sur le prix d'achat seul"
+  //   utile pour comparer aux annonces marché (qui affichent le brut
+  //   sur le prix net vendeur). Sémantique distincte conservée.
   const grossYieldOnPrice = property.purchasePrice > 0
     ? (grossYearRent / property.purchasePrice) * 100
     : 0
-  const grossYieldFAI = acquisitionCost > 0
-    ? (grossYearRent / acquisitionCost) * 100
+
+  // grossYieldFAI : "rendement brut sur le prix de revient total"
+  //   c'est LE rendement à comparer au net et au net-net car ils
+  //   utilisent tous le même dénominateur `totalCost`.
+  const grossYieldFAI = totalCost > 0
+    ? (grossYearRent / totalCost) * 100
     : 0
-  const netYield = acquisitionCost > 0
-    ? ((netRentY1 - totalChargesY1) / acquisitionCost) * 100
+
+  // netYield : (loyer brut - charges d'exploitation) / coût total.
+  //   N'inclut PAS la mensualité de crédit (financement, pas
+  //   exploitation). N'inclut PAS les impôts. Ne déduit PAS la
+  //   vacance (différence entre net et net-net = vacance + crédit
+  //   + impôts).
+  const netYield = totalCost > 0
+    ? ((grossYearRent - totalChargesY1) / totalCost) * 100
     : 0
-  // Renta nette-nette = (CF après impôt + capital remboursé année 1) / coût total
+
+  // netNetYield : cash-flow réel après TOUT (vacance, charges,
+  // crédit complet, impôts) + capital remboursé (qui est de la
+  // capitalisation patrimoniale, pas une perte).
+  //   = (CF après impôt + capital remboursé année 1) / coût total
   const y1 = projection[0]
   const netNetYield = totalCost > 0 && y1
     ? ((y1.cashFlowAfterTax + y1.principalRepaid) / totalCost) * 100

@@ -511,7 +511,10 @@ export function SimulationPanel({ propertyId, property, asset, lots, charges, de
                 icon: TrendingUp,
                 label: 'Rendement net-net',
                 value: incompleteData ? '—' : (kpis.netNetYield > 0 ? formatPercent(kpis.netNetYield) : '—'),
-                sub: `Brut : ${kpis.grossYieldOnPrice > 0 ? formatPercent(kpis.grossYieldOnPrice) : '—'}`,
+                // Affiche le brut FAI (sur prix de revient total) plutôt
+                // que le brut sur prix d'achat seul — cohérent avec le
+                // dénominateur du net-net (cf. fix kpis.ts).
+                sub: `Brut : ${kpis.grossYieldFAI > 0 ? formatPercent(kpis.grossYieldFAI) : '—'}`,
               },
               {
                 icon: Clock,

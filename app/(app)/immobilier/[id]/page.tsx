@@ -133,9 +133,21 @@ export default async function ImmobilierDetailPage({ params }: Props) {
         .filter(([k]) => ['taxe_fonciere','insurance','accountant','cfe','condo_fees','maintenance','other'].includes(k))
         .reduce((s, [, v]) => s + (Number(v) ?? 0), 0)
     : 0
-  const acqCost     = (prop.purchase_price ?? 0) + (prop.purchase_fees ?? 0) + (prop.works_amount ?? 0)
+  // Prix de revient total = achat + frais notaire + travaux + mobilier
+  // (LMNP) + frais bancaires/garantie. Cohérent avec totalCost dans
+  // computeKPIs : tous les rendements doivent partager ce dénominateur.
+  const acqCost =
+    (prop.purchase_price ?? 0)
+    + (prop.purchase_fees ?? 0)
+    + (prop.works_amount  ?? 0)
+    + (propTyped.furniture_amount ?? 0)
+    + (debtRow?.bank_fees      ?? 0)
+    + (debtRow?.guarantee_fees ?? 0)
   const currentVal  = prop.asset?.current_value ?? 0
+  // Rendement brut : loyer théorique × 12 sur prix de revient total
+  // (PAS de déduction de vacance dans le brut — c'est la convention FR).
   const grossYield  = acqCost > 0 ? (annualRents / acqCost) * 100 : 0
+  // Rendement net de charges : pas de mensualité, pas d'impôt, pas de vacance.
   const netYield    = acqCost > 0 ? ((annualRents - annualCharges) / acqCost) * 100 : 0
   const latentGain  = currentVal - acqCost
   const latentPct   = acqCost > 0 ? (latentGain / acqCost) * 100 : 0

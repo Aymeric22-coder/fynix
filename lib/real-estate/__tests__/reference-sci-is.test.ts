@@ -92,17 +92,26 @@ describe('Cas de référence SCI à l\'IS', () => {
   })
 
   it('a une rentabilité brute sur prix ≈ 15,48 %', () => {
-    // KPI exprimé en % (15.48 = 15,48 %)
+    // Sémantique inchangée : loyer / prix d'achat seul.
     expect(kpis.grossYieldOnPrice).toBeCloseTo(15.48, 1)
   })
 
-  it('a une rentabilité brute FAI ≈ 8,35 %', () => {
-    expect(kpis.grossYieldFAI).toBeCloseTo(8.35, 1)
+  it('a une rentabilité brute FAI ≈ 8,22 %', () => {
+    // Refonte : dénominateur = totalCost (200k + 17k + 154k + 1,2k + 4,6k
+    // = 376 800), au lieu de l'ancien acquisitionCost (371 000).
+    // = 30 960 / 376 800 = 8,217 %
+    expect(kpis.grossYieldFAI).toBeCloseTo(8.22, 1)
   })
 
-  it('a une rentabilité nette ≈ 6,57 %', () => {
-    // (loyersA1 net − chargesA1) / coûtAcquisitionFAI (200k+17k+154k = 371 000)
-    expect(kpis.netYield).toBeCloseTo(6.57, 1)
+  it('a une rentabilité nette ≈ 6,67 %', () => {
+    // Refonte 2026-05-21 :
+    //   - dénominateur = totalCost (376 800)
+    //   - numérateur SANS déduction de vacance (convention FR : la
+    //     vacance impacte le net-net via projection, pas le net de charges)
+    //   - GLI / management calculés sur grossYearRent (loyer théorique)
+    // numérateur = 30 960 - (5 040 + 774) = 25 146
+    // = 25 146 / 376 800 = 6,673 %
+    expect(kpis.netYield).toBeCloseTo(6.67, 1)
   })
 
   it('a un cash flow année 1 après IS ≈ +1 641 €/an (tolérance 200 €)', () => {

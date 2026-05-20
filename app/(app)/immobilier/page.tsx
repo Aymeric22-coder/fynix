@@ -276,7 +276,7 @@ export default async function ImmobilierPage() {
                         <p className={`text-sm font-medium financial-value mt-0.5 ${kpis.netNetYield > 0 ? 'text-accent' : 'text-secondary'}`}>
                           {kpis.netNetYield > 0 ? formatPercent(kpis.netNetYield) : '—'}
                         </p>
-                        <p className="text-xs text-muted">brut {kpis.grossYieldOnPrice > 0 ? formatPercent(kpis.grossYieldOnPrice) : '—'}</p>
+                        <p className="text-xs text-muted">brut {kpis.grossYieldFAI > 0 ? formatPercent(kpis.grossYieldFAI) : '—'}</p>
                       </div>
                       <div>
                         <p className="text-xs text-secondary">PV latente</p>
