@@ -15,10 +15,10 @@
 
 import { describe, it, expect } from 'vitest'
 import {
-  buildTransactionRowsForImport,
   groupTransactionsByKey,
   type NormalizedTransaction,
 } from '../csvImport'
+import { buildTransactionRowsForImport } from '../import-transactions'
 
 // ─── Fixtures ─────────────────────────────────────────────────────────
 

@@ -27,9 +27,10 @@ import { ok, err, withAuth } from '@/lib/utils/api'
 import type { User } from '@supabase/supabase-js'
 import {
   parseBrokerCsv, aggregateToPositions, decodeCsvBytes,
-  groupTransactionsByKey, buildTransactionRowsForImport,
+  groupTransactionsByKey,
   type BrokerFormat, type AggregatedPosition, type AssetClassNormalized,
 } from '@/lib/portfolio/csvImport'
+import { buildTransactionRowsForImport } from '@/lib/portfolio/import-transactions'
 import { enrichISIN } from '@/lib/analyse/isinEnricher'
 import { cleanInstrumentName } from '@/lib/portfolio/cleanInstrumentName'
 import { ImportCsvBodySchema, formatZodErrors } from '@/lib/portfolio/importSchema'
