@@ -3,6 +3,7 @@
 import { PinelPanel } from './pinel-panel'
 import { DenormandiePanel } from './denormandie-panel'
 import { LocAvantagesPanel } from './loc-avantages-panel'
+import { MhPanel } from './mh-panel'
 
 /**
  * Ligne `property_tax_incentives` (migration 038).
@@ -79,6 +80,23 @@ export function IncentiveTabContent({
           surfaceM2={surfaceM2}
           startYear={incentive.start_year ?? new Date().getFullYear()}
           annualRentHC={annualRentHC}
+          tmiPct={tmiPct}
+        />
+      )
+    }
+    case 'monuments_historiques': {
+      const classification = (incentive.classification ?? 'inscrit') as 'classe' | 'inscrit' | 'agree'
+      const occupancy = (incentive.occupancy ?? 'rented') as 'owner_occupied' | 'rented' | 'mixed'
+      const currentYear = new Date().getFullYear()
+      return (
+        <MhPanel
+          classification={classification}
+          occupancy={occupancy}
+          worksAmount={incentive.works_amount ?? 0}
+          annualCharges={0}     // pas de champ DB dédié — pourra être enrichi
+          annualRentHC={annualRentHC}
+          acquisitionYear={incentive.start_year ?? currentYear}
+          conservationEndYear={incentive.conservation_end_year ?? (currentYear + 15)}
           tmiPct={tmiPct}
         />
       )
