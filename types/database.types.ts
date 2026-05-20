@@ -46,6 +46,7 @@ export const LOAN_KIND_LABELS: Record<LoanKind, string> = {
 }
 
 // ── Migration 041 — Événements ponctuels sur un bien ─────────────
+// (+ Migration 042 — événements spécifiques courte durée)
 export type PropertyEventKind =
   | 'rent_unpaid'
   | 'vacancy'
@@ -55,17 +56,36 @@ export type PropertyEventKind =
   | 'insurance_claim'
   | 'rent_paid_late'
   | 'other'
+  | 'booking_cancellation'
+  | 'platform_payout'
+  | 'guest_damage'
+  | 'platform_dispute'
+  | 'seasonal_closure'
 
 export const PROPERTY_EVENT_LABELS: Record<PropertyEventKind, string> = {
-  rent_unpaid:        'Loyer impayé',
-  vacancy:            'Vacance locative',
-  rent_revision:      'Révision de loyer',
-  exceptional_charge: 'Charge exceptionnelle',
-  unplanned_works:    'Travaux imprévus',
-  insurance_claim:    'Sinistre / remboursement',
-  rent_paid_late:     'Loyer payé en retard',
-  other:              'Autre',
+  rent_unpaid:          'Loyer impayé',
+  vacancy:              'Vacance locative',
+  rent_revision:        'Révision de loyer',
+  exceptional_charge:   'Charge exceptionnelle',
+  unplanned_works:      'Travaux imprévus',
+  insurance_claim:      'Sinistre / remboursement',
+  rent_paid_late:       'Loyer payé en retard',
+  other:                'Autre',
+  booking_cancellation: 'Annulation de réservation',
+  platform_payout:      'Virement plateforme',
+  guest_damage:         'Dégradation voyageur',
+  platform_dispute:     'Litige plateforme',
+  seasonal_closure:     'Fermeture saisonnière',
 }
+
+/** Types d'événements spécifiques à la location courte durée. */
+export const SHORT_TERM_EVENT_KINDS: readonly PropertyEventKind[] = [
+  'booking_cancellation',
+  'platform_payout',
+  'guest_damage',
+  'platform_dispute',
+  'seasonal_closure',
+] as const
 
 export interface PropertyEvent {
   id:              string
@@ -331,6 +351,27 @@ export interface RealEstateProperty {
   updated_at: string
 }
 
+export type RentalType = 'long_term' | 'short_term' | 'mixed'
+
+export type TourismClassification =
+  | 'non_classe'
+  | 'classe_1_2'
+  | 'classe_3_4_5'
+  | 'chambre_hotes'
+
+/**
+ * Saisonnalite mensuelle d'un lot courte duree.
+ * Cles "1".."12" (Jan..Dec).
+ */
+export type SeasonalityMap = Partial<Record<
+  '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | '10' | '11' | '12',
+  {
+    occupancyRatePct: number
+    nightlyRate?: number
+    blockedDays?: number
+  }
+>>
+
 export interface RealEstateLot {
   id: string
   property_id: string
@@ -348,6 +389,25 @@ export interface RealEstateLot {
   lease_start_date: string | null
   lease_end_date: string | null
   notes: string | null
+  // ── Migration 042 — Location courte duree ─────────────────
+  rental_type: RentalType
+  nightly_rate_low: number | null
+  nightly_rate_mid: number | null
+  nightly_rate_high: number | null
+  occupancy_rate_pct: number | null
+  cleaning_fee_per_stay: number | null
+  avg_stay_nights: number | null
+  platform_airbnb_pct: number | null
+  platform_booking_pct: number | null
+  platform_other_pct: number | null
+  platform_airbnb_mix_pct: number | null
+  platform_booking_mix_pct: number | null
+  platform_direct_mix_pct: number | null
+  concierge_fee_pct: number | null
+  cleaning_cost_per_stay: number | null
+  linen_cost_per_stay: number | null
+  tourism_classification: TourismClassification | null
+  seasonality_coefficients: SeasonalityMap | null
   created_at: string
   updated_at: string
 }
