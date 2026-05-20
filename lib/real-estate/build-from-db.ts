@@ -17,6 +17,10 @@ import type {
   RentInput,
 } from './types'
 import { resolveCharges } from './charges-resolver'
+import {
+  buildShortTermParamsFromLot,
+  computeShortTermRevenue,
+} from './short-term/revenue'
 
 // ─────────────────────────────────────────────────────────────────────
 //  Types DB minimaux (sous-ensemble des Row types Supabase)
@@ -73,6 +77,56 @@ export interface DbDebt {
 export interface DbLot {
   rent_amount:    number | null
   status?:        string | null
+  // ── Migration 042 — Courte durée (optionnelles) ──
+  rental_type?:              string | null
+  nightly_rate_low?:         number | null
+  nightly_rate_mid?:         number | null
+  nightly_rate_high?:        number | null
+  occupancy_rate_pct?:       number | null
+  cleaning_fee_per_stay?:    number | null
+  avg_stay_nights?:          number | null
+  platform_airbnb_pct?:      number | null
+  platform_booking_pct?:     number | null
+  platform_other_pct?:       number | null
+  platform_airbnb_mix_pct?:  number | null
+  platform_booking_mix_pct?: number | null
+  platform_direct_mix_pct?:  number | null
+  concierge_fee_pct?:        number | null
+  cleaning_cost_per_stay?:   number | null
+  linen_cost_per_stay?:      number | null
+  seasonality_coefficients?: Record<string, {
+    occupancyRatePct: number
+    nightlyRate?: number
+    blockedDays?: number
+  }> | null
+}
+
+/**
+ * Calcule le revenu mensuel equivalent d'un lot pour alimenter la
+ * simulation de projection.
+ *
+ * - Long term : retourne `rent_amount` (loyer HC mensuel).
+ * - Short term / mixed : retourne `netOwnerRevenueTotal / 12`
+ *   (revenu net annuel apres commissions plateformes + charges
+ *   operationnelles, divise par 12).
+ *
+ * Pour les lots `mixed`, l'utilisateur peut additionner manuellement
+ * via rent_amount + short-term : on additionne les deux ici (rare —
+ * cas saisonnier 4 mois / longue duree 8 mois).
+ */
+export function computeMonthlyRentForLot(lot: DbLot): number {
+  const longTermRent = lot.rent_amount ?? 0
+  const stParams = buildShortTermParamsFromLot(lot)
+  if (!stParams) return longTermRent
+
+  const annual = computeShortTermRevenue(stParams)
+  const shortTermMonthly = annual.netOwnerRevenueTotal / 12
+
+  // Pour 'short_term' pur on remplace ; pour 'mixed' on cumule
+  // (l'utilisateur peut renseigner les deux blocs).
+  return lot.rental_type === 'mixed'
+    ? longTermRent + shortTermMonthly
+    : shortTermMonthly
 }
 
 /** Sous-ensemble de `property_charges` Row (année courante).
@@ -196,7 +250,9 @@ export function buildSimulationInputFromDb(
   }
 
   // ─── RENT (assumed_total_rent prime sur somme des lots) ─────────
-  const lotsSum = lots.reduce((s, l) => s + (l.rent_amount ?? 0), 0)
+  // Pour la courte duree, le revenu mensuel = netOwnerRevenue / 12
+  // (apres commissions plateformes + charges operationnelles).
+  const lotsSum = lots.reduce((s, l) => s + computeMonthlyRentForLot(l), 0)
   const monthlyRent = property.assumed_total_rent != null
     ? property.assumed_total_rent
     : lotsSum
