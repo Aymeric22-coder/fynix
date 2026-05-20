@@ -11,6 +11,7 @@ import { PropertyLotActions, PropertyValuationActions } from '@/components/pages
 import { LotEditButton } from '@/components/pages/lot-edit-button'
 import { SimulationPanel } from '@/components/real-estate/simulation-panel'
 import { RegimeComparator } from '@/components/real-estate/regime-comparator'
+import { SciDistribution } from '@/components/real-estate/sci-distribution'
 import { ActualVsSimulation } from '@/components/real-estate/actual-vs-simulation'
 import { DriftAlerts } from '@/components/real-estate/drift-alerts'
 import { RevisedForecastSection } from '@/components/real-estate/revised-forecast-section'
@@ -570,6 +571,18 @@ export default async function ImmobilierDetailPage({ params }: Props) {
             debt={dbDebt}
             profile={dbProfile}
           />
+          {/* Distribution SCI IS — uniquement si régime sci_is */}
+          {propTyped.fiscal_regime === 'sci_is' && simResult.projection[0] && (
+            <SciDistribution
+              netProfitAfterIS={
+                // Cash après IS pour Y1 (basé sur la projection)
+                simResult.projection[0].cashFlowAfterTax + simResult.projection[0].principalRepaid
+              }
+              ccaAmount={(propTyped as unknown as { cca_amount?: number | null }).cca_amount ?? 0}
+              tmiPct={dbProfile?.tmi_rate ?? 30}
+            />
+          )}
+
           {isRental && !simResult.incompleteData && (
             <RegimeComparator
               base={{
