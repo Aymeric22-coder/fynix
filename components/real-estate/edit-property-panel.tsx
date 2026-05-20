@@ -397,27 +397,27 @@ function SubResourcesCard({ propertyId, initial }: Props) {
         subtitle="Crédits, lots, charges et dispositifs fiscaux ont leur propre onglet" />
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <SubResourceLink
-          href={`/immobilier/${propertyId}#credits`}
+          href={`/immobilier/${propertyId}?tab=credit`}
           icon={Banknote}
           label="Crédits"
           count={initial.nbCredits}
           desc="Modifier, ajouter ou supprimer un crédit"
         />
         <SubResourceLink
-          href={`/immobilier/${propertyId}#lots`}
+          href={`/immobilier/${propertyId}?tab=synthese`}
           icon={Home}
           label="Lots & loyers"
           count={initial.nbLots}
           desc="Modifier un lot, ajouter, supprimer"
         />
         <SubResourceLink
-          href={`/immobilier/${propertyId}#charges`}
+          href={`/immobilier/${propertyId}?tab=charges`}
           icon={Receipt}
           label="Charges annuelles"
           desc="Édition inline dans l'onglet Charges"
         />
         <SubResourceLink
-          href={`/immobilier/${propertyId}#incentive`}
+          href={`/immobilier/${propertyId}?tab=dispositif`}
           icon={Sparkles}
           label="Dispositif fiscal"
           desc={initial.hasIncentive ? 'Modifier le dispositif' : 'Ajouter un dispositif Pinel / Denormandie / etc.'}
