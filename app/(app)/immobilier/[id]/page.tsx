@@ -11,6 +11,7 @@ import { PropertyLotActions, PropertyValuationActions } from '@/components/pages
 import { LotEditButton } from '@/components/pages/lot-edit-button'
 import { SimulationPanel } from '@/components/real-estate/simulation-panel'
 import { SeasonalityChart } from '@/components/real-estate/seasonality-chart'
+import { WhatIfSimulator } from '@/components/real-estate/what-if-simulator'
 import { computeShortTermKpisForProperty } from '@/lib/real-estate/short-term/kpis'
 import { RegimeComparator } from '@/components/real-estate/regime-comparator'
 import { SciDistribution } from '@/components/real-estate/sci-distribution'
@@ -664,6 +665,17 @@ export default async function ImmobilierDetailPage({ params }: Props) {
               </div>
             )
           })}
+
+          {/* Simulateur what-if interactif */}
+          <WhatIfSimulator
+            property={dbProperty}
+            asset={dbAsset}
+            lots={dbLots}
+            charges={dbCharges}
+            debt={dbDebt}
+            profile={dbProfile}
+            isShortTerm={shortTermKpis.hasShortTermLots}
+          />
 
           {/* Décomposition fiscale Y1 — si dispositif Pinel/Denormandie/LocAv actif */}
           {simResult.projection[0] && simResult.projection[0].taxReductionTotal > 0 && (
