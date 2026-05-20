@@ -14,6 +14,7 @@ import {
 } from '@/lib/real-estate/plusValue'
 import { computeRealEstatePortfolio }    from '@/lib/real-estate/portfolio'
 import { detectLmpStatus, sumMeubleeRevenues } from '@/lib/real-estate/fiscal/lmp-detector'
+import { DeletePropertyButton } from '@/components/real-estate/delete-property-button'
 import { formatCurrency, formatPercent, ASSET_TYPE_LABELS } from '@/lib/utils/format'
 
 export const metadata: Metadata = { title: 'Immobilier' }
@@ -224,6 +225,11 @@ export default async function ImmobilierPage() {
                         </span>
                       )}
                       <Badge variant="muted">{ASSET_TYPE_LABELS['real_estate']}</Badge>
+                      <DeletePropertyButton
+                        propertyId={p.id}
+                        propertyName={asset?.name ?? 'ce bien'}
+                        variant="icon"
+                      />
                     </div>
                   </div>
 

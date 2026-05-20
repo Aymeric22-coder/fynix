@@ -14,6 +14,7 @@ import { RegimeComparator } from '@/components/real-estate/regime-comparator'
 import { SciDistribution } from '@/components/real-estate/sci-distribution'
 import { IncentiveTabContent, type IncentiveRow } from '@/components/real-estate/incentives/incentive-tab'
 import { buildIncentiveReductionPerYear } from '@/lib/real-estate/fiscal/incentives/reduction-schedule'
+import { DeletePropertyButton } from '@/components/real-estate/delete-property-button'
 import { ActualVsSimulation } from '@/components/real-estate/actual-vs-simulation'
 import { DriftAlerts } from '@/components/real-estate/drift-alerts'
 import { RevisedForecastSection } from '@/components/real-estate/revised-forecast-section'
@@ -783,7 +784,16 @@ export default async function ImmobilierDetailPage({ params }: Props) {
       <PageHeader
         title={prop.asset?.name ?? 'Bien immobilier'}
         subtitle={[prop.address_zip, prop.address_city].filter(Boolean).join(' ') || undefined}
-        action={<ConfidenceBadge level={prop.asset?.confidence ?? 'medium'} />}
+        action={
+          <div className="flex items-center gap-2">
+            <ConfidenceBadge level={prop.asset?.confidence ?? 'medium'} />
+            <DeletePropertyButton
+              propertyId={prop.id}
+              propertyName={prop.asset?.name ?? 'ce bien'}
+              redirectTo="/immobilier"
+            />
+          </div>
+        }
       />
 
       {fiscalRegimeMissing && (

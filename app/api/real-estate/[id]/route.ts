@@ -108,3 +108,39 @@ export const PUT = withAuth(async (req: Request, user: User, ctx: Ctx) => {
   await Promise.all(updates)
   return ok({ id, updated: true })
 })
+
+// DELETE /api/real-estate/[id] — supprime le bien et toutes ses données associées
+//
+// Stratégie : on supprime l'`asset` parent. La cascade SQL en place
+// (migrations 001, 005, 006, 034, 035, 038) propage automatiquement vers :
+//   - real_estate_properties (asset_id REFERENCES assets(id) ON DELETE CASCADE)
+//     → real_estate_lots, property_charges, property_valuations,
+//       property_tax_incentives
+//   - debts (asset_id REFERENCES assets(id) ON DELETE CASCADE)
+//
+// Pas besoin de migration dédiée — la cascade est déjà complète.
+export const DELETE = withAuth(async (_req: Request, user: User, ctx: Ctx) => {
+  const { id } = await ctx!.params
+  const supabase = await createServerClient()
+
+  // Vérifie la propriété appartient bien à l'utilisateur (renvoie 404 sinon)
+  const { data: prop } = await supabase
+    .from('real_estate_properties')
+    .select('id, asset_id')
+    .eq('id', id)
+    .eq('user_id', user.id)
+    .maybeSingle()
+
+  if (!prop) return err('Property not found', 404)
+
+  // Cascade SQL : asset → property → lots / charges / valuations / incentives
+  // + debts liées au même asset.
+  const { error } = await supabase
+    .from('assets')
+    .delete()
+    .eq('id', prop.asset_id)
+    .eq('user_id', user.id)
+
+  if (error) return err(error.message, 500)
+  return ok({ deleted: true })
+})
