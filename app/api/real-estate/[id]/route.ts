@@ -109,6 +109,11 @@ export const PUT = withAuth(async (req: Request, user: User, ctx: Ctx) => {
   return ok({ id, updated: true })
 })
 
+// PATCH /api/real-estate/[id] — alias de PUT (mise a jour partielle).
+// Le PUT existant fait deja un partial update : seuls les champs presents
+// dans le body sont ecrits, les autres ne sont pas touches.
+export const PATCH = PUT
+
 // DELETE /api/real-estate/[id] — supprime le bien et toutes ses données associées
 //
 // Stratégie : on supprime l'`asset` parent. La cascade SQL en place

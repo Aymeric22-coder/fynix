@@ -1,6 +1,6 @@
 import { Metadata } from 'next'
 import { notFound }   from 'next/navigation'
-import { ArrowLeft, ArrowDownRight, ArrowUpRight, Home, Banknote, Receipt, TrendingUp, FileSpreadsheet, Activity, AlertTriangle, Sparkles } from 'lucide-react'
+import { ArrowLeft, ArrowDownRight, ArrowUpRight, Home, Banknote, Receipt, TrendingUp, FileSpreadsheet, Activity, AlertTriangle, Sparkles, Pencil } from 'lucide-react'
 import Link from 'next/link'
 import { createServerClient } from '@/lib/supabase/server'
 import { PageHeader }     from '@/components/shared/page-header'
@@ -842,6 +842,14 @@ export default async function ImmobilierDetailPage({ params }: Props) {
         action={
           <div className="flex items-center gap-2">
             <ConfidenceBadge level={prop.asset?.confidence ?? 'medium'} />
+            <Link
+              href={`/immobilier/${prop.id}/edit`}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm text-secondary hover:text-primary border border-border hover:border-accent/40 rounded-lg transition-colors"
+              title="Modifier le bien"
+            >
+              <Pencil size={13} />
+              Modifier
+            </Link>
             <DeletePropertyButton
               propertyId={prop.id}
               propertyName={prop.asset?.name ?? 'ce bien'}
