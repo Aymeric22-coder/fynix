@@ -6,6 +6,16 @@ import { Button }  from '@/components/ui/button'
 import { Field, Input, Select, FormGrid } from '@/components/ui/field'
 import { useForm } from '@/hooks/use-form'
 import { formatCurrency } from '@/lib/utils/format'
+import {
+  ShortTermLotFields,
+  type ShortTermLotFieldsValues,
+} from '@/components/real-estate/short-term-lot-fields'
+import type {
+  RentalType,
+  TourismClassification,
+} from '@/types/database.types'
+
+type ShortTermSeasonality = ShortTermLotFieldsValues['seasonality_coefficients']
 
 interface InitialData {
   id:             string
@@ -15,17 +25,36 @@ interface InitialData {
   status:         string
   rent_amount:    number | null
   charges_amount: number | null
-  /** Migration 035 — loyer de marché estimé (HC mensuel) */
   market_rent:    number | null
   tenant_name:    string | null
   lease_start_date:    string | null
   lease_end_date:      string | null
+  // ── Migration 042 — Courte durée (optionnelles) ──
+  rental_type?:                RentalType | null
+  nightly_rate_low?:           number | null
+  nightly_rate_mid?:           number | null
+  nightly_rate_high?:          number | null
+  occupancy_rate_pct?:         number | null
+  cleaning_fee_per_stay?:      number | null
+  avg_stay_nights?:            number | null
+  platform_airbnb_pct?:        number | null
+  platform_booking_pct?:       number | null
+  platform_airbnb_mix_pct?:    number | null
+  platform_booking_mix_pct?:   number | null
+  platform_direct_mix_pct?:    number | null
+  concierge_fee_pct?:          number | null
+  cleaning_cost_per_stay?:     number | null
+  linen_cost_per_stay?:        number | null
+  tourism_classification?:     TourismClassification | null
+  seasonality_coefficients?:   ShortTermSeasonality
 }
 
 interface Props {
   open:         boolean
   onClose:      () => void
   propertyId:   string
+  /** Type d'usage du bien — preselectionne `short_term` pour les lots saisonniers. */
+  defaultRentalType?: RentalType
   initialData?: InitialData
 }
 
@@ -40,11 +69,27 @@ const INITIAL = {
   tenant_name:     '',
   lease_start_date:     '',
   lease_end_date:       '',
+  rental_type:    'long_term' as RentalType,
+  nightly_rate_low:         undefined as number | undefined,
+  nightly_rate_mid:         undefined as number | undefined,
+  nightly_rate_high:        undefined as number | undefined,
+  occupancy_rate_pct:       70   as number | undefined,
+  cleaning_fee_per_stay:    undefined as number | undefined,
+  avg_stay_nights:          3    as number | undefined,
+  platform_airbnb_pct:      15   as number | undefined,
+  platform_booking_pct:     15   as number | undefined,
+  platform_airbnb_mix_pct:  60   as number | undefined,
+  platform_booking_mix_pct: 30   as number | undefined,
+  platform_direct_mix_pct:  10   as number | undefined,
+  concierge_fee_pct:        undefined as number | undefined,
+  cleaning_cost_per_stay:   undefined as number | undefined,
+  linen_cost_per_stay:      undefined as number | undefined,
+  tourism_classification:   '' as TourismClassification | '',
+  seasonality_coefficients: null as ShortTermSeasonality,
 }
 
-export function AddLotForm({ open, onClose, propertyId, initialData }: Props) {
+export function AddLotForm({ open, onClose, propertyId, initialData, defaultRentalType }: Props) {
   const router = useRouter()
-
   const isEdit = !!initialData
 
   const { values, set, setNumber, loading, error, handleSubmit, reset } = useForm({
@@ -60,10 +105,30 @@ export function AddLotForm({ open, onClose, propertyId, initialData }: Props) {
           tenant_name:    initialData.tenant_name     ?? '',
           lease_start_date:    initialData.lease_start_date     ?? '',
           lease_end_date:      initialData.lease_end_date       ?? '',
+          rental_type:    (initialData.rental_type    ?? 'long_term') as RentalType,
+          nightly_rate_low:         initialData.nightly_rate_low      ?? undefined as number | undefined,
+          nightly_rate_mid:         initialData.nightly_rate_mid      ?? undefined as number | undefined,
+          nightly_rate_high:        initialData.nightly_rate_high     ?? undefined as number | undefined,
+          occupancy_rate_pct:       initialData.occupancy_rate_pct    ?? 70,
+          cleaning_fee_per_stay:    initialData.cleaning_fee_per_stay ?? undefined as number | undefined,
+          avg_stay_nights:          initialData.avg_stay_nights       ?? 3,
+          platform_airbnb_pct:      initialData.platform_airbnb_pct   ?? 15,
+          platform_booking_pct:     initialData.platform_booking_pct  ?? 15,
+          platform_airbnb_mix_pct:  initialData.platform_airbnb_mix_pct  ?? 60,
+          platform_booking_mix_pct: initialData.platform_booking_mix_pct ?? 30,
+          platform_direct_mix_pct:  initialData.platform_direct_mix_pct  ?? 10,
+          concierge_fee_pct:        initialData.concierge_fee_pct        ?? undefined as number | undefined,
+          cleaning_cost_per_stay:   initialData.cleaning_cost_per_stay   ?? undefined as number | undefined,
+          linen_cost_per_stay:      initialData.linen_cost_per_stay      ?? undefined as number | undefined,
+          tourism_classification:   (initialData.tourism_classification ?? '') as TourismClassification | '',
+          seasonality_coefficients: initialData.seasonality_coefficients ?? null,
         }
-      : INITIAL,
+      : { ...INITIAL, rental_type: defaultRentalType ?? INITIAL.rental_type },
     async onSubmit(v) {
       if (!v.name) return { error: 'Le nom du lot est requis' }
+      if ((v.rental_type === 'short_term' || v.rental_type === 'mixed') && !v.nightly_rate_low) {
+        return { error: 'Le tarif nuit basse saison est requis pour la courte durée' }
+      }
 
       const url    = isEdit
         ? `/api/real-estate/${propertyId}/lots/${initialData!.id}`
@@ -82,8 +147,26 @@ export function AddLotForm({ open, onClose, propertyId, initialData }: Props) {
           charges_amount: v.charges_amount ?? 0,
           market_rent:    v.market_rent    ?? null,
           tenant_name:    v.tenant_name    || null,
-          lease_start_date:    v.lease_start_date    || null,
-          lease_end_date:      v.lease_end_date      || null,
+          lease_start_date: v.lease_start_date || null,
+          lease_end_date:   v.lease_end_date   || null,
+          rental_type:    v.rental_type,
+          // Champs courte duree (null si long_term)
+          nightly_rate_low:         v.rental_type === 'long_term' ? null : v.nightly_rate_low ?? null,
+          nightly_rate_mid:         v.rental_type === 'long_term' ? null : v.nightly_rate_mid ?? null,
+          nightly_rate_high:        v.rental_type === 'long_term' ? null : v.nightly_rate_high ?? null,
+          occupancy_rate_pct:       v.rental_type === 'long_term' ? null : v.occupancy_rate_pct ?? null,
+          cleaning_fee_per_stay:    v.rental_type === 'long_term' ? null : v.cleaning_fee_per_stay ?? null,
+          avg_stay_nights:          v.rental_type === 'long_term' ? null : v.avg_stay_nights ?? null,
+          platform_airbnb_pct:      v.rental_type === 'long_term' ? null : v.platform_airbnb_pct ?? null,
+          platform_booking_pct:     v.rental_type === 'long_term' ? null : v.platform_booking_pct ?? null,
+          platform_airbnb_mix_pct:  v.rental_type === 'long_term' ? null : v.platform_airbnb_mix_pct ?? null,
+          platform_booking_mix_pct: v.rental_type === 'long_term' ? null : v.platform_booking_mix_pct ?? null,
+          platform_direct_mix_pct:  v.rental_type === 'long_term' ? null : v.platform_direct_mix_pct ?? null,
+          concierge_fee_pct:        v.rental_type === 'long_term' ? null : v.concierge_fee_pct ?? null,
+          cleaning_cost_per_stay:   v.rental_type === 'long_term' ? null : v.cleaning_cost_per_stay ?? null,
+          linen_cost_per_stay:      v.rental_type === 'long_term' ? null : v.linen_cost_per_stay ?? null,
+          tourism_classification:   v.rental_type === 'long_term' ? null : (v.tourism_classification || null),
+          seasonality_coefficients: v.rental_type === 'long_term' ? null : (v.seasonality_coefficients ?? null),
         }),
       })
       const json = await res.json()
@@ -93,13 +176,20 @@ export function AddLotForm({ open, onClose, propertyId, initialData }: Props) {
     onSuccess() { reset(); onClose(); router.refresh() },
   })
 
-  const isRented = values.status === 'rented'
-  const cashflow = isRented && values.rent_amount
+  const isRented      = values.status === 'rented'
+  const isShortTerm   = values.rental_type === 'short_term'
+  const isMixed       = values.rental_type === 'mixed'
+  const showLongTerm  = isRented && (values.rental_type === 'long_term' || isMixed)
+  const showShortTerm = isRented && (isShortTerm || isMixed)
+
+  const cashflow = showLongTerm && values.rent_amount
     ? values.rent_amount - (values.charges_amount ?? 0)
     : null
 
+  const modalSize = showShortTerm ? 'lg' : 'sm'
+
   return (
-    <Modal open={open} onClose={onClose} title={isEdit ? 'Modifier le lot' : 'Ajouter un lot'} size="sm">
+    <Modal open={open} onClose={onClose} title={isEdit ? 'Modifier le lot' : 'Ajouter un lot'} size={modalSize}>
       <form onSubmit={handleSubmit} className="space-y-5">
         <Field label="Nom du lot" required>
           <Input
@@ -141,9 +231,25 @@ export function AddLotForm({ open, onClose, propertyId, initialData }: Props) {
         </Field>
 
         {isRented && (
+          <Field
+            label="Type de location"
+            hint="Mixte : 8 mois en longue durée + 4 mois en saisonnier par exemple."
+          >
+            <Select
+              value={values.rental_type}
+              onChange={(e) => set('rental_type', e.target.value as RentalType)}
+            >
+              <option value="long_term">Longue durée (loyer mensuel classique)</option>
+              <option value="short_term">Courte durée (Airbnb / Booking)</option>
+              <option value="mixed">Mixte (les deux)</option>
+            </Select>
+          </Field>
+        )}
+
+        {showLongTerm && (
           <>
             <FormGrid>
-              <Field label="Loyer mensuel (€)">
+              <Field label="Loyer mensuel HC (€)">
                 <Input
                   type="number" step={0.01} min={0}
                   value={values.rent_amount ?? ''}
@@ -163,7 +269,7 @@ export function AddLotForm({ open, onClose, propertyId, initialData }: Props) {
 
             <Field
               label="Loyer de marché estimé (€/mois)"
-              hint="Optionnel — utilisé pour détecter un bien sous-loué et estimer le manque à gagner annuel."
+              hint="Optionnel — utilisé pour détecter un bien sous-loué."
             >
               <Input
                 type="number" step={0.01} min={0}
@@ -198,6 +304,30 @@ export function AddLotForm({ open, onClose, propertyId, initialData }: Props) {
               </Field>
             </FormGrid>
           </>
+        )}
+
+        {showShortTerm && (
+          <ShortTermLotFields
+            values={{
+              nightly_rate_low:         values.nightly_rate_low,
+              nightly_rate_mid:         values.nightly_rate_mid,
+              nightly_rate_high:        values.nightly_rate_high,
+              occupancy_rate_pct:       values.occupancy_rate_pct,
+              cleaning_fee_per_stay:    values.cleaning_fee_per_stay,
+              avg_stay_nights:          values.avg_stay_nights,
+              platform_airbnb_pct:      values.platform_airbnb_pct,
+              platform_booking_pct:     values.platform_booking_pct,
+              platform_airbnb_mix_pct:  values.platform_airbnb_mix_pct,
+              platform_booking_mix_pct: values.platform_booking_mix_pct,
+              platform_direct_mix_pct:  values.platform_direct_mix_pct,
+              concierge_fee_pct:        values.concierge_fee_pct,
+              cleaning_cost_per_stay:   values.cleaning_cost_per_stay,
+              linen_cost_per_stay:      values.linen_cost_per_stay,
+              tourism_classification:   values.tourism_classification,
+              seasonality_coefficients: values.seasonality_coefficients,
+            }}
+            setValue={(k, v) => set(k as never, v as never)}
+          />
         )}
 
         {error && <p className="text-sm text-danger bg-danger-muted px-3 py-2 rounded-lg">{error}</p>}
