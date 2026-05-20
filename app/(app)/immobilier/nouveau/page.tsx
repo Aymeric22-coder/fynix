@@ -68,6 +68,12 @@ interface WizardDraft {
   lot_charges:       number | undefined
   lot_market_rent:   number | undefined
 
+  // Étape 5 — Courte durée (visible si usage_type = short_term_rental)
+  lot_nightly_rate_low:       number | undefined
+  lot_occupancy_rate_pct:     number | undefined
+  lot_avg_stay_nights:        number | undefined
+  lot_tourism_classification: '' | 'non_classe' | 'classe_1_2' | 'classe_3_4_5' | 'chambre_hotes'
+
   notes:             string
 }
 
@@ -106,6 +112,10 @@ const EMPTY_DRAFT: WizardDraft = {
   lot_rent:          undefined,
   lot_charges:       0,
   lot_market_rent:   undefined,
+  lot_nightly_rate_low:       undefined,
+  lot_occupancy_rate_pct:     70,
+  lot_avg_stay_nights:        3,
+  lot_tourism_classification: '',
 
   notes:             '',
 }
@@ -299,19 +309,42 @@ export default function NouveauBienPage() {
       }
 
       // 3. Créer le lot par défaut si saisi
-      if (draft.hasLot && draft.lot_rent != null) {
+      const isShortTermWizard = draft.usage_type === 'short_term_rental'
+      const hasLotData = draft.hasLot && (
+        (isShortTermWizard && draft.lot_nightly_rate_low != null)
+        || (!isShortTermWizard && draft.lot_rent != null)
+      )
+      if (hasLotData) {
+        const baseLotPayload = {
+          name:           draft.lot_name || draft.name,
+          lot_type:       draft.property_type === 'house' ? 'house' : 'apartment',
+          surface_m2:     draft.surface_m2 ?? null,
+          status:         'rented',
+        }
+        const shortTermPayload = isShortTermWizard ? {
+          rental_type:              'short_term',
+          rent_amount:              null,
+          charges_amount:           0,
+          market_rent:              null,
+          nightly_rate_low:         draft.lot_nightly_rate_low,
+          occupancy_rate_pct:       draft.lot_occupancy_rate_pct ?? 70,
+          avg_stay_nights:          draft.lot_avg_stay_nights ?? 3,
+          platform_airbnb_pct:      15,
+          platform_booking_pct:     15,
+          platform_airbnb_mix_pct:  100,
+          platform_booking_mix_pct: 0,
+          platform_direct_mix_pct:  0,
+          tourism_classification:   draft.lot_tourism_classification || null,
+        } : {
+          rental_type:    'long_term',
+          rent_amount:    draft.lot_rent,
+          charges_amount: draft.lot_charges ?? 0,
+          market_rent:    draft.lot_market_rent ?? null,
+        }
         await fetch(`/api/real-estate/${propertyId}/lots`, {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name:           draft.lot_name || draft.name,
-            lot_type:       draft.property_type === 'house' ? 'house' : 'apartment',
-            surface_m2:     draft.surface_m2 ?? null,
-            status:         'rented',
-            rent_amount:    draft.lot_rent,
-            charges_amount: draft.lot_charges ?? 0,
-            market_rent:    draft.lot_market_rent ?? null,
-          }),
+          body: JSON.stringify({ ...baseLotPayload, ...shortTermPayload }),
         })
       }
 
@@ -632,12 +665,61 @@ export default function NouveauBienPage() {
             ) : !draft.hasLot ? (
               <div className="space-y-3">
                 <p className="text-sm text-secondary">
-                  Vous pouvez ajouter un lot avec son loyer maintenant, ou le faire plus tard depuis la fiche du bien.
+                  {draft.usage_type === 'short_term_rental'
+                    ? 'Vous pouvez ajouter votre premier lot saisonnier maintenant, ou le faire plus tard depuis la fiche du bien.'
+                    : 'Vous pouvez ajouter un lot avec son loyer maintenant, ou le faire plus tard depuis la fiche du bien.'}
                 </p>
                 <Button type="button" variant="secondary" size="sm"
                   onClick={() => { set('hasLot', true); set('lot_name', draft.name) }}>
-                  + Ajouter un lot loué
+                  + {draft.usage_type === 'short_term_rental' ? 'Ajouter un lot saisonnier' : 'Ajouter un lot loué'}
                 </Button>
+              </div>
+            ) : draft.usage_type === 'short_term_rental' ? (
+              <div className="space-y-4">
+                <Field label="Nom du lot" required>
+                  <Input value={draft.lot_name}
+                    onChange={(e) => set('lot_name', e.target.value)}
+                    placeholder="ex : Appartement entier, Studio …" />
+                </Field>
+                <FormGrid>
+                  <Field label="Tarif nuit basse saison (€)" required>
+                    <Input type="number" min={0} step={1}
+                      value={draft.lot_nightly_rate_low ?? ''}
+                      onChange={(e) => setNum('lot_nightly_rate_low', e.target.value)}
+                      placeholder="80" />
+                  </Field>
+                  <Field label="Taux d'occupation annuel (%)">
+                    <Input type="number" min={0} max={100} step={1}
+                      value={draft.lot_occupancy_rate_pct ?? ''}
+                      onChange={(e) => setNum('lot_occupancy_rate_pct', e.target.value)}
+                      placeholder="70" />
+                  </Field>
+                </FormGrid>
+                <FormGrid>
+                  <Field label="Durée moyenne séjour (nuits)">
+                    <Input type="number" min={1} step={0.5}
+                      value={draft.lot_avg_stay_nights ?? ''}
+                      onChange={(e) => setNum('lot_avg_stay_nights', e.target.value)}
+                      placeholder="3" />
+                  </Field>
+                  <Field label="Classement Atout France"
+                    hint="Pilote l'abattement micro-BIC LF 2025">
+                    <Select
+                      value={draft.lot_tourism_classification}
+                      onChange={(e) => set('lot_tourism_classification', e.target.value as WizardDraft['lot_tourism_classification'])}
+                    >
+                      <option value="">— À sélectionner —</option>
+                      <option value="non_classe">Non classé (30 % / 15 000 €)</option>
+                      <option value="classe_1_2">Classé 1-2 étoiles (50 % / 77 700 €)</option>
+                      <option value="classe_3_4_5">Classé 3-4-5 étoiles (50 % / 77 700 €)</option>
+                      <option value="chambre_hotes">Chambre d&apos;hôtes (71 % / 188 700 €)</option>
+                    </Select>
+                  </Field>
+                </FormGrid>
+                <p className="text-xs text-muted">
+                  Par défaut : 100 % via Airbnb, commission 15 %. Vous pourrez affiner les
+                  plateformes, frais ménage, conciergerie et saisonnalité depuis la fiche du bien.
+                </p>
               </div>
             ) : (
               <div className="space-y-4">
