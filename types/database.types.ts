@@ -45,6 +45,50 @@ export const LOAN_KIND_LABELS: Record<LoanKind, string> = {
   autre:           'Autre',
 }
 
+// ── Migration 041 — Événements ponctuels sur un bien ─────────────
+export type PropertyEventKind =
+  | 'rent_unpaid'
+  | 'vacancy'
+  | 'rent_revision'
+  | 'exceptional_charge'
+  | 'unplanned_works'
+  | 'insurance_claim'
+  | 'rent_paid_late'
+  | 'other'
+
+export const PROPERTY_EVENT_LABELS: Record<PropertyEventKind, string> = {
+  rent_unpaid:        'Loyer impayé',
+  vacancy:            'Vacance locative',
+  rent_revision:      'Révision de loyer',
+  exceptional_charge: 'Charge exceptionnelle',
+  unplanned_works:    'Travaux imprévus',
+  insurance_claim:    'Sinistre / remboursement',
+  rent_paid_late:     'Loyer payé en retard',
+  other:              'Autre',
+}
+
+export interface PropertyEvent {
+  id:              string
+  property_id:     string
+  lot_id:          string | null
+  user_id:         string
+  kind:            PropertyEventKind
+  event_date:      string         // ISO date
+  period_start:    string | null
+  period_end:      string | null
+  amount_eur:      number | null
+  is_resolved:     boolean
+  resolved_date:   string | null
+  resolution_note: string | null
+  label:           string | null
+  notes:           string | null
+  created_at:      string
+  updated_at:      string
+}
+
+export type PropertyEventInsert = Omit<PropertyEvent, 'id' | 'created_at' | 'updated_at'>
+export type PropertyEventUpdate = Partial<Omit<PropertyEventInsert, 'user_id' | 'property_id'>>
+
 // ── Migration 033 — Type d'usage d'un bien immobilier ─────────────
 export type PropertyUsageType =
   | 'primary_residence'
