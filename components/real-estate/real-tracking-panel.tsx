@@ -31,6 +31,8 @@ interface Props {
   monthlyLoanPayment: number
   /** Événements de l'année, chargés côté serveur. */
   events:      PropertyEvent[]
+  /** True si au moins un lot est en location courte duree (short_term / mixed). */
+  hasShortTermLots?: boolean
 }
 
 const SEV_TONES = {
@@ -40,7 +42,7 @@ const SEV_TONES = {
 }
 
 export function RealTrackingPanel({
-  propertyId, year, lots, monthlyRent, annualCharges, monthlyLoanPayment, events,
+  propertyId, year, lots, monthlyRent, annualCharges, monthlyLoanPayment, events, hasShortTermLots,
 }: Props) {
   const router = useRouter()
   const [modalOpen, setModalOpen] = useState(false)
@@ -330,6 +332,7 @@ export function RealTrackingPanel({
         propertyId={propertyId}
         lots={lots}
         existing={editing}
+        isShortTerm={hasShortTermLots}
       />
     </div>
   )

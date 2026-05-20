@@ -18,9 +18,11 @@ interface Props {
   lots:        LotOption[]
   /** Si fourni : édition d'un événement existant. Sinon : création. */
   existing?:   PropertyEvent | null
+  /** Reorganise les kinds : courte duree en premier si true. */
+  isShortTerm?: boolean
 }
 
-const KIND_OPTIONS: Array<{ value: PropertyEventKind; label: string }> = [
+const KIND_OPTIONS_LONG_TERM: Array<{ value: PropertyEventKind; label: string }> = [
   { value: 'rent_unpaid',        label: 'Loyer impayé' },
   { value: 'vacancy',            label: 'Vacance locative' },
   { value: 'rent_revision',      label: 'Révision de loyer' },
@@ -31,11 +33,24 @@ const KIND_OPTIONS: Array<{ value: PropertyEventKind; label: string }> = [
   { value: 'other',              label: 'Autre' },
 ]
 
+const KIND_OPTIONS_SHORT_TERM: Array<{ value: PropertyEventKind; label: string }> = [
+  { value: 'booking_cancellation', label: 'Annulation de réservation' },
+  { value: 'platform_payout',      label: 'Virement plateforme reçu' },
+  { value: 'guest_damage',         label: 'Dégradation voyageur' },
+  { value: 'platform_dispute',     label: 'Litige plateforme' },
+  { value: 'seasonal_closure',     label: 'Fermeture saisonnière' },
+]
+
 const TODAY = () => new Date().toISOString().split('T')[0]!
 
-export function AddEventModal({ open, onClose, propertyId, lots, existing }: Props) {
+export function AddEventModal({ open, onClose, propertyId, lots, existing, isShortTerm }: Props) {
   const router = useRouter()
-  const [kind, setKind]         = useState<PropertyEventKind>(existing?.kind ?? 'rent_unpaid')
+  // Ordre des kinds : courte duree d'abord si le bien est short-term, sinon long_term
+  const KIND_OPTIONS = isShortTerm
+    ? [...KIND_OPTIONS_SHORT_TERM, ...KIND_OPTIONS_LONG_TERM]
+    : [...KIND_OPTIONS_LONG_TERM, ...KIND_OPTIONS_SHORT_TERM]
+  const defaultKind: PropertyEventKind = isShortTerm ? 'booking_cancellation' : 'rent_unpaid'
+  const [kind, setKind]         = useState<PropertyEventKind>(existing?.kind ?? defaultKind)
   const [eventDate, setEventDate] = useState(existing?.event_date ?? TODAY())
   const [lotId, setLotId]       = useState<string | null>(existing?.lot_id ?? (lots[0]?.id ?? null))
   const [amount, setAmount]     = useState<number | ''>(existing?.amount_eur ?? '')
@@ -110,8 +125,9 @@ export function AddEventModal({ open, onClose, propertyId, lots, existing }: Pro
   }
 
   const showLot = ['rent_unpaid', 'vacancy', 'rent_revision', 'rent_paid_late'].includes(kind)
-  const showPeriod = kind === 'vacancy'
-  const showResolution = ['rent_unpaid', 'rent_paid_late', 'insurance_claim', 'exceptional_charge', 'unplanned_works'].includes(kind)
+  const showPeriod = ['vacancy', 'booking_cancellation', 'platform_payout', 'seasonal_closure'].includes(kind)
+  const showResolution = ['rent_unpaid', 'rent_paid_late', 'insurance_claim', 'exceptional_charge', 'unplanned_works', 'guest_damage', 'platform_dispute'].includes(kind)
+  const hideAmount = kind === 'vacancy' || kind === 'seasonal_closure'
 
   return (
     <Modal
@@ -147,29 +163,53 @@ export function AddEventModal({ open, onClose, propertyId, lots, existing }: Pro
 
         {showPeriod && (
           <FormGrid>
-            <Field label="Début vacance" required>
+            <Field
+              label={
+                kind === 'booking_cancellation' ? 'Début du séjour annulé' :
+                kind === 'platform_payout'      ? 'Période couverte — début' :
+                kind === 'seasonal_closure'     ? 'Début de fermeture' :
+                'Début vacance'
+              }
+              required
+            >
               <Input type="date" value={periodStart}
                 onChange={(e) => setPeriodStart(e.target.value)} required />
             </Field>
-            <Field label="Fin vacance" hint="Laisser vide si en cours">
+            <Field
+              label={
+                kind === 'booking_cancellation' ? 'Fin du séjour annulé' :
+                kind === 'platform_payout'      ? 'Période couverte — fin' :
+                kind === 'seasonal_closure'     ? 'Fin de fermeture' :
+                'Fin vacance'
+              }
+              hint={kind === 'vacancy' ? 'Laisser vide si en cours' : undefined}
+            >
               <Input type="date" value={periodEnd}
                 onChange={(e) => setPeriodEnd(e.target.value)} />
             </Field>
           </FormGrid>
         )}
 
-        {kind !== 'vacancy' && (
+        {!hideAmount && (
           <Field
             label={
-              kind === 'rent_revision' ? 'Nouveau loyer mensuel (€)' :
-              kind === 'insurance_claim' ? 'Montant signé (€) — négatif=sinistre / positif=remboursement' :
-              kind === 'other' ? 'Montant signé (€)' :
+              kind === 'rent_revision'        ? 'Nouveau loyer mensuel (€)' :
+              kind === 'insurance_claim'      ? 'Montant signé (€) — négatif=sinistre / positif=remboursement' :
+              kind === 'booking_cancellation' ? 'Manque à gagner (€)' :
+              kind === 'platform_payout'      ? 'Montant reçu (€)' :
+              kind === 'guest_damage'         ? 'Coût réparation (€) — net après remboursement' :
+              kind === 'platform_dispute'     ? 'Remboursement forcé (€) — montant débité' :
+              kind === 'other'                ? 'Montant signé (€)' :
               'Montant (€)'
             }
             hint={
-              kind === 'rent_unpaid' ? 'Négatif (montant non perçu).' :
-              kind === 'rent_revision' ? 'Le loyer du lot sera mis à jour automatiquement.' :
+              kind === 'rent_unpaid'           ? 'Négatif (montant non perçu).' :
+              kind === 'rent_revision'         ? 'Le loyer du lot sera mis à jour automatiquement.' :
               kind === 'exceptional_charge' || kind === 'unplanned_works' ? 'Négatif (sortie de cash).' :
+              kind === 'booking_cancellation'  ? 'Négatif (perte). Indiquez le CA prévu non perçu après éventuel dédommagement.' :
+              kind === 'platform_payout'       ? 'Positif (encaissement). Utile pour pointer les virements réels.' :
+              kind === 'guest_damage'          ? 'Négatif (sortie de cash après prise en charge plateforme / assurance).' :
+              kind === 'platform_dispute'      ? 'Négatif (remboursement imposé par la plateforme).' :
               undefined
             }
           >
@@ -191,9 +231,19 @@ export function AddEventModal({ open, onClose, propertyId, lots, existing }: Pro
           </div>
         )}
 
-        <Field label="Libellé" hint="Court descriptif (ex: « Chaudière HS », « Mars 2025 »)">
+        <Field
+          label="Libellé"
+          hint={
+            kind === 'booking_cancellation' ? 'Ex : « Airbnb — Famille Dupont », « Booking — Sem. 32 »' :
+            kind === 'platform_payout'      ? 'Ex : « Airbnb — Juil. 2026 », « Booking — Q3 »' :
+            kind === 'guest_damage'         ? 'Ex : « TV cassée », « Tâche canapé »' :
+            kind === 'platform_dispute'     ? 'Ex : « Litige nettoyage — Airbnb »' :
+            kind === 'seasonal_closure'     ? 'Ex : « Travaux toiture », « Usage perso » ' :
+            'Court descriptif (ex: « Chaudière HS », « Mars 2025 »)'
+          }
+        >
           <Input value={label} onChange={(e) => setLabel(e.target.value)}
-            placeholder="ex : Chaudière HS" />
+            placeholder="ex : Airbnb — Famille Dupont" />
         </Field>
 
         <Field label="Notes (optionnel)">

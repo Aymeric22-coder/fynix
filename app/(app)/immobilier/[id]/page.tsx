@@ -791,6 +791,7 @@ export default async function ImmobilierDetailPage({ params }: Props) {
             annualCharges={annualCharges}
             monthlyLoanPayment={schedule?.totalMonthly ?? 0}
             events={propertyEvents}
+            hasShortTermLots={shortTermKpis.hasShortTermLots}
           />
 
           {/* Vues complémentaires (legacy) — laissé en arrière-plan pour
