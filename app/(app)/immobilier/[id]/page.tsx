@@ -13,6 +13,7 @@ import { SimulationPanel } from '@/components/real-estate/simulation-panel'
 import { RegimeComparator } from '@/components/real-estate/regime-comparator'
 import { SciDistribution } from '@/components/real-estate/sci-distribution'
 import { IncentiveTabContent, type IncentiveRow } from '@/components/real-estate/incentives/incentive-tab'
+import { buildIncentiveReductionPerYear } from '@/lib/real-estate/fiscal/incentives/reduction-schedule'
 import { ActualVsSimulation } from '@/components/real-estate/actual-vs-simulation'
 import { DriftAlerts } from '@/components/real-estate/drift-alerts'
 import { RevisedForecastSection } from '@/components/real-estate/revised-forecast-section'
@@ -317,7 +318,20 @@ export default async function ImmobilierDetailPage({ params }: Props) {
     dbProperty, dbAsset, dbLots, dbCharges, dbDebt, dbProfile,
     { downPayment },
   )
-  const simResult   = runSimulation(simInput)
+
+  // ── Réduction d'impôt annuelle (Pinel / Denormandie) ───────────────────
+  // On construit le tableau d'imputation année par année à partir du
+  // dispositif fiscal actif (table property_tax_incentives).
+  // Hors fenêtre [start_year, start_year + duration - 1] → 0.
+  const incentiveReductionPerYear = buildIncentiveReductionPerYear(
+    incentiveRow,
+    simInput.property,
+    simInput.rent,
+    dbProfile?.tmi_rate ?? 30,
+    simInput.horizonYears ?? 25,
+  )
+  const simInputWithIncentive = { ...simInput, incentiveReductionPerYear }
+  const simResult = runSimulation(simInputWithIncentive)
 
   const actualData  = await loadActualData(
     supabase, user!.id, prop.asset_id, prop.id, debtRow?.id ?? null,

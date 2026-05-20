@@ -29,6 +29,7 @@ function makeProjection(years: Partial<ProjectionYear>[]): ProjectionYear[] {
     fiscalResult:       0,
     taxableBase:        0,
     taxPaid:            0,
+    taxReductionApplied: 0,
     cashFlowBeforeTax:  0,
     cashFlowAfterTax:   0,
     cumulativeCashFlow: 0,

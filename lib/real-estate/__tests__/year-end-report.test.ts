@@ -12,7 +12,7 @@ function makeProj(p: Partial<ProjectionYear> = {}): ProjectionYear {
     year: 1, grossRent: 12_000, vacancy: 0, netRent: 12_000,
     charges: 3_000, interest: 4_000, principalRepaid: 3_000,
     insurance: 200, loanPayment: 7_200, amortizations: 0,
-    fiscalResult: 4_800, taxableBase: 4_800, taxPaid: 1_440,
+    fiscalResult: 4_800, taxableBase: 4_800, taxPaid: 1_440, taxReductionApplied: 0,
     cashFlowBeforeTax: 1_800, cashFlowAfterTax: 360,
     cumulativeCashFlow: 360, remainingCapital: 127_000,
     estimatedValue: 220_000, netPropertyValue: 93_000,

@@ -6,6 +6,8 @@ import {
   PINEL_RATE_PLUS,
   GLOBAL_TAX_NICHE_CAP,
 } from '../fiscal/incentives/pinel'
+import { runSimulation } from '..'
+import type { SimulationInput } from '../types'
 
 describe('computePinel — CGI art. 199 novovicies', () => {
   it('Pinel classique 9 ans / zone A : réduction = prix × 12 %', () => {
@@ -120,5 +122,80 @@ describe('computePinel — CGI art. 199 novovicies', () => {
     expect(PINEL_RATE_CLASSIC[6]).toBe(0.09)
     expect(PINEL_RATE_CLASSIC[12]).toBe(0.14)
     expect(PINEL_RATE_PLUS[12]).toBe(0.21)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────
+//  Propagation Pinel/Denormandie dans la projection (hotfix Sprint 3)
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Construit un SimulationInput dont l'IR foncier_micro est ajustable
+ * pour tester le plafonnement de la réduction Pinel.
+ *
+ * foncier_micro : taxPaid = netRent × 0,7 × (TMI + 17,2) / 100
+ * Avec TMI 30 → coefficient effectif = 0,7 × 0,472 ≈ 0,3304
+ *   → pour viser un IR cible, on calibre monthlyRent.
+ */
+function makeBaseInput(monthlyRent: number, tmiPct = 30): SimulationInput {
+  return {
+    property: {
+      purchasePrice:    200_000, notaryFees: 0, worksAmount: 0,
+      propertyIndexPct: 0,
+    },
+    rent: { monthlyRent, vacancyMonths: 0, rentalIndexPct: 0 },
+    charges: {
+      pno: 0, gliPct: 0, propertyTax: 0, cfe: 0, accountant: 0,
+      condoFees: 0, managementPct: 0, maintenance: 0, other: 0,
+      chargesIndexPct: 0,
+    },
+    regime: { kind: 'foncier_micro', tmiPct },
+    downPayment: 0,
+    horizonYears: 1,
+  }
+}
+
+describe('Propagation Pinel dans la projection (taxPaid + taxReductionApplied)', () => {
+  it('réduction > IR : taxPaid borné à 0, taxReductionApplied = IR brut (excédent perdu)', () => {
+    // Calibre l'input pour IR Y1 ≈ 3 200 €
+    // foncier_micro coef = 0,7 × 0,472 = 0,3304 → netRent annuel = 3 200 / 0,3304 = 9 686 €
+    // monthlyRent ≈ 807 €
+    const inputNoIncentive = makeBaseInput(807)
+    const noIncentive = runSimulation(inputNoIncentive)
+    const baseIR = noIncentive.projection[0]!.taxPaid
+    expect(baseIR).toBeCloseTo(3_200, -1)  // ordre de grandeur
+
+    // Maintenant on applique une réduction Pinel+ supérieure à l'IR
+    const withIncentive = runSimulation({
+      ...inputNoIncentive,
+      incentiveReductionPerYear: [4_760],   // Pinel+ 12 ans typique
+    })
+    const y1 = withIncentive.projection[0]!
+    expect(y1.taxPaid).toBe(0)                          // borné à 0
+    expect(y1.taxReductionApplied).toBeCloseTo(baseIR, 5) // plafonnée à l'IR
+    // Cash flow remonte d'autant
+    expect(y1.cashFlowAfterTax).toBeCloseTo(noIncentive.projection[0]!.cashFlowAfterTax + baseIR, 5)
+  })
+
+  it('réduction < IR : taxPaid = IR − réduction, taxReductionApplied = réduction exacte', () => {
+    // Calibre pour IR ≈ 8 000 € → netRent annuel ≈ 24 213 € → monthlyRent ≈ 2 018 €
+    const inputNoIncentive = makeBaseInput(2_018)
+    const noIncentive = runSimulation(inputNoIncentive)
+    const baseIR = noIncentive.projection[0]!.taxPaid
+    expect(baseIR).toBeCloseTo(8_000, -1)
+
+    const withIncentive = runSimulation({
+      ...inputNoIncentive,
+      incentiveReductionPerYear: [3_333],   // Pinel classique 9 ans typique
+    })
+    const y1 = withIncentive.projection[0]!
+    expect(y1.taxReductionApplied).toBeCloseTo(3_333, 5)
+    expect(y1.taxPaid).toBeCloseTo(baseIR - 3_333, 5)
+    expect(y1.taxPaid).toBeGreaterThan(0)
+  })
+
+  it('pas de incentiveReductionPerYear : comportement identique à avant le hotfix', () => {
+    const noIncentive = runSimulation(makeBaseInput(900))
+    expect(noIncentive.projection[0]!.taxReductionApplied).toBe(0)
   })
 })

@@ -170,9 +170,20 @@ export function computeProjection(input: SimulationInput): {
     const tax = calculator(accInputs, carryForward)
     carryForward = tax.carryForward
 
+    // ── Réduction d'impôt Pinel / Denormandie (CGI art. 199 novovicies) ────
+    // Appliquée APRÈS le calcul fiscal du régime locatif. Imputable sur l'IR
+    // dû, non remboursable (l'excédent est perdu — Pinel non reportable).
+    const incentiveTargetReduction =
+      input.incentiveReductionPerYear?.[y - 1] ?? 0
+    const taxReductionApplied = Math.max(
+      0,
+      Math.min(incentiveTargetReduction, tax.taxPaid),
+    )
+    const taxPaidAfterIncentive = tax.taxPaid - taxReductionApplied
+
     // Cash flow réel (basé sur les mouvements de trésorerie)
     const cashFlowBeforeTax = netRent - totalCharges - loanPayment
-    const cashFlowAfterTax  = cashFlowBeforeTax - tax.taxPaid
+    const cashFlowAfterTax  = cashFlowBeforeTax - taxPaidAfterIncentive
     cumulativeCashFlow += cashFlowAfterTax
 
     // Valeur du bien à fin d'année (avec indexation depuis l'estimation initiale)
@@ -192,7 +203,8 @@ export function computeProjection(input: SimulationInput): {
       amortizations:     totalYearAmort,
       fiscalResult:      tax.fiscalResult,
       taxableBase:       tax.taxableBase,
-      taxPaid:           tax.taxPaid,
+      taxPaid:           taxPaidAfterIncentive,
+      taxReductionApplied,
       cashFlowBeforeTax,
       cashFlowAfterTax,
       cumulativeCashFlow,

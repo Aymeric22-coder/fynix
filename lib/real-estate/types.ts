@@ -254,7 +254,13 @@ export interface ProjectionYear {
   amortizations:     number     // amortissements comptables (régimes réels)
   fiscalResult:      number     // résultat fiscal de l’année (peut être négatif)
   taxableBase:       number     // base imposable après imputation des déficits
-  taxPaid:           number     // IS / IR + PS / SSI selon régime
+  taxPaid:           number     // IS / IR + PS / SSI APRÈS application de la réduction d’impôt éventuelle
+  /**
+   * Réduction d’impôt effectivement appliquée pour cette année (Pinel /
+   * Denormandie / Loc’Avantages…). Bornée à `taxPaid` pré-réduction —
+   * l’excédent est perdu (non reportable Pinel/Denormandie).
+   */
+  taxReductionApplied: number
   // Cash flow
   cashFlowBeforeTax: number     // (loyers nets) − charges − mensualité crédit
   cashFlowAfterTax:  number     // cashFlowBeforeTax − taxPaid
@@ -309,6 +315,17 @@ export interface SimulationInput {
   horizonYears?:   number
   /** Date de simulation (défaut : aujourd’hui). Sert au calcul du capital restant dû à date. */
   simulationDate?: Date
+  /**
+   * Réduction d'impôt annuelle (€) à imputer sur taxPaid pour chaque année
+   * de projection. Index 0 = année 1, etc. La projection applique
+   * `taxPaid = max(0, taxPaid − reduction)` (CGI art. 199 novovicies pour
+   * Pinel / Denormandie : non remboursable, l'excédent est perdu).
+   *
+   * Le tableau doit être préparé par l'orchestrateur en respectant la
+   * fenêtre temporelle du dispositif (start_year + duration). 0 pour les
+   * années hors fenêtre.
+   */
+  incentiveReductionPerYear?: number[]
 }
 
 export interface SimulationResult {
