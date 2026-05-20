@@ -10,6 +10,8 @@ import { Tabs, type TabItem } from '@/components/ui/tabs'
 import { PropertyLotActions, PropertyValuationActions } from '@/components/pages/property-detail-actions'
 import { LotEditButton } from '@/components/pages/lot-edit-button'
 import { SimulationPanel } from '@/components/real-estate/simulation-panel'
+import { SeasonalityChart } from '@/components/real-estate/seasonality-chart'
+import { computeShortTermKpisForProperty } from '@/lib/real-estate/short-term/kpis'
 import { RegimeComparator } from '@/components/real-estate/regime-comparator'
 import { SciDistribution } from '@/components/real-estate/sci-distribution'
 import { IncentiveTabContent, type IncentiveRow } from '@/components/real-estate/incentives/incentive-tab'
@@ -187,10 +189,31 @@ export default async function ImmobilierDetailPage({ params }: Props) {
 
   const dbAsset: DbAsset | null = prop.asset ? { current_value: prop.asset.current_value } : null
 
-  const dbLots: DbLot[] = lots.map((l: { rent_amount: number | null; status?: string }) => ({
-    rent_amount: l.rent_amount,
-    status:      l.status,
+  const dbLots: DbLot[] = lots.map((l: Record<string, unknown>) => ({
+    rent_amount: (l.rent_amount as number | null) ?? null,
+    status:      l.status as string | undefined,
+    // ── Migration 042 — Courte durée (preserves les colonnes courte durée) ──
+    rental_type:              l.rental_type as string | null | undefined,
+    nightly_rate_low:         l.nightly_rate_low as number | null | undefined,
+    nightly_rate_mid:         l.nightly_rate_mid as number | null | undefined,
+    nightly_rate_high:        l.nightly_rate_high as number | null | undefined,
+    occupancy_rate_pct:       l.occupancy_rate_pct as number | null | undefined,
+    cleaning_fee_per_stay:    l.cleaning_fee_per_stay as number | null | undefined,
+    avg_stay_nights:          l.avg_stay_nights as number | null | undefined,
+    platform_airbnb_pct:      l.platform_airbnb_pct as number | null | undefined,
+    platform_booking_pct:     l.platform_booking_pct as number | null | undefined,
+    platform_other_pct:       l.platform_other_pct as number | null | undefined,
+    platform_airbnb_mix_pct:  l.platform_airbnb_mix_pct as number | null | undefined,
+    platform_booking_mix_pct: l.platform_booking_mix_pct as number | null | undefined,
+    platform_direct_mix_pct:  l.platform_direct_mix_pct as number | null | undefined,
+    concierge_fee_pct:        l.concierge_fee_pct as number | null | undefined,
+    cleaning_cost_per_stay:   l.cleaning_cost_per_stay as number | null | undefined,
+    linen_cost_per_stay:      l.linen_cost_per_stay as number | null | undefined,
+    seasonality_coefficients: l.seasonality_coefficients as DbLot['seasonality_coefficients'],
   }))
+
+  // KPIs courte duree agreges (utilise pour afficher SeasonalityChart)
+  const shortTermKpis = computeShortTermKpisForProperty(dbLots)
 
   const dbCharges: DbCharges | null = charges ? {
     taxe_fonciere: charges.taxe_fonciere,
@@ -626,6 +649,22 @@ export default async function ImmobilierDetailPage({ params }: Props) {
             debt={dbDebt}
             profile={dbProfile}
           />
+
+          {/* Saisonnalite courte duree — un graphique par lot short_term / mixed */}
+          {shortTermKpis.hasShortTermLots && shortTermKpis.perLot.map(entry => {
+            const lot = lots[entry.lotIndex] as { name?: string } | undefined
+            return (
+              <div key={entry.lotIndex} className="space-y-1">
+                {shortTermKpis.perLot.length > 1 && lot?.name && (
+                  <p className="text-xs uppercase tracking-wider text-muted px-1">
+                    Lot : {lot.name}
+                  </p>
+                )}
+                <SeasonalityChart data={entry.revenue} />
+              </div>
+            )
+          })}
+
           {/* Décomposition fiscale Y1 — si dispositif Pinel/Denormandie/LocAv actif */}
           {simResult.projection[0] && simResult.projection[0].taxReductionTotal > 0 && (
             <TaxReductionDecomposition
