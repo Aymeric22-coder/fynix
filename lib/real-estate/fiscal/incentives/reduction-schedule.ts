@@ -1,33 +1,35 @@
 /**
  * Construit le tableau année-par-année de réduction d'impôt pour un
- * dispositif fiscal donné (Pinel / Denormandie).
+ * dispositif fiscal donné (Pinel / Pinel+ / Denormandie / Loc'Avantages).
  *
  * Le tableau est consommé par la projection (`incentiveReductionPerYear`)
  * qui applique : `taxPaid = max(0, taxPaid − reduction)` pour chaque année.
  *
  * Convention : la projection commence à l'année calendaire courante
  * (l'année simulée 1 = `new Date().getUTCFullYear()`).
- * - Pour les années dans la fenêtre [start_year, start_year + duration − 1],
- *   la réduction annuelle est appliquée.
- * - Hors fenêtre : 0.
- *
- * Pour les dispositifs autres que Pinel / Denormandie (Loc'Avantages,
- * Malraux, MH…) cette fonction renvoie un tableau de zéros — leur
- * mécanisme fiscal sera intégré séparément.
+ * - Pinel / Pinel+ / Denormandie : fenêtre [start_year, start_year + duration − 1]
+ * - Loc'Avantages : fenêtre [convention_start.year, convention_end.year]
+ * - Malraux / MH / Censi-Bouvard : mécanisme différent (déduction sur revenu
+ *   global, pas réduction d'IR) — retourne un tableau de zéros, traité ailleurs.
  */
 
 import { computePinel, type PinelDuration, type PinelZone } from './pinel'
 import { computeDenormandie } from './denormandie'
+import { LOC_AVANTAGES_RATES, type LocAvantagesConvention } from './loc-avantages'
 import type { PropertyInput, RentInput } from '../../types'
 
 /** Sous-ensemble de la row property_tax_incentives utile pour cette fonction. */
 export interface IncentiveScheduleRow {
-  kind:           string
-  duration_years: number | null
-  zone:           string | null
-  start_year:     number | null
-  works_amount:   number | null
-  is_pinel_plus:  boolean | null
+  kind:            string
+  duration_years:  number | null
+  zone:            string | null
+  start_year:      number | null
+  works_amount:    number | null
+  is_pinel_plus:   boolean | null
+  // Loc'Avantages
+  convention_type?:  string | null
+  convention_start?: string | null   // ISO date
+  convention_end?:   string | null
 }
 
 export function buildIncentiveReductionPerYear(
@@ -38,6 +40,32 @@ export function buildIncentiveReductionPerYear(
   horizonYears: number,
 ): number[] {
   if (!incentive) return []
+
+  const calendarYear1 = new Date().getUTCFullYear()
+  const annualRentHC  = rent.monthlyRent * 12
+
+  // ── Loc'Avantages — CGI art. 199 tricies ─────────────────────────────
+  // Réduction = loyers HC × taux convention (15 / 35 / 65 %).
+  // Fenêtre = [convention_start.year, convention_end.year], par défaut 6 ans.
+  if (incentive.kind === 'loc_avantages') {
+    const conventionType = (incentive.convention_type ?? 'loc1') as LocAvantagesConvention
+    const rate = LOC_AVANTAGES_RATES[conventionType] ?? 0
+    const annualReduction = annualRentHC * rate
+
+    const startYear = incentive.convention_start
+      ? new Date(incentive.convention_start).getUTCFullYear()
+      : (incentive.start_year ?? calendarYear1)
+    const endYear = incentive.convention_end
+      ? new Date(incentive.convention_end).getUTCFullYear()
+      : startYear + 5   // fallback : 6 ans (minimum légal)
+
+    return Array.from({ length: horizonYears }, (_, i) => {
+      const calYear = calendarYear1 + i
+      return (calYear >= startYear && calYear <= endYear) ? annualReduction : 0
+    })
+  }
+
+  // ── Pinel / Pinel+ / Denormandie — CGI art. 199 novovicies ───────────
   if (
     incentive.kind !== 'pinel' &&
     incentive.kind !== 'pinel_plus' &&
@@ -52,10 +80,17 @@ export function buildIncentiveReductionPerYear(
   const duration = incentive.duration_years as PinelDuration
   const zone     = (incentive.zone ?? 'A') as PinelZone
 
-  // Loyer annuel HC pour la vérification d'éligibilité (sans vacance).
-  const annualRentHC = rent.monthlyRent * 12
-
-  // Calcule la réduction annuelle via Pinel ou Denormandie
+  // Calcule la réduction annuelle via Pinel ou Denormandie.
+  // Note : `reduction-schedule` ne valide PAS l'éligibilité loyer/surface
+  // (c'est le rôle des panels UI Pinel/Denormandie qui appellent les
+  // fonctions directement). Ici on veut UNIQUEMENT `taxReductionPerYear`
+  // qui ne dépend que du prix d'acquisition et du plafond 300 000 € /
+  // 5 500 €/m². On passe donc :
+  //   - surfaceM2 = 1000 (très large : 5500 × 1000 = 5,5 M€ > 300k cap)
+  //   - annualRentHC = 0 (court-circuite la vérification de plafond loyer)
+  // Le calcul reste correct car taxReductionPerYear = base × taux où
+  // base = min(prix, 300k, 5500 × surface).
+  const BYPASS_SURFACE = 1_000
   let annualReduction = 0
   if (incentive.kind === 'denormandie') {
     const r = computeDenormandie({
@@ -63,31 +98,28 @@ export function buildIncentiveReductionPerYear(
       zone,
       purchasePrice: property.purchasePrice,
       worksAmount:   incentive.works_amount ?? property.worksAmount ?? 0,
-      surfaceM2:     0,   // surface non requise pour le calcul de la base ici
+      surfaceM2:     BYPASS_SURFACE,
       startYear:     incentive.start_year,
-      annualRentHC,
+      annualRentHC:  0,
       tmiPct,
     })
-    // Si non éligible : on n'applique rien (sécurité — l'UI affichera la raison)
-    annualReduction = r.eligible ? r.taxReductionPerYear : 0
+    annualReduction = r.taxReductionPerYear   // pas de filtre eligible (cf. note)
   } else {
     const r = computePinel({
       isPinelPlus:   incentive.kind === 'pinel_plus' || !!incentive.is_pinel_plus,
       duration,
       zone,
       purchasePrice: property.purchasePrice,
-      surfaceM2:     0,
+      surfaceM2:     BYPASS_SURFACE,
       startYear:     incentive.start_year,
-      annualRentHC,
+      annualRentHC:  0,
       tmiPct,
     })
-    annualReduction = r.eligible ? r.taxReductionPerYear : 0
+    annualReduction = r.taxReductionPerYear
   }
 
   // Construit le tableau année par année avec la fenêtre temporelle.
-  // Année 1 simulée = année calendaire courante (UTC pour cohérence avec
-  // amortization.ts — cf. C4 Sprint 1).
-  const calendarYear1   = new Date().getUTCFullYear()
+  // Année 1 simulée = année calendaire courante (calendarYear1 défini en haut).
   const incentiveStart  = incentive.start_year
   const incentiveEnd    = incentiveStart + duration - 1
 

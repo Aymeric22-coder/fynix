@@ -256,11 +256,22 @@ export interface ProjectionYear {
   taxableBase:       number     // base imposable après imputation des déficits
   taxPaid:           number     // IS / IR + PS / SSI APRÈS application de la réduction d’impôt éventuelle
   /**
-   * Réduction d’impôt effectivement appliquée pour cette année (Pinel /
-   * Denormandie / Loc’Avantages…). Bornée à `taxPaid` pré-réduction —
-   * l’excédent est perdu (non reportable Pinel/Denormandie).
+   * Réduction d’impôt théorique de l’année (Pinel / Denormandie /
+   * Loc’Avantages), AVANT plafonnement par l’IR dû. Permet à l’UI
+   * d’afficher la décomposition "IR avant réduction / Réduction / IR net".
+   */
+  taxReductionTotal:   number
+  /**
+   * Réduction effectivement imputée sur l’IR de cette année. Bornée à
+   * `taxPaid` pré-réduction — l’excédent est perdu (non reportable
+   * Pinel/Denormandie/Loc’Avantages).
    */
   taxReductionApplied: number
+  /**
+   * Excédent de réduction perdu (`taxReductionTotal − taxReductionApplied`).
+   * > 0 signifie que l’IR était insuffisant pour absorber toute la réduction.
+   */
+  taxReductionLost:    number
   // Cash flow
   cashFlowBeforeTax: number     // (loyers nets) − charges − mensualité crédit
   cashFlowAfterTax:  number     // cashFlowBeforeTax − taxPaid

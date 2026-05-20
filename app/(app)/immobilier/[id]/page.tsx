@@ -16,6 +16,7 @@ import { IncentiveTabContent, type IncentiveRow } from '@/components/real-estate
 import { buildIncentiveReductionPerYear } from '@/lib/real-estate/fiscal/incentives/reduction-schedule'
 import { DeletePropertyButton } from '@/components/real-estate/delete-property-button'
 import { ChargesForm } from '@/components/real-estate/charges-form'
+import { TaxReductionDecomposition } from '@/components/real-estate/tax-reduction-decomposition'
 import { ActualVsSimulation } from '@/components/real-estate/actual-vs-simulation'
 import { DriftAlerts } from '@/components/real-estate/drift-alerts'
 import { RevisedForecastSection } from '@/components/real-estate/revised-forecast-section'
@@ -596,6 +597,27 @@ export default async function ImmobilierDetailPage({ params }: Props) {
             debt={dbDebt}
             profile={dbProfile}
           />
+          {/* Décomposition fiscale Y1 — si dispositif Pinel/Denormandie/LocAv actif */}
+          {simResult.projection[0] && simResult.projection[0].taxReductionTotal > 0 && (
+            <TaxReductionDecomposition
+              taxBeforeReduction={
+                simResult.projection[0].taxPaid + simResult.projection[0].taxReductionApplied
+              }
+              taxReductionTotal={simResult.projection[0].taxReductionTotal}
+              taxReductionApplied={simResult.projection[0].taxReductionApplied}
+              taxReductionLost={simResult.projection[0].taxReductionLost}
+              taxPaid={simResult.projection[0].taxPaid}
+              incentiveLabel={
+                incentiveRow?.kind === 'pinel'         ? 'Pinel' :
+                incentiveRow?.kind === 'pinel_plus'    ? 'Pinel+' :
+                incentiveRow?.kind === 'denormandie'   ? 'Denormandie' :
+                incentiveRow?.kind === 'loc_avantages' ?
+                  `Loc'Avantages ${(incentiveRow.convention_type ?? '').toUpperCase()}` :
+                undefined
+              }
+            />
+          )}
+
           {/* Distribution SCI IS — uniquement si régime sci_is */}
           {propTyped.fiscal_regime === 'sci_is' && simResult.projection[0] && (
             <SciDistribution
