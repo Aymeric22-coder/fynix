@@ -1,6 +1,7 @@
 'use client'
 
 import { PinelPanel } from './pinel-panel'
+import { DenormandiePanel } from './denormandie-panel'
 
 /**
  * Ligne `property_tax_incentives` (migration 038).
@@ -74,6 +75,22 @@ export function IncentiveTabContent({
           duration={duration}
           zone={zone}
           purchasePrice={purchasePrice}
+          surfaceM2={surfaceM2}
+          startYear={incentive.start_year ?? new Date().getFullYear()}
+          annualRentHC={annualRentHC}
+          tmiPct={tmiPct}
+        />
+      )
+    }
+    case 'denormandie': {
+      const duration = (incentive.duration_years ?? 9) as 6 | 9 | 12
+      const zone = (incentive.zone ?? 'A') as 'A_bis' | 'A' | 'B1' | 'B2' | 'C'
+      return (
+        <DenormandiePanel
+          duration={duration}
+          zone={zone}
+          purchasePrice={purchasePrice}
+          worksAmount={incentive.works_amount ?? 0}
           surfaceM2={surfaceM2}
           startYear={incentive.start_year ?? new Date().getFullYear()}
           annualRentHC={annualRentHC}
