@@ -35,6 +35,13 @@ interface UpdateBody {
    * l'historique des transactions.
    */
   record_movement?:  boolean
+  /**
+   * Date du mouvement implicite (achat / vente) lorsque la quantité change.
+   * Format accepté : ISO yyyy-MM-dd ou ISO timestamp complet.
+   * Sans effet si la quantité n'est pas modifiée OU si invalide (fallback
+   * silencieux sur la date courante avec un warn — comportement antérieur).
+   */
+  transaction_date?: string
 }
 
 export const PUT = withAuth(async (req: Request, user: User, ctx: RouteContext) => {
@@ -111,6 +118,18 @@ export const PUT = withAuth(async (req: Request, user: User, ctx: RouteContext) 
       if (lastP?.price !== undefined) lastMarketPrice = Number(lastP.price)
     }
 
+    // Date du mouvement : explicite si fournie + valide, sinon
+    // computePositionMovement met now() (comportement antérieur préservé).
+    let executedAt: Date | undefined
+    if (body.transaction_date) {
+      const parsed = new Date(body.transaction_date)
+      if (!Number.isNaN(parsed.getTime())) {
+        executedAt = parsed
+      } else {
+        console.warn('[positions PUT] transaction_date invalide, fallback now() :', body.transaction_date)
+      }
+    }
+
     const movement = computePositionMovement({
       before: {
         quantity:     Number(before.quantity),
@@ -125,6 +144,7 @@ export const PUT = withAuth(async (req: Request, user: User, ctx: RouteContext) 
         currency:     body.currency,
       },
       lastMarketPrice,
+      executedAt,
     })
 
     if (movement) {

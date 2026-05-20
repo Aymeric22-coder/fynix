@@ -52,6 +52,9 @@ const INITIAL = {
   broker:              '',
   acquisition_date:    '',
   notes:               '',
+  // Date du mouvement implicite (achat/vente) lorsqu'on edite la quantite.
+  // Vide = la route deduira la date du jour. Ignore en creation.
+  transaction_date:    '',
   // Migration 013 : cadence de valorisation. Défaut auto selon asset_class.
   valuation_frequency: 'daily' as ValuationFrequency,
 }
@@ -100,6 +103,7 @@ export function AddPositionForm({ open, onClose, envelopes, initialData }: Props
           broker:              initialData.broker,
           acquisition_date:    initialData.acquisition_date,
           notes:               initialData.notes,
+          transaction_date:    '',  // toujours vide a l'ouverture, l'utilisateur choisit
           valuation_frequency: 'daily' as ValuationFrequency,  // pas exposé en édition
         }
       : INITIAL,
@@ -133,6 +137,8 @@ export function AddPositionForm({ open, onClose, envelopes, initialData }: Props
             acquisition_date: v.acquisition_date || null,
             notes:            v.notes || null,
             manual_price:     manualPrice,  // si fourni, ajoute un nouveau prix manuel
+            // Date du mouvement implicite (E6). Vide → la route met now().
+            transaction_date: v.transaction_date || undefined,
           }
         : {
             instrument: {
@@ -423,6 +429,31 @@ export function AddPositionForm({ open, onClose, envelopes, initialData }: Props
               />
             </Field>
           </FormGrid>
+
+          {/*
+            Date du mouvement (achat / vente) — visible UNIQUEMENT en édition
+            ET uniquement quand la quantité a effectivement changé. Si vide à
+            la soumission, la route /api/portfolio/positions/[id] datera la
+            transaction du jour (comportement historique préservé).
+          */}
+          {isEdit && values.quantity !== undefined && values.quantity !== initialData?.quantity && (
+            <Field
+              label="Date du mouvement"
+              hint={
+                values.quantity > (initialData?.quantity ?? 0)
+                  ? "Date réelle de l'achat. Vide = aujourd'hui."
+                  : "Date réelle de la vente. Vide = aujourd'hui."
+              }
+            >
+              <Input
+                type="date"
+                value={values.transaction_date}
+                onChange={(e) => set('transaction_date', e.target.value)}
+                max={new Date().toISOString().slice(0, 10)}
+              />
+            </Field>
+          )}
+
           <FormGrid>
             <Field label="Enveloppe">
               <div className="space-y-1.5">
