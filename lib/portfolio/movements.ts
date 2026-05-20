@@ -62,6 +62,12 @@ export interface MovementResult {
   positionId:     string
   executedAt:     Date
   label:          string
+  /**
+   * Plus-value réalisée brute (devise transaction). Null pour un purchase.
+   * Calculée à la source : (unitPrice − oldPru) × quantity. Frais exclus
+   * (cf. migration 036 — convention fiscale FR, les fees restent dans `fees`).
+   */
+  realizedPnL:    number | null
 }
 
 /**
@@ -101,6 +107,7 @@ export function computePositionMovement(input: MovementInput): MovementResult | 
       positionId:   before.positionId,
       executedAt:   when,
       label:        `Achat complémentaire ${deltaQty} × ${formatPrice(unitPrice)} (édition position)`,
+      realizedPnL:  null,   // achat : pas de plus-value à enregistrer
     }
   }
 
@@ -118,6 +125,8 @@ export function computePositionMovement(input: MovementInput): MovementResult | 
     positionId:   before.positionId,
     executedAt:   when,
     label:        `Vente partielle ${soldQty} × ${formatPrice(unitPrice)} (édition position)`,
+    // PV brute = (prix de vente − PRU avant) × quantité vendue.
+    realizedPnL:  (unitPrice - oldPru) * soldQty,
   }
 }
 
