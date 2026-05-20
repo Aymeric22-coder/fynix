@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import {
   ArrowLeft, Wallet, TrendingUp, Activity, LineChart as LineChartIcon,
-  Receipt, Hash, Globe, Clock,
+  Receipt, Hash, Globe, Clock, Coins,
 } from 'lucide-react'
 import { createServerClient } from '@/lib/supabase/server'
 import { PageHeader } from '@/components/shared/page-header'
@@ -11,6 +11,11 @@ import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PriceHistoryChart, type PricePoint } from '@/components/portfolio/price-history-chart'
 import { AddPriceModalTrigger } from '@/components/portfolio/add-price-modal'
+import { AddDividendModal } from '@/components/portfolio/add-dividend-modal'
+import {
+  computePositionDividendMetrics,
+  type DividendTx,
+} from '@/lib/portfolio/dividends'
 import {
   formatCurrency, formatPercent, formatQuantity, formatDate,
   ASSET_CLASS_LABELS,
@@ -98,6 +103,21 @@ export default async function PositionDetailPage({ params }: Props) {
   const pnlPct    = mv !== null && cost > 0 ? ((mv - cost) / cost) * 100 : null
   const currency  = position.currency as CurrencyCode
 
+  // ── Dividendes (E3) ──────────────────────────────────────────────────
+  const dividendTxs: DividendTx[] = (txRows ?? [])
+    .filter((t) => t.transaction_type === 'dividend')
+    .map((t) => ({
+      position_id:  position.id as string,
+      amount:       Number(t.amount),
+      currency,
+      executed_at:  t.executed_at as string,
+    }))
+
+  const dividendMetrics = computePositionDividendMetrics(
+    dividendTxs,
+    { positionId: position.id as string, costBasis: cost, marketValue: mv, currency },
+  )
+
   // ── Cadence de valorisation ─────────────────────────────────────────
   const freq      = (instrument.valuation_frequency ?? 'daily') as ValuationFrequency
   const lastDate  = latestPrice?.priced_at ?? null
@@ -129,7 +149,12 @@ export default async function PositionDetailPage({ params }: Props) {
               </span>
             }
           />
-          <div className="pt-1">
+          <div className="pt-1 flex items-center gap-2">
+            <AddDividendModal
+              positionId={position.id}
+              positionName={instrument.name}
+              positionCurrency={currency}
+            />
             <AddPriceModalTrigger
               positionId={position.id}
               positionName={instrument.name}
@@ -270,6 +295,40 @@ export default async function PositionDetailPage({ params }: Props) {
           </div>
         </div>
       )}
+
+      {/* ── Dividendes (E3) ───────────────────────────────────────── */}
+      <div className="card p-5 mb-6">
+        <p className="text-xs text-secondary uppercase tracking-widest flex items-center gap-1 mb-4">
+          <Coins size={11} /> Dividendes
+          <span className="text-muted normal-case font-normal ml-2">
+            · {dividendTxs.length} versement{dividendTxs.length > 1 ? 's' : ''} enregistré{dividendTxs.length > 1 ? 's' : ''}
+          </span>
+        </p>
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+          <div>
+            <p className="text-xs text-secondary">12 mois glissants</p>
+            <p className="text-base font-semibold financial-value text-accent mt-1">
+              {formatCurrency(dividendMetrics.ttmTotal, currency, { decimals: 2 })}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-secondary">Yield on Cost</p>
+            <p className="text-base font-semibold financial-value text-primary mt-1">
+              {dividendMetrics.yieldOnCost !== null
+                ? formatPercent(dividendMetrics.yieldOnCost, { decimals: 2 })
+                : <span className="text-muted">—</span>}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-secondary">Yield on Market</p>
+            <p className="text-base font-semibold financial-value text-primary mt-1">
+              {dividendMetrics.yieldOnMarket !== null
+                ? formatPercent(dividendMetrics.yieldOnMarket, { decimals: 2 })
+                : <span className="text-muted">—</span>}
+            </p>
+          </div>
+        </div>
+      </div>
 
       {/* ── Transactions liées ────────────────────────────────────── */}
       <div className="card overflow-hidden">

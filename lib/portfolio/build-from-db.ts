@@ -23,6 +23,12 @@ import type {
   InstrumentInput, PositionInput, PriceInput, PortfolioResult, PortfolioSummary,
 } from './types'
 import { getFxRate } from '@/lib/providers/fx'
+import {
+  filterDividendsTtm,
+  aggregateDividendsForPortfolio,
+  type DividendTx,
+  type PortfolioDividendSummary,
+} from './dividends'
 
 // ─── DB row types (lecture seule, ce qu'on attend du SELECT) ────────────
 
@@ -79,6 +85,8 @@ export interface UnresolvedFxPair {
 export interface PortfolioSummaryWithFx extends PortfolioSummary {
   /** Vide si toutes les paires ont été résolues. */
   excludedForFx: UnresolvedFxPair[]
+  /** Agrégat dividendes 12 mois glissants (E3). En devise ref. */
+  dividends:     PortfolioDividendSummary
 }
 
 export interface PortfolioResultWithFx {
@@ -161,6 +169,15 @@ export async function buildPortfolioFromDb(
     }
   }
 
+  // 3.bis — Dividendes encaissés (transactions type='dividend'). E3.
+  const { data: divRows } = await supabase
+    .from('transactions')
+    .select('position_id, amount, currency, executed_at')
+    .eq('user_id', userId)
+    .eq('transaction_type', 'dividend')
+
+  const allDividends: DividendTx[] = (divRows ?? []) as DividendTx[]
+
   // 4. Mapping vers les types purs
   const positionInputs: PositionInput[] = positions.map((p) => ({
     id:              p.id,
@@ -216,6 +233,10 @@ export async function buildPortfolioFromDb(
       neededPairs.add(fxKey(pr.currency, posCcy))
     }
   }
+  // Dividendes : pairs (divCurrency → ref) pour le total TTM en devise ref.
+  for (const d of allDividends) {
+    if (d.currency !== ref) neededPairs.add(fxKey(d.currency, ref))
+  }
 
   // Résolution en parallèle. Une erreur (cache miss + API down par
   // exemple) laisse la paire absente du map → fallback 1:1 + tracking.
@@ -264,9 +285,24 @@ export async function buildPortfolioFromDb(
     }),
   )
 
+  // 8. Agrégat dividendes (E3). TTM converti en devise ref via fxConvert.
+  //    fxConvert ne retourne JAMAIS null (fallback 1:1 + tracking dans
+  //    `unresolved`), donc aucun risque de NaN sur d.amount * factor.
+  const nowForTtm = options.now ?? new Date()
+  const ttmDivs   = filterDividendsTtm(allDividends, nowForTtm)
+  let ttmTotalRef = 0
+  for (const d of ttmDivs) {
+    ttmTotalRef += d.amount * fxConvert(d.currency, ref)
+  }
+  const dividends = aggregateDividendsForPortfolio({
+    ttmTotalRef,
+    totalCostBasisRef:   result.summary.totalCostBasis,
+    totalMarketValueRef: result.summary.totalMarketValue || null,
+  })
+
   return {
     positions: result.positions,
-    summary:   { ...result.summary, excludedForFx },
+    summary:   { ...result.summary, excludedForFx, dividends },
   }
 }
 
@@ -286,6 +322,11 @@ function emptyResult(ref: CurrencyCode): PortfolioResultWithFx {
       allocationByEnvelope:  [],
       referenceCurrency:     ref,
       excludedForFx:         [],
+      dividends: {
+        ttmTotal:      0,
+        yieldOnCost:   null,
+        yieldOnMarket: null,
+      },
     },
   }
 }

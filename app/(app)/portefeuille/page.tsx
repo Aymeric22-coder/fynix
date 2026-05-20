@@ -2,7 +2,7 @@ import { Metadata } from 'next'
 import Link from 'next/link'
 import {
   Briefcase, Wallet, TrendingUp, Activity, Layers, LineChart,
-  ArrowDownRight, BarChart3, History,
+  ArrowDownRight, BarChart3, History, Coins, Percent,
 } from 'lucide-react'
 import { createServerClient }     from '@/lib/supabase/server'
 import { PageHeader }             from '@/components/shared/page-header'
@@ -250,6 +250,44 @@ export default async function PortefeuillePage({ searchParams }: Props) {
               <p className="text-xs text-secondary mt-1">{`< 24 h`}</p>
             </div>
           </div>
+
+          {/* ── KPI Dividendes (E3) — rangée affichée seulement si au moins
+              un dividende a été encaissé sur 12 mois glissants. */}
+          {fullResult.summary.dividends.ttmTotal > 0 && (
+            <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+              <div className="card p-5">
+                <p className="text-xs text-secondary uppercase tracking-widest flex items-center gap-1">
+                  <Coins size={11} /> Dividendes 12 mois
+                </p>
+                <p className="text-xl font-semibold financial-value text-accent mt-2">
+                  {formatCurrency(fullResult.summary.dividends.ttmTotal, summary.referenceCurrency, { compact: true })}
+                </p>
+                <p className="text-xs text-secondary mt-1">TTM glissant</p>
+              </div>
+              <div className="card p-5">
+                <p className="text-xs text-secondary uppercase tracking-widest flex items-center gap-1">
+                  <Percent size={11} /> Yield on Cost
+                </p>
+                <p className="text-xl font-semibold financial-value text-primary mt-2">
+                  {fullResult.summary.dividends.yieldOnCost !== null
+                    ? formatPercent(fullResult.summary.dividends.yieldOnCost, { decimals: 2 })
+                    : <span className="text-muted">—</span>}
+                </p>
+                <p className="text-xs text-secondary mt-1">sur capital investi</p>
+              </div>
+              <div className="card p-5">
+                <p className="text-xs text-secondary uppercase tracking-widest flex items-center gap-1">
+                  <Percent size={11} /> Yield on Market
+                </p>
+                <p className="text-xl font-semibold financial-value text-primary mt-2">
+                  {fullResult.summary.dividends.yieldOnMarket !== null
+                    ? formatPercent(fullResult.summary.dividends.yieldOnMarket, { decimals: 2 })
+                    : <span className="text-muted">—</span>}
+                </p>
+                <p className="text-xs text-secondary mt-1">sur valeur actuelle</p>
+              </div>
+            </div>
+          )}
 
           {/* ── Courbe d'évolution (uniquement en vue Global) ─────────────
               Les snapshots sont stockés au niveau du portefeuille global,
