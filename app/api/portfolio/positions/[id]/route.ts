@@ -164,6 +164,7 @@ export const PUT = withAuth(async (req: Request, user: User, ctx: RouteContext) 
           fees:             0,
           label:            movement.label,
           data_source:      'manual',
+          realized_pnl:     movement.realizedPnL,   // E4 — null pour purchase
         })
         .then(({ error: txErr }) => {
           if (txErr) console.warn('[positions PUT] movement tx insert failed:', txErr.message)

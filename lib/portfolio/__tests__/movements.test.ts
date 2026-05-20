@@ -120,3 +120,47 @@ describe('computePositionMovement', () => {
     expect(r?.positionId).toBe('pos-1')
   })
 })
+
+describe('computePositionMovement — realizedPnL (E4)', () => {
+  it('purchase : realizedPnL = null', () => {
+    const r = computePositionMovement({
+      before: baseBefore,
+      after:  { quantity: 150, averagePrice: 60 },
+    })
+    expect(r?.type).toBe('purchase')
+    expect(r?.realizedPnL).toBeNull()
+  })
+
+  it('sale avec lastMarketPrice > PRU : PV positive', () => {
+    // baseBefore : qty=100, pru=50. Vente de 40 unités à 70.
+    // PV = (70 − 50) × 40 = +800
+    const r = computePositionMovement({
+      before:          baseBefore,
+      after:           { quantity: 60, averagePrice: 50 },
+      lastMarketPrice: 70,
+    })
+    expect(r?.type).toBe('sale')
+    expect(r?.realizedPnL).toBeCloseTo(800, 10)
+  })
+
+  it('sale avec lastMarketPrice < PRU : PV négative (moins-value)', () => {
+    // Vente de 40 unités à 30 (PRU = 50). PV = (30 − 50) × 40 = −800
+    const r = computePositionMovement({
+      before:          baseBefore,
+      after:           { quantity: 60, averagePrice: 50 },
+      lastMarketPrice: 30,
+    })
+    expect(r?.type).toBe('sale')
+    expect(r?.realizedPnL).toBeCloseTo(-800, 10)
+  })
+
+  it('sale sans lastMarketPrice : fallback unitPrice = oldPru → PV = 0', () => {
+    // Pas de prix marché → unitPrice = oldPru → la vente est neutre par convention.
+    const r = computePositionMovement({
+      before: baseBefore,
+      after:  { quantity: 60, averagePrice: 50 },
+    })
+    expect(r?.type).toBe('sale')
+    expect(r?.realizedPnL).toBe(0)
+  })
+})
