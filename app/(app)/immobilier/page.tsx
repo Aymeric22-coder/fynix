@@ -13,6 +13,7 @@ import {
   type TypeUsageBien,
 } from '@/lib/real-estate/plusValue'
 import { computeRealEstatePortfolio }    from '@/lib/real-estate/portfolio'
+import { detectLmpStatus, sumMeubleeRevenues } from '@/lib/real-estate/fiscal/lmp-detector'
 import { formatCurrency, formatPercent, ASSET_TYPE_LABELS } from '@/lib/utils/format'
 
 export const metadata: Metadata = { title: 'Immobilier' }
@@ -44,6 +45,35 @@ export default async function ImmobilierPage() {
     `)
     .eq('user_id', user!.id)
     .order('created_at', { ascending: false })
+
+  // ── Profil : revenus pro pour détection LMP ─────────────────────────────
+  // Migration 036 : champ professional_income_eur. Fallback 0 si absent
+  // (l'utilisateur n'a pas encore renseigné son profil).
+  const { data: profileRow } = await supabase
+    .from('profiles')
+    .select('professional_income_eur')
+    .eq('id', user!.id)
+    .maybeSingle()
+  const professionalIncomeEur =
+    (profileRow?.professional_income_eur as number | null | undefined) ?? 0
+
+  // ── Détection LMNP → LMP (CGI art. 151 septies) ────────────────────────
+  const meubleeRevenues = sumMeubleeRevenues(
+    (properties ?? []).map((p) => ({
+      fiscal_regime: p.fiscal_regime,
+      // Recettes annuelles = somme des loyers des lots loués × 12.
+      annualMeubleeRevenues: (p.lots ?? [])
+        .filter((l: { status: string }) => l.status === 'rented')
+        .reduce((s: number, l: { rent_amount: number | null }) => s + (l.rent_amount ?? 0), 0) * 12,
+    })),
+  )
+  const lmpStatus = detectLmpStatus(meubleeRevenues, { professionalIncomeEur })
+  // On affiche la bannière uniquement si le statut détecté est LMP
+  // ET qu'au moins un bien est encore déclaré en LMNP (réel ou micro).
+  const hasLmnpProperty = (properties ?? []).some(
+    p => p.fiscal_regime === 'lmnp_reel' || p.fiscal_regime === 'lmnp_micro',
+  )
+  const showLmpAlert = lmpStatus.isLmp && hasLmnpProperty
 
   // ── Simulations agrégées (avec CRD analytique) ──────────────────────────
   const portfolio = await computeRealEstatePortfolio(supabase, user!.id)
@@ -104,6 +134,20 @@ export default async function ImmobilierPage() {
                 estimated
                 message={`Charges estimées sur ${estimatedCount} bien${estimatedCount > 1 ? 's' : ''} — rendement à ±10 %. Renseignez la taxe foncière, l'assurance PNO et l'entretien réels pour fiabiliser la projection.`}
               />
+            </div>
+          )}
+
+          {showLmpAlert && (
+            <div className="mb-4 card border-warning/40 bg-warning/5 p-4 flex items-start gap-3">
+              <AlertTriangle size={18} className="text-warning shrink-0 mt-0.5" />
+              <div className="text-sm flex-1">
+                <p className="font-medium text-primary">Vous devriez basculer en LMP</p>
+                <p className="text-secondary mt-1">{lmpStatus.recommendation}</p>
+                <p className="text-xs text-muted mt-2">
+                  Le statut LMP change votre fiscalité : déficit imputable sans plafond
+                  sur le revenu global, mais cotisations SSI obligatoires (~35 % du résultat).
+                </p>
+              </div>
             </div>
           )}
 

@@ -21,6 +21,13 @@ export default function ParametresForm({ profile, userEmail }: Props) {
   // U11 — null = TMI non renseigné (fallback 30 % côté calcul, badge "estimée" affiché).
   const [tmiRate,         setTmiRate]         = useState<number | null>(profile?.tmi_rate ?? null)
   const [fiscalSituation, setFiscalSituation] = useState(profile?.fiscal_situation ?? 'single')
+  // Migration 036 — revenus pro foyer (LMP detection) + parts fiscales
+  const [proIncomeEur,    setProIncomeEur]    = useState<number | ''>(
+    (profile as { professional_income_eur?: number | null } | null)?.professional_income_eur ?? '',
+  )
+  const [foyerParts,      setFoyerParts]      = useState<number | ''>(
+    (profile as { foyer_fiscal_parts?: number | null } | null)?.foyer_fiscal_parts ?? '',
+  )
   const [saving,          setSaving]          = useState(false)
   const [saved,           setSaved]           = useState(false)
 
@@ -94,6 +101,9 @@ export default function ParametresForm({ profile, userEmail }: Props) {
       // U11 — `null` accepté côté DB (colonne nullable) ; fallback 30 % côté calculs.
       tmi_rate: tmiRate,
       fiscal_situation: fiscalSituation,
+      // Migration 036 — contexte foyer pour détection LMP
+      professional_income_eur: proIncomeEur === '' ? 0 : proIncomeEur,
+      foyer_fiscal_parts:      foyerParts   === '' ? 1 : foyerParts,
     }).eq('id', (await supabase.auth.getUser()).data.user!.id)
     setSaving(false)
     setSaved(true)
@@ -174,6 +184,37 @@ export default function ParametresForm({ profile, userEmail }: Props) {
               <option key={s.value} value={s.value}>{s.label}</option>
             ))}
           </select>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className={LABEL}>
+              Revenus professionnels du foyer (€/an)
+              <span className="text-muted ml-1">(facultatif)</span>
+            </label>
+            <input
+              type="number" min={0} step={100}
+              value={proIncomeEur === '' ? '' : proIncomeEur}
+              onChange={(e) => setProIncomeEur(e.target.value === '' ? '' : Number(e.target.value))}
+              placeholder="35 000"
+              className={INPUT}
+            />
+            <p className="text-xs text-muted mt-1.5">
+              Salaires + BNC + BIC pro + pensions. Hors loyers. Sert à détecter
+              automatiquement si vous êtes LMP (recettes meublées &gt; revenus pro).
+            </p>
+          </div>
+          <div>
+            <label className={LABEL}>Parts fiscales du foyer</label>
+            <input
+              type="number" min={0.5} step={0.5}
+              value={foyerParts === '' ? '' : foyerParts}
+              onChange={(e) => setFoyerParts(e.target.value === '' ? '' : Number(e.target.value))}
+              placeholder="2"
+              className={INPUT}
+            />
+            <p className="text-xs text-muted mt-1.5">Quotient familial.</p>
+          </div>
         </div>
 
         {/* Flat tax / PFU info */}
