@@ -283,11 +283,12 @@ export default function NouveauBienPage() {
         }),
       })
       const propJson = await propRes.json()
-      if (propJson.error || !propJson.property?.id) {
-        setError(propJson.error ?? 'Erreur lors de la création du bien')
+      // L'API enveloppe ses retours via ok(): { data: {asset, property}, error: null }
+      const propertyId = propJson?.data?.property?.id as string | undefined
+      if (propJson?.error || !propertyId) {
+        setError(propJson?.error ?? 'Erreur lors de la création du bien')
         setLoading(false); return
       }
-      const propertyId = propJson.property.id
 
       // 2. Créer le crédit si saisi
       if (draft.hasLoan && draft.loan_principal && draft.loan_rate != null && draft.loan_duration) {
