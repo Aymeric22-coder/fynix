@@ -21,6 +21,7 @@ import { ActionsDuMois } from '@/components/dashboard/actions-du-mois'
 import { DashboardEmptyState } from '@/components/dashboard/empty-state'
 import { PatrimoineEvolutionChart } from '@/components/dashboard/patrimoine-evolution-chart'
 import { RealEstateAlertsPanel } from '@/components/dashboard/real-estate-alerts-panel'
+import { RealEstatePortfolioBlock } from '@/components/dashboard/real-estate-portfolio-block'
 import { genererActionsMensuelles } from '@/lib/analyse/recoMensuelles'
 import { calculerOpportunitesFiscales } from '@/lib/analyse/optimiseurFiscal'
 import {
@@ -398,44 +399,23 @@ export default async function DashboardPage() {
       {/* KPIs */}
       <KpiGrid kpis={kpis} />
 
-      {/* Récap simulation immo (si au moins un bien simulé) */}
-      {portfolio.properties.length > 0 && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {[
-            {
-              label: 'CF immo mensuel',
-              value: formatCurrency(portfolio.totalMonthlyCFYear1, 'EUR'),
-              sub:   'après impôts · simulation Y1',
-              accent: portfolio.totalMonthlyCFYear1 >= 0,
-            },
-            {
-              label: 'Capital restant dû',
-              value: formatCurrency(portfolio.totalCapitalRemaining, 'EUR', { compact: true }),
-              sub:   `${portfolio.properties.length} bien(s) financé(s)`,
-            },
-            {
-              label: 'Biens simulés',
-              value: `${portfolio.properties.filter(p => !p.simulation.incompleteData).length} / ${portfolio.properties.length}`,
-              sub:   portfolio.properties.some(p => p.simulation.incompleteData) ? 'Crédit(s) incomplet(s)' : 'Tous complets',
-            },
-            {
-              label: 'Ratio dette immo',
-              value: grossValue > 0
-                ? `${Math.round((portfolio.totalCapitalRemaining / grossValue) * 100)} %`
-                : '—',
-              sub: 'Capital restant / actifs bruts',
-            },
-          ].map((k) => (
-            <div key={k.label} className={`card p-4 ${k.accent ? 'border-accent/20' : ''}`}>
-              <p className="text-xs text-secondary uppercase tracking-wider mb-2">{k.label}</p>
-              <p className={`text-lg font-semibold financial-value ${k.accent ? 'text-accent' : 'text-primary'}`}>
-                {k.value}
-              </p>
-              <p className="text-xs text-muted mt-1">{k.sub}</p>
-            </div>
-          ))}
-        </div>
-      )}
+      {/* Bloc immobilier consolide */}
+      {portfolio.properties.length > 0 && (() => {
+        // Filtre les assets de type real_estate (le dashboard charge deja
+        // les assets actifs : on additionne current_value et acquisition_price).
+        const reAssets = assets.filter(a => a.asset_type === 'real_estate')
+        const totalCurrentValue    = reAssets.reduce((s, a) => s + (a.current_value as number | null ?? 0), 0)
+        const totalAcquisitionCost = reAssets.reduce((s, a) => s + (a.acquisition_price as number | null ?? 0), 0)
+        return (
+          <RealEstatePortfolioBlock
+            propertyCount={portfolio.properties.length}
+            totalCurrentValue={totalCurrentValue}
+            totalAcquisitionCost={totalAcquisitionCost}
+            totalCapitalRemaining={portfolio.totalCapitalRemaining}
+            totalMonthlyCashFlow={portfolio.totalMonthlyCFYear1}
+          />
+        )
+      })()}
 
       {/* Récap Portefeuille (si au moins une position) */}
       {portfolioResult.summary.positionsCount > 0 && (
