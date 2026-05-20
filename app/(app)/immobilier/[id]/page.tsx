@@ -15,6 +15,7 @@ import { SciDistribution } from '@/components/real-estate/sci-distribution'
 import { IncentiveTabContent, type IncentiveRow } from '@/components/real-estate/incentives/incentive-tab'
 import { buildIncentiveReductionPerYear } from '@/lib/real-estate/fiscal/incentives/reduction-schedule'
 import { DeletePropertyButton } from '@/components/real-estate/delete-property-button'
+import { ChargesForm } from '@/components/real-estate/charges-form'
 import { ActualVsSimulation } from '@/components/real-estate/actual-vs-simulation'
 import { DriftAlerts } from '@/components/real-estate/drift-alerts'
 import { RevisedForecastSection } from '@/components/real-estate/revised-forecast-section'
@@ -632,34 +633,14 @@ export default async function ImmobilierDetailPage({ params }: Props) {
       icon:  <Receipt size={14} />,
       content: (
         <div className="space-y-4">
-          {!charges ? (
-            <div className="card p-8 text-center text-sm text-secondary">
-              Aucune charge enregistrée pour {currentYear}.
-            </div>
-          ) : (
-            <div className="card p-6">
-              <h2 className="text-sm font-medium text-primary mb-4">
-                Charges {currentYear} · {formatCurrency(annualCharges, 'EUR')} total · {formatCurrency(annualCharges / 12, 'EUR')} / mois
-              </h2>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-                {[
-                  { label: 'Taxe foncière',     value: charges.taxe_fonciere },
-                  { label: 'Assurance PNO',     value: charges.insurance },
-                  { label: 'Expert-comptable',  value: charges.accountant },
-                  { label: 'CFE',               value: charges.cfe },
-                  { label: 'Copropriété',       value: charges.condo_fees },
-                  { label: 'Entretien',         value: charges.maintenance },
-                  { label: 'Autres',            value: charges.other },
-                ].filter((c) => c.value > 0).map((c) => (
-                  <div key={c.label} className="card p-3">
-                    <p className="text-xs text-secondary">{c.label}</p>
-                    <p className="text-sm financial-value text-primary mt-0.5">{formatCurrency(c.value, 'EUR')}</p>
-                    <p className="text-xs text-muted mt-0.5">{formatCurrency(c.value / 12, 'EUR')} / mois</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+          <ChargesForm
+            propertyId={prop.id}
+            year={currentYear}
+            monthlyRent={monthlyRents}
+            usageType={usageType}
+            fiscalRegime={propTyped.fiscal_regime}
+            initial={charges ?? null}
+          />
 
           {/* Historique multi-années */}
           {chargesAll.length > 1 && (

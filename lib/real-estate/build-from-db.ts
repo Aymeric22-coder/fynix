@@ -16,6 +16,7 @@ import type {
   RawSimulationInput,
   RentInput,
 } from './types'
+import { resolveCharges } from './charges-resolver'
 
 // ─────────────────────────────────────────────────────────────────────
 //  Types DB minimaux (sous-ensemble des Row types Supabase)
@@ -74,7 +75,8 @@ export interface DbLot {
   status?:        string | null
 }
 
-/** Sous-ensemble de `property_charges` Row (année courante) */
+/** Sous-ensemble de `property_charges` Row (année courante).
+ *  Inclut toutes les colonnes de la migration 040 (toutes optionnelles). */
 export interface DbCharges {
   taxe_fonciere: number | null
   insurance:     number | null
@@ -83,6 +85,28 @@ export interface DbCharges {
   condo_fees:    number | null
   maintenance:   number | null
   other:         number | null
+  // Migration 040 — charges exhaustives
+  taxe_habitation?:        number | null
+  taxe_logements_vacants?: number | null
+  teom?:                   number | null
+  insurance_gli_eur?:      number | null
+  insurance_gli_pct?:      number | null
+  insurance_mrh?:          number | null
+  condo_fees_works?:       number | null
+  condo_special_fund?:     number | null
+  management_agency_eur?:  number | null
+  management_agency_pct?:  number | null
+  management_airbnb_pct?:  number | null
+  management_booking_pct?: number | null
+  management_cleaning?:    number | null
+  management_concierge?:   number | null
+  maintenance_major?:      number | null
+  repairs_provision?:      number | null
+  legal_fees?:             number | null
+  diagnostics_fees?:       number | null
+  utilities_internet?:     number | null
+  utilities_electricity?:  number | null
+  utilities_water?:        number | null
 }
 
 /** Sous-ensemble de `profiles` Row pour la TMI */
@@ -184,16 +208,46 @@ export function buildSimulationInputFromDb(
   }
 
   // ─── CHARGES ────────────────────────────────────────────────────
+  // Migration 040 : on agrège les nouvelles colonnes dans `other`
+  // (fourre-tout déductible dans toutes les calculatrices fiscales).
+  // La GLI et les frais d'agence sont résolus via resolveCharges() —
+  // si saisis en % ils sont convertis à partir des loyers annuels.
+  const num = (v: number | null | undefined) => Math.max(0, v ?? 0)
+  const annualRent = monthlyRent * 12
+  const resolved = resolveCharges(charges ?? undefined, annualRent)
+
+  // Le calcul existant utilise déjà charges.insurance pour la PNO,
+  // donc on ne double-compte pas. On déduit les charges explicites de
+  // `resolved.totalAnnualEur` pour ne garder QUE les nouvelles colonnes
+  // (migration 040) à injecter dans `other`.
+  const alreadyAccountedExplicitly =
+    num(charges?.insurance) +        // PNO → champ pno
+    num(charges?.taxe_fonciere) +    // → propertyTax
+    num(charges?.cfe) +              // → cfe
+    num(charges?.accountant) +       // → accountant
+    num(charges?.condo_fees) +       // → condoFees
+    num(charges?.maintenance) +      // → maintenance
+    num(charges?.other)              // → other (déjà inclus ci-dessous)
+
+  const extraChargesFrom040 = Math.max(
+    0, resolved.totalAnnualEur - alreadyAccountedExplicitly,
+  )
+
   const chargesInput: ChargesInput = {
-    pno:               charges?.insurance     ?? 0,
-    gliPct:            property.gli_pct       ?? 0,
-    propertyTax:       charges?.taxe_fonciere ?? 0,
-    cfe:               charges?.cfe           ?? 0,
-    accountant:        charges?.accountant    ?? 0,
-    condoFees:         charges?.condo_fees    ?? 0,
+    pno:               num(charges?.insurance),
+    gliPct:            property.gli_pct ?? 0,
+    propertyTax:       num(charges?.taxe_fonciere),
+    cfe:               num(charges?.cfe),
+    accountant:        num(charges?.accountant),
+    condoFees:         num(charges?.condo_fees),
     managementPct:     property.management_pct ?? 0,
-    maintenance:       charges?.maintenance   ?? 0,
-    other:             charges?.other         ?? 0,
+    maintenance:       num(charges?.maintenance),
+    // `other` cumule l'éventuelle saisie historique + toutes les
+    // nouvelles charges (taxe_habitation, GLI résolue en €, copro
+    // travaux/ELAN, frais agence résolus, plateformes, gros travaux,
+    // legal/diagnostics, utilities) qui passent toutes en charges
+    // déductibles standard.
+    other:             num(charges?.other) + extraChargesFrom040,
     chargesIndexPct:   property.charges_index_pct ?? 2.0,
   }
 
