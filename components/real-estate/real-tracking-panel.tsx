@@ -101,41 +101,67 @@ export function RealTrackingPanel({
     }
   }
 
+  // ── Sémantique des écarts (seuil 1 % d'écart) ─────────────────
+  const RENT_DELTA      = tracking.realizedRent - tracking.expectedRentToDate
+  const CHARGES_DELTA   = tracking.exceptionalCharges  // 0 si conforme, > 0 si dépassement
+  const CF_DELTA        = tracking.cashFlowDeltaVsExpected
+  const CF_RELATIVE     = Math.abs(tracking.expectedCashFlowToDate) > 0.01
+    ? Math.abs(CF_DELTA) / Math.abs(tracking.expectedCashFlowToDate)
+    : 0
+  const CF_IS_CONFORM   = CF_RELATIVE < 0.01
+
   return (
     <div className="space-y-6">
 
-      {/* ─── KPIs ───────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <Kpi
-          icon={Banknote}
-          label="Loyers réels à date"
-          value={formatCurrency(tracking.realizedRent, 'EUR')}
-          sub={`Attendu : ${formatCurrency(tracking.expectedRentToDate, 'EUR')}`}
-          delta={tracking.realizedRent - tracking.expectedRentToDate}
-        />
-        <Kpi
-          icon={Receipt}
-          label="Charges à date"
-          value={'−' + formatCurrency(tracking.expectedChargesToDate + tracking.exceptionalCharges, 'EUR')}
-          sub={tracking.exceptionalCharges > 0
-            ? `dont ${formatCurrency(tracking.exceptionalCharges, 'EUR')} excep.`
-            : 'conforme prévision'}
-          delta={-tracking.exceptionalCharges}
-        />
-        <Kpi
-          icon={CreditCard}
-          label="Mensualités à date"
-          value={'−' + formatCurrency(tracking.loanPaymentToDate, 'EUR')}
-          sub="calculé auto"
-        />
-        <Kpi
-          icon={TrendingUp}
-          label="Cash-flow réel à date"
-          value={formatCurrency(tracking.realCashFlowToDate, 'EUR')}
-          sub={`Attendu : ${formatCurrency(tracking.expectedCashFlowToDate, 'EUR')}`}
-          delta={tracking.cashFlowDeltaVsExpected}
-          accent
-        />
+      {/* ─── BLOC 1 — Ce qui s'est passé ─────────────────────────── */}
+      <div>
+        <h2 className="text-xs text-secondary uppercase tracking-widest mb-3">
+          Ce qui s&apos;est passé en {year}
+        </h2>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+
+          {/* Loyers encaissés */}
+          <Card icon={Banknote} label="Loyers encaissés"
+            value={formatCurrency(tracking.realizedRent, 'EUR')}
+            sub={
+              Math.abs(RENT_DELTA) < 0.5
+                ? <SubLine tone="positive">✓ Conforme</SubLine>
+                : RENT_DELTA < 0
+                  ? <SubLine tone="negative">⚠ Écart : −{formatCurrency(-RENT_DELTA, 'EUR')}</SubLine>
+                  : <SubLine tone="positive">+{formatCurrency(RENT_DELTA, 'EUR')} vs prévision</SubLine>
+            }
+          />
+
+          {/* Charges payées */}
+          <Card icon={Receipt} label="Charges payées"
+            value={formatCurrency(tracking.expectedChargesToDate + tracking.exceptionalCharges, 'EUR')}
+            sub={
+              CHARGES_DELTA > 0.5
+                ? <SubLine tone="negative">⚠ Dépassement : +{formatCurrency(CHARGES_DELTA, 'EUR')}</SubLine>
+                : <SubLine tone="positive">✓ Conforme à la prévision</SubLine>
+            }
+          />
+
+          {/* Remboursements crédit */}
+          <Card icon={CreditCard} label="Remboursements crédit"
+            value={formatCurrency(tracking.loanPaymentToDate, 'EUR')}
+            sub={<SubLine tone="neutral">calculé automatiquement depuis le crédit</SubLine>}
+          />
+
+          {/* Cash-flow net */}
+          <Card icon={TrendingUp} label="Cash-flow net à ce jour"
+            valueTone={tracking.realCashFlowToDate >= 0 ? 'positive' : 'negative'}
+            value={formatCurrency(tracking.realCashFlowToDate, 'EUR', { sign: true })}
+            sub={
+              CF_IS_CONFORM
+                ? <SubLine tone="positive">✓ Conforme à la prévision</SubLine>
+                : CF_DELTA < 0
+                  ? <SubLine tone="warning">⚠ Écart : −{formatCurrency(-CF_DELTA, 'EUR')} vs prévision</SubLine>
+                  : <SubLine tone="positive">+{formatCurrency(CF_DELTA, 'EUR')} vs prévision</SubLine>
+            }
+            accent
+          />
+        </div>
       </div>
 
       {/* ─── Alertes ─────────────────────────────────────────────── */}
@@ -150,27 +176,10 @@ export function RealTrackingPanel({
         </div>
       )}
 
-      {/* ─── Projection fin d'année ─────────────────────────────── */}
-      <div className="card p-4">
-        <p className="text-xs text-secondary uppercase tracking-widest">Projection fin {year}</p>
-        <div className="flex items-baseline justify-between mt-2 flex-wrap gap-2">
-          <p className={`text-xl font-semibold financial-value ${tracking.projectedAnnualCashFlow >= 0 ? 'text-accent' : 'text-danger'}`}>
-            {formatCurrency(tracking.projectedAnnualCashFlow, 'EUR')}
-          </p>
-          <p className="text-xs text-secondary">
-            Théorique annuel : {formatCurrency(base.expectedAnnualCashFlow, 'EUR')}
-            {' · '}
-            Écart : <span className={tracking.projectedAnnualCashFlowPct >= 0 ? 'text-accent' : 'text-danger'}>
-              {formatPercent(tracking.projectedAnnualCashFlowPct, { sign: true })}
-            </span>
-          </p>
-        </div>
-      </div>
-
-      {/* ─── Journal d'événements ───────────────────────────────── */}
+      {/* ─── BLOC 2 — Journal d'événements ───────────────────────── */}
       <div className="card p-5 space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-medium text-primary">Journal des événements {year}</h3>
+          <h2 className="text-sm font-medium text-primary">Événements {year}</h2>
           <Button variant="secondary" size="sm" icon={Plus}
             onClick={() => { setEditing(null); setModalOpen(true) }}>
             Ajouter un événement
@@ -178,13 +187,16 @@ export function RealTrackingPanel({
         </div>
 
         {tracking.events.length === 0 ? (
-          <p className="text-sm text-secondary text-center py-6">
-            Aucun événement enregistré pour {year}.
-            <br />
-            <span className="text-xs text-muted">
-              Les calculs ci-dessus utilisent uniquement les données de base (loyers + charges + crédit).
-            </span>
-          </p>
+          <div className="text-center py-6 space-y-2">
+            <p className="text-sm text-secondary">
+              Aucun événement sur ce bien en {year}.
+            </p>
+            <p className="text-xs text-muted max-w-md mx-auto">
+              Enregistrez ici tout ce qui sort de l&apos;ordinaire : loyer impayé,
+              vacance entre deux locataires, charge imprévue, travaux urgents,
+              sinistre…
+            </p>
+          </div>
         ) : (
           <ul className="divide-y divide-border">
             {tracking.events.map((ev) => {
@@ -245,7 +257,40 @@ export function RealTrackingPanel({
         )}
       </div>
 
-      {/* ─── Données de base ─────────────────────────────────────── */}
+      {/* ─── BLOC 3 — Projection fin d'année ─────────────────────── */}
+      <div className="card p-5">
+        <p className="text-xs text-secondary uppercase tracking-widest mb-2">
+          Projection cash-flow annuel {year}
+        </p>
+        <div className="flex items-baseline gap-3 flex-wrap">
+          <p className={`text-2xl font-semibold financial-value ${
+            tracking.projectedAnnualCashFlow >= 0 ? 'text-accent' : 'text-danger'
+          }`}>
+            {formatCurrency(tracking.projectedAnnualCashFlow, 'EUR', { sign: true })}/an
+          </p>
+          <p className="text-sm text-secondary">
+            soit {formatCurrency(tracking.projectedAnnualCashFlow / 12, 'EUR', { sign: true })}/mois
+          </p>
+        </div>
+        <p className="text-xs mt-2">
+          <span className="text-secondary">
+            Théorique : {formatCurrency(base.expectedAnnualCashFlow, 'EUR', { sign: true })}/an
+          </span>
+          <span className="text-secondary"> · </span>
+          {Math.abs(tracking.projectedAnnualCashFlowPct) < 0.01 ? (
+            <span className="text-accent">✓ Conforme à la prévision</span>
+          ) : (
+            <>
+              <span className="text-secondary">Écart : </span>
+              <span className={tracking.projectedAnnualCashFlowPct >= 0 ? 'text-accent' : 'text-danger'}>
+                {formatPercent(tracking.projectedAnnualCashFlowPct, { sign: true })}
+              </span>
+            </>
+          )}
+        </p>
+      </div>
+
+      {/* ─── Données de base (rappel, en bas de page) ────────────── */}
       <div className="card p-5 bg-surface-2/50">
         <p className="text-xs text-secondary uppercase tracking-widest mb-3">
           Données de base (mises à jour automatiquement)
@@ -290,27 +335,44 @@ export function RealTrackingPanel({
   )
 }
 
-// ─── Helper KPI card ──────────────────────────────────────────────
-function Kpi({ icon: Icon, label, value, sub, delta, accent }: {
+// ─── Helper card KPI ──────────────────────────────────────────────
+// Note : la couleur du `value` est neutre (white/primary) sauf si
+// `valueTone` est explicitement passé (cas du cash-flow net).
+// La sémantique des écarts vit dans le sous-libellé (composant SubLine).
+function Card({ icon: Icon, label, value, valueTone, sub, accent }: {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   icon: any
   label: string
   value: string
-  sub?: string
-  delta?: number
+  valueTone?: 'positive' | 'negative' | 'neutral'
+  sub?: React.ReactNode
   accent?: boolean
 }) {
-  const deltaColor = delta == null
-    ? 'text-muted'
-    : delta < 0 ? 'text-danger' : 'text-accent'
+  const valueClass =
+    valueTone === 'positive' ? 'text-accent' :
+    valueTone === 'negative' ? 'text-danger'  :
+                                'text-primary'
   return (
     <div className={`card p-4 space-y-1.5 ${accent ? 'border-accent/30' : ''}`}>
       <div className="flex items-center gap-2 text-secondary">
         <Icon size={12} />
         <p className="text-xs uppercase tracking-widest">{label}</p>
       </div>
-      <p className="text-xl font-semibold financial-value text-primary">{value}</p>
-      {sub && <p className={`text-xs ${deltaColor}`}>{sub}</p>}
+      <p className={`text-xl font-semibold financial-value ${valueClass}`}>{value}</p>
+      {sub && <div className="text-xs">{sub}</div>}
     </div>
   )
+}
+
+// ─── Sous-libellé coloré (réutilisé dans chaque card) ────────────
+function SubLine({ tone, children }: {
+  tone: 'positive' | 'negative' | 'warning' | 'neutral'
+  children: React.ReactNode
+}) {
+  const cls =
+    tone === 'positive' ? 'text-accent' :
+    tone === 'negative' ? 'text-danger'  :
+    tone === 'warning'  ? 'text-warning' :
+                          'text-muted'
+  return <span className={cls}>{children}</span>
 }
