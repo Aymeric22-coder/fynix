@@ -25,6 +25,11 @@ export default defineConfig({
       'hooks/**/*.test.tsx',
     ],
     setupFiles: ['./vitest.setup.ts'],
+    // Timeout par test étendu à 15 s : certains tests jsdom (empty-state,
+    // quick-form) flake en pre-push à 5 s sous charge (97 fichiers en
+    // parallèle, setup jsdom long). Ils passent en isolation en < 1 s.
+    testTimeout: 15_000,
+    hookTimeout: 15_000,
   },
   resolve: {
     alias: {
