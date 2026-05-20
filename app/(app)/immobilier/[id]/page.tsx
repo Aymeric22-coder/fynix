@@ -1,6 +1,6 @@
 import { Metadata } from 'next'
 import { notFound }   from 'next/navigation'
-import { ArrowLeft, ArrowDownRight, ArrowUpRight, Home, Banknote, Receipt, TrendingUp, FileSpreadsheet, Activity, AlertTriangle } from 'lucide-react'
+import { ArrowLeft, ArrowDownRight, ArrowUpRight, Home, Banknote, Receipt, TrendingUp, FileSpreadsheet, Activity, AlertTriangle, Sparkles } from 'lucide-react'
 import Link from 'next/link'
 import { createServerClient } from '@/lib/supabase/server'
 import { PageHeader }     from '@/components/shared/page-header'
@@ -12,6 +12,7 @@ import { LotEditButton } from '@/components/pages/lot-edit-button'
 import { SimulationPanel } from '@/components/real-estate/simulation-panel'
 import { RegimeComparator } from '@/components/real-estate/regime-comparator'
 import { SciDistribution } from '@/components/real-estate/sci-distribution'
+import { IncentiveTabContent, type IncentiveRow } from '@/components/real-estate/incentives/incentive-tab'
 import { ActualVsSimulation } from '@/components/real-estate/actual-vs-simulation'
 import { DriftAlerts } from '@/components/real-estate/drift-alerts'
 import { RevisedForecastSection } from '@/components/real-estate/revised-forecast-section'
@@ -76,6 +77,14 @@ export default async function ImmobilierDetailPage({ params }: Props) {
     (propTyped.usage_type as PropertyUsageType | undefined) ?? 'long_term_rental'
   const isRental    = isRentalUsage(usageType)
   const isPrimaryRP = usageType === 'primary_residence'
+
+  // ── Dispositif fiscal (migration 038 — Pinel / Denormandie / MH / LocAv) ──
+  const { data: incentiveRow } = await supabase
+    .from('property_tax_incentives')
+    .select('*')
+    .eq('property_id', id)
+    .eq('user_id', user!.id)
+    .maybeSingle()
 
   // ── Crédits liés à cet asset (migration 034 : multi-crédit possible) ────
   // Note : on utilise select('*') plutôt que de lister les colonnes
@@ -725,6 +734,20 @@ export default async function ImmobilierDetailPage({ params }: Props) {
           )}
         </div>
       ),
+    },
+
+    // ── 7. Dispositif fiscal ────────────────────────────────────────────────
+    {
+      id:    'dispositif',
+      label: 'Dispositif fiscal',
+      icon:  <Sparkles size={14} />,
+      content: <IncentiveTabContent
+        incentive={incentiveRow as IncentiveRow | null}
+        annualRentHC={annualRents}
+        purchasePrice={prop.purchase_price ?? 0}
+        surfaceM2={prop.surface_m2 ?? 0}
+        tmiPct={dbProfile?.tmi_rate ?? 30}
+      />,
     },
 
     // CF / annualCashFlow utilisé pour les calculs internes uniquement (visible dans Synthèse)
