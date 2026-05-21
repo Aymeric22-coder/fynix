@@ -39,9 +39,14 @@ export const GET = withAuth(async (_req: Request, user: User, ctx: Ctx) => {
 
   const annualRents = monthlyRents * 12
 
+  // Garde chaque colonne : une row property_charges pré-migration 040 (ou
+  // un INSERT partiel) peut laisser des colonnes à NULL, et le moindre NULL
+  // propagerait NaN dans tous les ratios dérivés (gross_yield, net_yield…).
   const annualCharges = charges
-    ? (charges.taxe_fonciere + charges.insurance + charges.accountant +
-       charges.cfe + charges.condo_fees + charges.maintenance + charges.other)
+    ? ((charges.taxe_fonciere ?? 0) + (charges.insurance    ?? 0) +
+       (charges.accountant    ?? 0) + (charges.cfe          ?? 0) +
+       (charges.condo_fees    ?? 0) + (charges.maintenance  ?? 0) +
+       (charges.other         ?? 0))
     : 0
 
   const acquisitionCost =
