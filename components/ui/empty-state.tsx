@@ -1,7 +1,5 @@
-'use client'
-
-import { MessageCircle, type LucideIcon } from 'lucide-react'
-import { openAriaWithPrompt } from '@/lib/aria/openAria'
+import { type LucideIcon } from 'lucide-react'
+import { EmptyStateAriaButton } from './empty-state-aria-button'
 
 interface EmptyStateProps {
   icon:        LucideIcon
@@ -13,11 +11,24 @@ interface EmptyStateProps {
    * sous l'action principale. Au clic, ouvre le panel ARIA avec ce
    * prompt pré-rempli (via l'event global `firecore:aria-open`).
    *
-   * Le bouton n'est rendu que côté client (composant 'use client').
+   * Le bouton vit dans un Client Component séparé pour qu'EmptyState
+   * reste un Server Component (cf. EmptyStateAriaButton).
    */
   ariaPrompt?: string
 }
 
+/**
+ * EmptyState — Server Component.
+ *
+ * `icon` est une `LucideIcon` (forwardRef component). Comme ce
+ * composant n'est PAS 'use client', l'icône est rendue côté serveur
+ * sans serialisation à travers la frontière server/client → aucun
+ * risque d'erreur "Functions cannot be passed directly to Client
+ * Components" (digest 1715506935).
+ *
+ * Si tu veux ajouter un comportement interactif, isole-le dans un
+ * sous-composant 'use client' comme EmptyStateAriaButton.
+ */
 export function EmptyState({ icon: Icon, title, description, action, ariaPrompt }: EmptyStateProps) {
   return (
     <div className="flex flex-col items-center justify-center py-16 px-8 text-center">
@@ -27,18 +38,7 @@ export function EmptyState({ icon: Icon, title, description, action, ariaPrompt 
       <p className="text-primary font-medium mb-1">{title}</p>
       <p className="text-secondary text-sm max-w-xs">{description}</p>
       {action && <div className="mt-5">{action}</div>}
-      {ariaPrompt && (
-        <button
-          type="button"
-          onClick={() => openAriaWithPrompt(ariaPrompt)}
-          className="mt-3 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg
-                     border border-border text-sm text-secondary hover:text-primary
-                     hover:border-accent/40 hover:bg-accent/5 transition-colors"
-        >
-          <MessageCircle size={14} />
-          💬 Demander à ARIA
-        </button>
-      )}
+      {ariaPrompt && <EmptyStateAriaButton prompt={ariaPrompt} />}
     </div>
   )
 }
