@@ -18,6 +18,7 @@ import { SciDistribution } from '@/components/real-estate/sci-distribution'
 import { IncentiveTabContent, type IncentiveRow } from '@/components/real-estate/incentives/incentive-tab'
 import { buildIncentiveReductionPerYear } from '@/lib/real-estate/fiscal/incentives/reduction-schedule'
 import { DeletePropertyButton } from '@/components/real-estate/delete-property-button'
+import { ExportPdfButton } from '@/components/real-estate/export-pdf-button'
 import { ChargesForm } from '@/components/real-estate/charges-form'
 import { TaxReductionDecomposition } from '@/components/real-estate/tax-reduction-decomposition'
 import { RealTrackingPanel } from '@/components/real-estate/real-tracking-panel'
@@ -854,6 +855,10 @@ export default async function ImmobilierDetailPage({ params }: Props) {
         action={
           <div className="flex items-center gap-2">
             <ConfidenceBadge level={prop.asset?.confidence ?? 'medium'} />
+            <ExportPdfButton
+              propertyId={prop.id}
+              acquisitionDate={prop.asset?.acquisition_date ?? null}
+            />
             <Link
               href={`/immobilier/${prop.id}/edit`}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm text-secondary hover:text-primary border border-border hover:border-accent/40 rounded-lg transition-colors"
