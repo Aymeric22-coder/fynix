@@ -151,12 +151,13 @@ export function PortfolioView({ summary, cardsByPropertyId, coords = {} }: Props
           )}
         </div>
 
-        {/* Toggle vues */}
-        <div className="flex items-center border border-border rounded-md overflow-hidden self-end lg:self-auto">
-          <ViewBtn current={filters.view} value="cards"  icon={LayoutGrid} label="Cartes"    onClick={() => update('view', 'cards')} />
+        {/* Toggle vues — passe sur sa propre ligne pour eviter le clip
+            du 4eme bouton quand search + filtres saturent la largeur. */}
+        <div className="flex items-center border border-border rounded-md self-end lg:self-auto basis-full lg:basis-auto justify-end">
+          <ViewBtn current={filters.view} value="cards"  icon={LayoutGrid} label="Cartes"    first onClick={() => update('view', 'cards')} />
           <ViewBtn current={filters.view} value="table"  icon={Rows3}      label="Tableau"   onClick={() => update('view', 'table')} />
           <ViewBtn current={filters.view} value="charts" icon={BarChart3}  label="Graphiques" onClick={() => update('view', 'charts')} />
-          <ViewBtn current={filters.view} value="map"    icon={MapIcon}    label="Carte"     onClick={() => update('view', 'map')} />
+          <ViewBtn current={filters.view} value="map"    icon={MapIcon}    label="Carte"     last onClick={() => update('view', 'map')} />
         </div>
       </div>
 
@@ -251,23 +252,26 @@ function Select({ label, value, onChange, children }: {
   )
 }
 
-function ViewBtn({ current, value, icon: Icon, label, onClick }: {
+function ViewBtn({ current, value, icon: Icon, label, onClick, first, last }: {
   current: View
   value:   View
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   icon:    any
   label:   string
   onClick: () => void
+  first?:  boolean
+  last?:   boolean
 }) {
   const active = current === value
+  const radius = `${first ? 'rounded-l-md' : ''} ${last ? 'rounded-r-md' : ''}`
   return (
     <button
       onClick={onClick}
       title={label}
-      className={`px-3 py-1.5 text-xs inline-flex items-center gap-1.5 transition-colors ${active ? 'bg-accent text-bg' : 'text-secondary hover:text-primary'}`}
+      className={`px-3 py-1.5 text-xs inline-flex items-center gap-1.5 transition-colors ${radius} ${active ? 'bg-accent text-bg' : 'text-secondary hover:text-primary'}`}
     >
       <Icon size={12} />
-      <span className="hidden sm:inline">{label}</span>
+      <span>{label}</span>
     </button>
   )
 }
