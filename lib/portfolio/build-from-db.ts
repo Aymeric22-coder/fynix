@@ -77,6 +77,26 @@ export interface UnresolvedFxPair {
 }
 
 /**
+ * Agrégat des plus-values réalisées sur les 12 derniers mois (R6).
+ *
+ * Alimenté par `transactions.realized_pnl` (colonne ajoutée par la
+ * migration 039, écrite par `lib/portfolio/movements.ts` lors d'une
+ * vente). Toutes les valeurs sont en devise de référence du portefeuille.
+ *
+ * `byEnvelope` peut contenir la clé spéciale "__no_envelope__" pour
+ * regrouper les ventes de positions non rattachées à une enveloppe.
+ */
+export interface PortfolioRealizedPnlTtm {
+  /** Somme toutes enveloppes confondues, en devise ref. */
+  total:      number
+  /** Détail par enveloppe (clé = envelope_id ou `__no_envelope__`). */
+  byEnvelope: Record<string, number>
+}
+
+/** Clé utilisée dans `byEnvelope` pour les positions sans enveloppe. */
+export const NO_ENVELOPE_KEY = '__no_envelope__'
+
+/**
  * Variante du résumé enrichie des paires FX non résolues.
  *
  * Compatible structurellement avec `PortfolioSummary` (extension stricte),
@@ -84,9 +104,14 @@ export interface UnresolvedFxPair {
  */
 export interface PortfolioSummaryWithFx extends PortfolioSummary {
   /** Vide si toutes les paires ont été résolues. */
-  excludedForFx: UnresolvedFxPair[]
+  excludedForFx:  UnresolvedFxPair[]
   /** Agrégat dividendes 12 mois glissants (E3). En devise ref. */
-  dividends:     PortfolioDividendSummary
+  dividends:      PortfolioDividendSummary
+  /**
+   * Plus-values réalisées 12 mois glissants (R6). `null` si aucune vente
+   * portant un `realized_pnl` non nul sur la période.
+   */
+  realizedPnlTtm: PortfolioRealizedPnlTtm | null
 }
 
 export interface PortfolioResultWithFx {
@@ -178,6 +203,30 @@ export async function buildPortfolioFromDb(
 
   const allDividends: DividendTx[] = (divRows ?? []) as DividendTx[]
 
+  // 3.ter — Plus-values réalisées 12 mois glissants (R6). On agrège côté JS :
+  // Supabase JS n'expose pas de GROUP BY confortable, mais le volume reste
+  // faible (les ventes d'un utilisateur sur 12 mois). On joint sur positions
+  // pour récupérer l'envelope_id, et on convertit en devise ref via fxConvert
+  // (défini plus bas — l'agrégation finale est faite après la résolution FX).
+  const ttmCutoffIso = new Date(
+    (options.now ?? new Date()).getTime() - 365 * 24 * 60 * 60 * 1000,
+  ).toISOString()
+  const { data: realizedRows } = await supabase
+    .from('transactions')
+    .select('realized_pnl, currency, executed_at, position:positions!position_id(envelope_id)')
+    .eq('user_id', userId)
+    .eq('transaction_type', 'sale')
+    .not('realized_pnl', 'is', null)
+    .gte('executed_at', ttmCutoffIso)
+
+  interface RealizedRow {
+    realized_pnl: number | null
+    currency:     CurrencyCode
+    executed_at:  string
+    position:     { envelope_id: string | null } | { envelope_id: string | null }[] | null
+  }
+  const realizedSales: RealizedRow[] = (realizedRows ?? []) as RealizedRow[]
+
   // 4. Mapping vers les types purs
   const positionInputs: PositionInput[] = positions.map((p) => ({
     id:              p.id,
@@ -236,6 +285,10 @@ export async function buildPortfolioFromDb(
   // Dividendes : pairs (divCurrency → ref) pour le total TTM en devise ref.
   for (const d of allDividends) {
     if (d.currency !== ref) neededPairs.add(fxKey(d.currency, ref))
+  }
+  // Ventes TTM : conversion realized_pnl (devise position) → devise ref.
+  for (const s of realizedSales) {
+    if (s.currency !== ref) neededPairs.add(fxKey(s.currency, ref))
   }
 
   // Résolution en parallèle. Une erreur (cache miss + API down par
@@ -300,9 +353,33 @@ export async function buildPortfolioFromDb(
     totalMarketValueRef: result.summary.totalMarketValue || null,
   })
 
+  // 9. Agrégat plus-values réalisées 12 mois glissants (R6).
+  //    On convertit chaque vente en devise ref puis on agrège par enveloppe.
+  //    Le filtre `realized_pnl IS NOT NULL` est déjà côté SQL ; ici on récupère
+  //    juste le nombre et on regroupe.
+  let realizedPnlTtm: PortfolioRealizedPnlTtm | null = null
+  if (realizedSales.length > 0) {
+    const byEnvelope: Record<string, number> = {}
+    let total = 0
+    for (const s of realizedSales) {
+      // Postgres garantit non-null via le filtre `.not('realized_pnl', 'is', null)`,
+      // mais on reste défensif côté type (le client TS n'affine pas le filtre).
+      const pnl = s.realized_pnl
+      if (pnl === null) continue
+      // Supabase peut renvoyer la relation embarquée comme objet OU tableau
+      // selon la résolution du foreign key — on normalise les deux formes.
+      const posRel = Array.isArray(s.position) ? s.position[0] ?? null : s.position
+      const envelopeKey = posRel?.envelope_id ?? NO_ENVELOPE_KEY
+      const valueRef    = pnl * fxConvert(s.currency, ref)
+      byEnvelope[envelopeKey] = (byEnvelope[envelopeKey] ?? 0) + valueRef
+      total += valueRef
+    }
+    realizedPnlTtm = { total, byEnvelope }
+  }
+
   return {
     positions: result.positions,
-    summary:   { ...result.summary, excludedForFx, dividends },
+    summary:   { ...result.summary, excludedForFx, dividends, realizedPnlTtm },
   }
 }
 
@@ -327,6 +404,7 @@ function emptyResult(ref: CurrencyCode): PortfolioResultWithFx {
         yieldOnCost:   null,
         yieldOnMarket: null,
       },
+      realizedPnlTtm:        null,
     },
   }
 }

@@ -16,6 +16,7 @@ import {
 } from '@/lib/portfolio/categories'
 import { CategoryTabs }               from '@/components/portfolio/category-tabs'
 import { FxFallbackBanner }           from '@/components/portfolio/fx-fallback-banner'
+import { RealizedPnlCard }            from '@/components/portfolio/realized-pnl-card'
 import {
   formatCurrency, formatPercent, formatQuantity,
   ASSET_CLASS_LABELS,
@@ -294,6 +295,20 @@ export default async function PortefeuillePage({ searchParams }: Props) {
               </div>
             </div>
           )}
+
+          {/* ── KPI PV réalisée 12 mois (R6) — affichée seulement si au
+              moins une vente avec realized_pnl non nul sur la période.
+              Le composant gère lui-même le rendu conditionnel ; on lui
+              fournit un mapping envelope_id → label affichable. */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+            <RealizedPnlCard
+              data={fullResult.summary.realizedPnlTtm}
+              currency={summary.referenceCurrency}
+              envelopeLabels={Object.fromEntries(
+                (envelopes ?? []).map((e) => [e.id, e.name]),
+              )}
+            />
+          </div>
 
           {/* ── Courbe d'évolution (uniquement en vue Global) ─────────────
               Les snapshots sont stockés au niveau du portefeuille global,

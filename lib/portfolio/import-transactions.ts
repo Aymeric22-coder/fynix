@@ -9,7 +9,7 @@
  */
 
 import { createHash } from 'node:crypto'
-import type { NormalizedTransaction } from './csvImport'
+import { computeRunningCump, type NormalizedTransaction } from './csvImport'
 
 /** Mapping NormalizedTransaction → enum DB `transaction_type`. */
 export type DbImportTransactionType = 'purchase' | 'sale' | 'dividend'
@@ -41,6 +41,14 @@ export interface ImportTransactionRow {
   label:            string
   data_source:      string
   external_ref:     string  // sha256 hex, cf. migration 033
+  /**
+   * Plus-value réalisée (R3 + R6). Renseignée par
+   * `buildTransactionRowsForImport({ withRealizedPnl: true })` sur les
+   * lignes `transaction_type='sale'` à partir du trail D4 de
+   * `computeRunningCump`. Toujours `null` pour les achats et les
+   * dividendes (contrainte SQL chk_realized_pnl_sale_only, migration 039).
+   */
+  realized_pnl:     number | null
 }
 
 export interface ImportRowBuildContext {
@@ -74,18 +82,28 @@ export function buildImportTransactionRow(
   //   purchase (sortie de cash) → amount NÉGATIF
   //   sale     (entrée de cash) → amount POSITIF
   //   dividend (entrée de cash) → amount POSITIF
+  //
+  // R3 — pour les dividendes, on accepte un `t.amount` direct fourni
+  // par le parser quand le CSV ne décompose pas en quantity × price.
+  // À défaut on retombe sur quantity × unit_price (rétrocompatible avec
+  // les lignes dividend déjà persistées avant R3).
   let amount: number
   switch (dbType) {
     case 'purchase': amount = -(t.quantity * t.unit_price + t.fees); break
     case 'sale':     amount =  (t.quantity * t.unit_price - t.fees); break
-    case 'dividend': amount =   t.quantity * t.unit_price;            break
+    case 'dividend': amount =  (t.amount ?? t.quantity * t.unit_price); break
   }
 
   // Hash déterministe. toFixed force un format stable pour qu'un même
   // (qty, price) donne toujours le même hash quel que soit l'arrondi flottant.
+  // R3 — pour les dividendes on intègre explicitement `amount` dans le
+  // hash (en plus de quantity/price = 1/amount par convention) pour qu'un
+  // même montant donne toujours le même external_ref, même si le parser
+  // évolue dans sa façon de remplir quantity/unit_price.
   const payload = [
     ctx.userId, ctx.instrumentId, executedAt,
     t.quantity.toFixed(8), t.unit_price.toFixed(6), dbType,
+    ...(dbType === 'dividend' ? [amount.toFixed(6)] : []),
   ].join('|')
   const externalRef = createHash('sha256').update(payload).digest('hex')
 
@@ -107,20 +125,61 @@ export function buildImportTransactionRow(
     label,
     data_source:      'manual',
     external_ref:     externalRef,
+    realized_pnl:     null,
   }
 }
 
-/** Helper batch : sépare les lignes valides des transactions skippées. */
+export interface BuildRowsOptions {
+  /**
+   * Si `true`, exécute `computeRunningCump` sur le batch et reporte la
+   * plus-value réalisée sur chaque ligne `'sale'` produite. Le tri
+   * chronologique est interne à `computeRunningCump` ; la fonction
+   * conserve l'ordre d'entrée dans `rows`.
+   * Défaut : `false` (rétrocompatibilité avec les appelants existants).
+   */
+  withRealizedPnl?: boolean
+}
+
+/**
+ * Helper batch : sépare les lignes valides des transactions skippées.
+ *
+ * Si `options.withRealizedPnl` est vrai, calcule en plus la PV réalisée
+ * pour chaque vente via le trail CUMP (D4) et la propage sur
+ * `row.realized_pnl`. Sans cette option, `realized_pnl` reste `null`.
+ */
 export function buildTransactionRowsForImport(
   txs: NormalizedTransaction[],
   ctx: ImportRowBuildContext,
+  options: BuildRowsOptions = {},
 ): { rows: ImportTransactionRow[]; skipped: NormalizedTransaction[] } {
+  // R3 — pré-calcul du trail CUMP : on en extrait une map
+  // `tx référence → realizedPnl` pour ne pas avoir à apparier par date
+  // (deux transactions same-day deviendraient ambiguës par date seule).
+  // `computeRunningCump` trie en interne, on aligne sur le même tri ici.
+  let pnlByTxRef: Map<NormalizedTransaction, number> | null = null
+  if (options.withRealizedPnl) {
+    const sorted = [...txs].sort((a, b) => a.date.localeCompare(b.date))
+    const { trail } = computeRunningCump(sorted)
+    pnlByTxRef = new Map()
+    for (let i = 0; i < sorted.length; i++) {
+      const t    = sorted[i]!
+      const snap = trail[i]!
+      if (t.transaction_type === 'sell' && snap.realizedPnl !== null) {
+        pnlByTxRef.set(t, snap.realizedPnl)
+      }
+    }
+  }
+
   const rows: ImportTransactionRow[] = []
   const skipped: NormalizedTransaction[] = []
   for (const t of txs) {
     const row = buildImportTransactionRow(t, ctx)
-    if (row) rows.push(row)
-    else     skipped.push(t)
+    if (!row) { skipped.push(t); continue }
+    if (pnlByTxRef && row.transaction_type === 'sale') {
+      const pnl = pnlByTxRef.get(t)
+      if (pnl !== undefined) row.realized_pnl = pnl
+    }
+    rows.push(row)
   }
   return { rows, skipped }
 }

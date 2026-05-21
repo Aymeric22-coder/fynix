@@ -41,6 +41,8 @@ function makeSupabaseStub(data: TableData) {
       eq:     () => chain,
       in:     () => chain,
       order:  () => chain,
+      not:    () => chain,   // requête R6 (realized_pnl IS NOT NULL)
+      gte:    () => chain,   // requête R6 (executed_at >= cutoff)
       then(resolve: (v: { data: unknown[]; error: null }) => void) {
         resolve({ data: rows, error: null })
       },
