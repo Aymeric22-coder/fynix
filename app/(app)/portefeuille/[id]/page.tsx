@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import {
   ArrowLeft, Wallet, TrendingUp, Activity, LineChart as LineChartIcon,
-  Receipt, Hash, Globe, Clock,
+  Receipt, Hash, Globe, Clock, Coins,
 } from 'lucide-react'
 import { createServerClient } from '@/lib/supabase/server'
 import { PageHeader } from '@/components/shared/page-header'
@@ -11,6 +11,12 @@ import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PriceHistoryChart, type PricePoint } from '@/components/portfolio/price-history-chart'
 import { AddPriceModalTrigger } from '@/components/portfolio/add-price-modal'
+import { AddDividendModal } from '@/components/portfolio/add-dividend-modal'
+import {
+  computePositionDividendMetrics,
+  type DividendTx,
+  type DividendMetrics,
+} from '@/lib/portfolio/dividends'
 import {
   formatCurrency, formatPercent, formatQuantity, formatDate,
   ASSET_CLASS_LABELS,
@@ -26,11 +32,14 @@ type Props = { params: Promise<{ id: string }> }
 
 export default async function PositionDetailPage({ params }: Props) {
   const { id } = await params
+  console.log('[id-page] step=params id=' + id)
+
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
+  console.log('[id-page] step=user uid=' + (user?.id ?? 'null'))
 
   // ── Position + instrument + enveloppe ──────────────────────────────
-  const { data: position } = await supabase
+  const { data: position, error: posErr } = await supabase
     .from('positions')
     .select(`
       id, instrument_id, envelope_id, quantity, average_price, currency,
@@ -43,6 +52,9 @@ export default async function PositionDetailPage({ params }: Props) {
     .eq('id', id)
     .eq('user_id', user!.id)
     .single()
+
+  if (posErr) console.error('[id-page] position query error', posErr)
+  console.log('[id-page] step=position_loaded id=' + (position?.id ?? 'null') + ' has_instrument=' + !!position?.instrument)
 
   if (!position) notFound()
 
@@ -62,6 +74,7 @@ export default async function PositionDetailPage({ params }: Props) {
     : position.envelope) as EnvelopeRow | null
 
   if (!instrument) notFound()
+  console.log('[id-page] step=instrument_resolved name=' + instrument.name + ' class=' + instrument.asset_class)
 
   // ── Historique des prix de l'instrument (180 derniers points) ──────
   const { data: priceRows } = await supabase
@@ -78,15 +91,19 @@ export default async function PositionDetailPage({ params }: Props) {
   }))
 
   const latestPrice = priceHistory.length > 0 ? priceHistory[priceHistory.length - 1] : null
+  console.log('[id-page] step=price_history_loaded count=' + priceHistory.length + ' has_latest=' + !!latestPrice)
 
   // ── Transactions liées (position_id OU instrument_id) ──────────────
-  const { data: txRows } = await supabase
+  const { data: txRows, error: txErr } = await supabase
     .from('transactions')
     .select('id, transaction_type, amount, quantity, unit_price, fees, executed_at, label, notes')
     .eq('user_id', user!.id)
     .or(`position_id.eq.${position.id},instrument_id.eq.${instrument.id}`)
     .order('executed_at', { ascending: false })
     .limit(50)
+
+  if (txErr) console.error('[id-page] tx query error', txErr)
+  console.log('[id-page] step=tx_rows_loaded count=' + (txRows?.length ?? 0))
 
   // ── Calculs dérivés ──────────────────────────────────────────────────
   const qty       = Number(position.quantity)
@@ -97,12 +114,50 @@ export default async function PositionDetailPage({ params }: Props) {
   const pnl       = mv !== null ? mv - cost : null
   const pnlPct    = mv !== null && cost > 0 ? ((mv - cost) / cost) * 100 : null
   const currency  = position.currency as CurrencyCode
+  console.log('[id-page] step=derived qty=' + qty + ' pru=' + pru + ' cost=' + cost + ' mv=' + mv + ' currency=' + currency)
+
+  // ── Dividendes (E3) — isolé dans try/catch pour identifier la cause
+  // d'un crash runtime sur cette page (cf. hotfix dc2a516). En cas d'erreur,
+  // on log + on rend la page sans la section dividendes (fallback gracieux).
+  let dividendTxs: DividendTx[] = []
+  let dividendMetrics: DividendMetrics = {
+    positionId:    String(position.id),
+    ttmTotal:      0,
+    yieldOnCost:   null,
+    yieldOnMarket: null,
+  }
+  let dividendBlockError: string | null = null
+  try {
+    console.log('[id-page] step=dividend_filter_start total_tx=' + (txRows?.length ?? 0))
+    dividendTxs = (txRows ?? [])
+      .filter((t) => t.transaction_type === 'dividend')
+      .map((t, idx) => {
+        console.log('[id-page] map dividend idx=' + idx + ' amount=' + t.amount + ' executed_at=' + t.executed_at)
+        return {
+          position_id:  String(position.id),
+          amount:       Number(t.amount),
+          currency,
+          executed_at:  String(t.executed_at),
+        }
+      })
+    console.log('[id-page] step=dividend_filter_done count=' + dividendTxs.length)
+
+    dividendMetrics = computePositionDividendMetrics(
+      dividendTxs,
+      { positionId: String(position.id), costBasis: cost, marketValue: mv, currency },
+    )
+    console.log('[id-page] step=dividend_metrics_ok ttm=' + dividendMetrics.ttmTotal + ' yoc=' + dividendMetrics.yieldOnCost + ' yom=' + dividendMetrics.yieldOnMarket)
+  } catch (e) {
+    dividendBlockError = (e as Error).message
+    console.error('[id-page] DIVIDEND BLOCK FAILED:', e)
+  }
 
   // ── Cadence de valorisation ─────────────────────────────────────────
   const freq      = (instrument.valuation_frequency ?? 'daily') as ValuationFrequency
   const lastDate  = latestPrice?.priced_at ?? null
   const dueDate   = lastDate ? nextValuationDue(lastDate, freq) : null
   const status    = valuationStatus(lastDate, freq)
+  console.log('[id-page] step=before_render freq=' + freq + ' div_error=' + (dividendBlockError ?? 'none'))
 
   return (
     <div>
@@ -129,7 +184,12 @@ export default async function PositionDetailPage({ params }: Props) {
               </span>
             }
           />
-          <div className="pt-1">
+          <div className="pt-1 flex items-center gap-2">
+            <AddDividendModal
+              positionId={String(position.id)}
+              positionName={instrument.name}
+              positionCurrency={currency}
+            />
             <AddPriceModalTrigger
               positionId={position.id}
               positionName={instrument.name}
@@ -270,6 +330,46 @@ export default async function PositionDetailPage({ params }: Props) {
           </div>
         </div>
       )}
+
+      {/* ── Dividendes (E3) — section affichée tant que le bloc de calcul
+            n'a pas planté. Si dividendBlockError est non null, on affiche
+            un mini placeholder pour identifier visuellement le souci. */}
+      <div className="card p-5 mb-6">
+        <p className="text-xs text-secondary uppercase tracking-widest flex items-center gap-1 mb-4">
+          <Coins size={11} /> Dividendes
+          <span className="text-muted normal-case font-normal ml-2">
+            · {dividendTxs.length} versement{dividendTxs.length > 1 ? 's' : ''} enregistré{dividendTxs.length > 1 ? 's' : ''}
+          </span>
+        </p>
+        {dividendBlockError ? (
+          <p className="text-xs text-danger">Calcul dividendes en erreur : {dividendBlockError}</p>
+        ) : (
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+            <div>
+              <p className="text-xs text-secondary">12 mois glissants</p>
+              <p className="text-base font-semibold financial-value text-accent mt-1">
+                {formatCurrency(dividendMetrics.ttmTotal, currency, { decimals: 2 })}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-secondary">Yield on Cost</p>
+              <p className="text-base font-semibold financial-value text-primary mt-1">
+                {dividendMetrics.yieldOnCost !== null
+                  ? formatPercent(dividendMetrics.yieldOnCost, { decimals: 2 })
+                  : <span className="text-muted">—</span>}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-secondary">Yield on Market</p>
+              <p className="text-base font-semibold financial-value text-primary mt-1">
+                {dividendMetrics.yieldOnMarket !== null
+                  ? formatPercent(dividendMetrics.yieldOnMarket, { decimals: 2 })
+                  : <span className="text-muted">—</span>}
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* ── Transactions liées ────────────────────────────────────── */}
       <div className="card overflow-hidden">

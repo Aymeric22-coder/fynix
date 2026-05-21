@@ -11,7 +11,16 @@ const nextConfig: NextConfig = {
     staleTimes: { dynamic: 0, static: 30 },
   },
   // Yahoo Finance uses Node.js APIs — mark as external for Edge compatibility
-  serverExternalPackages: ['yahoo-finance2'],
+  // pdfkit aussi : il charge les fonts AFM via require runtime (fichiers .afm)
+  // qui ne sont pas tree-shake-ables. Le marquer external garantit que Vercel
+  // resout le module a partir de node_modules sans tenter de le bundle.
+  serverExternalPackages: ['yahoo-finance2', 'pdfkit'],
+
+  // Force l'inclusion des fichiers de fonts AFM de pdfkit dans le bundle
+  // Vercel (sinon le runtime serverless renvoie ENOENT sur Helvetica.afm).
+  outputFileTracingIncludes: {
+    '/api/real-estate/*/export-pdf': ['./node_modules/pdfkit/js/data/**/*'],
+  },
   // Sprint 2 — D2 : ESLint actif en build. 0 erreur, warnings restent
   // pour signal (unused vars, debug). Le build echoue sur les erreurs.
   // En-tetes HTTP : empeche les navigateurs et CDN intermediaires de cacher
