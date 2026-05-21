@@ -290,23 +290,35 @@ export default function NouveauBienPage() {
         setLoading(false); return
       }
 
+      // Le bien est créé. Les étapes 2 et 3 sont best-effort : si l'une
+      // échoue, on n'efface PAS le brouillon en silence — on redirige vers
+      // la fiche avec un ?warn=... qui détaille ce qui a raté, pour que
+      // l'utilisateur puisse compléter manuellement.
+      const warnings: string[] = []
+
       // 2. Créer le crédit si saisi
       if (draft.hasLoan && draft.loan_principal && draft.loan_rate != null && draft.loan_duration) {
-        await fetch(`/api/real-estate/${propertyId}/credit`, {
-          method:  'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name:              `Crédit ${draft.name}`,
-            lender:            draft.lender || null,
-            loan_kind:         draft.loan_kind,
-            initial_amount:    draft.loan_principal,
-            interest_rate:     draft.loan_rate,
-            insurance_rate:    draft.insurance_rate ?? 0,
-            duration_months:   draft.loan_duration,
-            start_date:        draft.loan_start_date,
-            insurance_quotite: draft.insurance_quotite ?? 100,
-          }),
-        })
+        try {
+          const creditRes = await fetch(`/api/real-estate/${propertyId}/credit`, {
+            method:  'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name:              `Crédit ${draft.name}`,
+              lender:            draft.lender || null,
+              loan_kind:         draft.loan_kind,
+              initial_amount:    draft.loan_principal,
+              interest_rate:     draft.loan_rate,
+              insurance_rate:    draft.insurance_rate ?? 0,
+              duration_months:   draft.loan_duration,
+              start_date:        draft.loan_start_date,
+              insurance_quotite: draft.insurance_quotite ?? 100,
+            }),
+          })
+          const creditJson = await creditRes.json().catch(() => null)
+          if (!creditRes.ok || creditJson?.error) warnings.push('credit')
+        } catch {
+          warnings.push('credit')
+        }
       }
 
       // 3. Créer le lot par défaut si saisi
@@ -342,15 +354,24 @@ export default function NouveauBienPage() {
           charges_amount: draft.lot_charges ?? 0,
           market_rent:    draft.lot_market_rent ?? null,
         }
-        await fetch(`/api/real-estate/${propertyId}/lots`, {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...baseLotPayload, ...shortTermPayload }),
-        })
+        try {
+          const lotRes = await fetch(`/api/real-estate/${propertyId}/lots`, {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...baseLotPayload, ...shortTermPayload }),
+          })
+          const lotJson = await lotRes.json().catch(() => null)
+          if (!lotRes.ok || lotJson?.error) warnings.push('lots')
+        } catch {
+          warnings.push('lots')
+        }
       }
 
       clearDraft()
-      router.push(`/immobilier/${propertyId}`)
+      const target = warnings.length > 0
+        ? `/immobilier/${propertyId}?warn=${warnings.join(',')}`
+        : `/immobilier/${propertyId}`
+      router.push(target)
     } catch {
       setError('Erreur réseau. Réessayez.')
       setLoading(false)
