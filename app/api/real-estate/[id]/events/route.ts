@@ -11,14 +11,18 @@
 import { createServerClient } from '@/lib/supabase/server'
 import { ok, err, withAuth, parseBody } from '@/lib/utils/api'
 import type { User } from '@supabase/supabase-js'
-import type { PropertyEventInsert, PropertyEventKind } from '@/types/database.types'
+import {
+  PROPERTY_EVENT_LABELS,
+  type PropertyEventInsert,
+  type PropertyEventKind,
+} from '@/types/database.types'
 
 type Ctx = { params: Promise<{ id: string }> }
 
-const ALLOWED_KINDS: PropertyEventKind[] = [
-  'rent_unpaid', 'vacancy', 'rent_revision', 'exceptional_charge',
-  'unplanned_works', 'insurance_claim', 'rent_paid_late', 'other',
-]
+// Source unique : les clés de PROPERTY_EVENT_LABELS sont typées
+// Record<PropertyEventKind, string>, donc exhaustives sur l'union DB
+// (synchro automatique avec le CHECK constraint des migrations 041/042).
+const ALLOWED_KINDS = Object.keys(PROPERTY_EVENT_LABELS) as PropertyEventKind[]
 
 async function assertOwner(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -22,6 +22,7 @@ import { ExportPdfButton } from '@/components/real-estate/export-pdf-button'
 import { ChargesForm } from '@/components/real-estate/charges-form'
 import { TaxReductionDecomposition } from '@/components/real-estate/tax-reduction-decomposition'
 import { RealTrackingPanel } from '@/components/real-estate/real-tracking-panel'
+import { WizardWarningBanner, type WizardWarningKind } from '@/components/real-estate/wizard-warning-banner'
 // ActualVsSimulation / DriftAlerts / RevisedForecastSection : conservés en code
 // mais désactivés dans l'UI (le nouveau RealTrackingPanel remplace tout).
 // YearEndReportPanel reste utilisé pour les bilans des années passées.
@@ -47,10 +48,23 @@ import { USAGE_TYPE_LABELS, isRentalUsage } from '@/types/database.types'
 
 export const metadata: Metadata = { title: 'Détail bien' }
 
-type Props = { params: Promise<{ id: string }> }
+type Props = {
+  params:       Promise<{ id: string }>
+  searchParams: Promise<{ warn?: string }>
+}
 
-export default async function ImmobilierDetailPage({ params }: Props) {
-  const { id } = await params
+const VALID_WIZARD_WARNINGS = ['credit', 'lots'] as const satisfies readonly WizardWarningKind[]
+
+export default async function ImmobilierDetailPage({ params, searchParams }: Props) {
+  const { id }   = await params
+  const { warn } = await searchParams
+
+  const wizardWarnings: WizardWarningKind[] = (warn ?? '')
+    .split(',')
+    .map(s => s.trim())
+    .filter((w): w is WizardWarningKind =>
+      (VALID_WIZARD_WARNINGS as readonly string[]).includes(w),
+    )
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
 
@@ -875,6 +889,10 @@ export default async function ImmobilierDetailPage({ params }: Props) {
           </div>
         }
       />
+
+      {wizardWarnings.length > 0 && (
+        <WizardWarningBanner warnings={wizardWarnings} />
+      )}
 
       {fiscalRegimeMissing && (
         <div className="card border-warning/40 bg-warning/5 p-4 flex items-start gap-3">
