@@ -720,7 +720,7 @@ export default async function ImmobilierDetailPage({ params, searchParams }: Pro
                 // Cash après IS pour Y1 (basé sur la projection)
                 simResult.projection[0].cashFlowAfterTax + simResult.projection[0].principalRepaid
               }
-              ccaAmount={(propTyped as unknown as { cca_amount?: number | null }).cca_amount ?? 0}
+              ccaAmount={propTyped.cca_amount ?? 0}
               tmiPct={dbProfile?.tmi_rate ?? 30}
             />
           )}

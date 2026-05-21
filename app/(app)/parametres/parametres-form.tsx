@@ -23,10 +23,10 @@ export default function ParametresForm({ profile, userEmail }: Props) {
   const [fiscalSituation, setFiscalSituation] = useState(profile?.fiscal_situation ?? 'single')
   // Migration 036 — revenus pro foyer (LMP detection) + parts fiscales
   const [proIncomeEur,    setProIncomeEur]    = useState<number | ''>(
-    (profile as { professional_income_eur?: number | null } | null)?.professional_income_eur ?? '',
+    profile?.professional_income_eur ?? '',
   )
   const [foyerParts,      setFoyerParts]      = useState<number | ''>(
-    (profile as { foyer_fiscal_parts?: number | null } | null)?.foyer_fiscal_parts ?? '',
+    profile?.foyer_fiscal_parts ?? '',
   )
   const [saving,          setSaving]          = useState(false)
   const [saved,           setSaved]           = useState(false)

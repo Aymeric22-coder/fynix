@@ -30,7 +30,10 @@ import {
   groupTransactionsByKey,
   type BrokerFormat, type AggregatedPosition, type AssetClassNormalized,
 } from '@/lib/portfolio/csvImport'
-import { buildTransactionRowsForImport } from '@/lib/portfolio/import-transactions'
+import {
+  buildTransactionRowsForImport,
+  buildImportTransactionRow,
+} from '@/lib/portfolio/import-transactions'
 import { enrichISIN } from '@/lib/analyse/isinEnricher'
 import { cleanInstrumentName } from '@/lib/portfolio/cleanInstrumentName'
 import { ImportCsvBodySchema, formatZodErrors } from '@/lib/portfolio/importSchema'
@@ -48,6 +51,10 @@ interface ImportSummary {
   transactions_inserted: number
   /** Nb de NormalizedTransaction skippées (type non mappable vers la DB). */
   transactions_skipped:  number
+  /** R3 — Dividendes orphelins (sans buy/sell dans le CSV) effectivement insérés. */
+  dividends_inserted:    number
+  /** R3 — Dividendes orphelins ignorés (aucune position correspondante chez l'utilisateur). */
+  dividends_skipped:     number
   errors:                Array<{ row?: number; isin?: string; reason: string }>
   preview:               AggregatedPosition[]
 }
@@ -196,6 +203,8 @@ export const POST = withAuth(async (req: Request, user: User) => {
     positions_skipped:      0,
     transactions_inserted:  0,
     transactions_skipped:   0,
+    dividends_inserted:     0,
+    dividends_skipped:      0,
     errors:                 [...parsed.errors.map((e) => ({ row: e.line, reason: e.reason }))],
     preview:                positions,
   }
@@ -405,11 +414,18 @@ export const POST = withAuth(async (req: Request, user: User) => {
         try {
           const key      = (pos.isin ?? pos.ticker ?? pos.name).toUpperCase()
           const groupTxs = txGroupsForInsert.get(key) ?? []
-          const { rows, skipped } = buildTransactionRowsForImport(groupTxs, {
-            userId:       user.id,
-            positionId:   resolvedPositionId,
-            instrumentId: instrument.id,
-          })
+          // R3 — `withRealizedPnl: true` propage la PV réalisée des ventes
+          // sur les lignes `sale` via le trail D4 de `computeRunningCump`.
+          // Résout C30 (les ventes CSV n'alimentaient pas realized_pnl).
+          const { rows, skipped } = buildTransactionRowsForImport(
+            groupTxs,
+            {
+              userId:       user.id,
+              positionId:   resolvedPositionId,
+              instrumentId: instrument.id,
+            },
+            { withRealizedPnl: true },
+          )
 
           if (skipped.length > 0) {
             console.warn(
@@ -439,6 +455,107 @@ export const POST = withAuth(async (req: Request, user: User) => {
       }
     } catch (e) {
       summary.errors.push({ isin: pos.isin ?? undefined, reason: (e as Error).message })
+    }
+  }
+
+  // ── 3.5) R3 — Dividendes orphelins
+  //         Les dividendes du CSV dont l'ISIN n'a pas de buy/sell associé
+  //         ne sont pas traités par le loop principal (aggregateToPositions
+  //         les filtre, donc aucune `pos` n'est créée pour eux). On les
+  //         attache à une position existante chez l'utilisateur via ISIN,
+  //         et on insère via upsert idempotent. Pour les dividendes déjà
+  //         insérés dans le loop principal, l'index unique
+  //         (user_id, external_ref) garantit le no-op.
+  {
+    const excluded = new Set(excludedKeys.map((k) => k.toUpperCase()))
+    const dividendCsvTxs = parsed.transactions.filter((t) => {
+      if (t.transaction_type !== 'dividend') return false
+      const key = (t.isin ?? t.ticker ?? t.name).toUpperCase()
+      return !excluded.has(key)
+    })
+
+    if (dividendCsvTxs.length > 0) {
+      // Résout les ISIN dividendes qui n'ont pas encore d'entrée dans
+      // `instrumentByIsin` (= ISIN sans buy/sell dans ce CSV).
+      const isinsToFetch = Array.from(
+        new Set(
+          dividendCsvTxs
+            .map((d) => d.isin)
+            .filter((i): i is string => !!i && !instrumentByIsin.has(i)),
+        ),
+      )
+
+      if (isinsToFetch.length > 0) {
+        const { data: instData } = await supabase
+          .from('instruments')
+          .select('id, isin, asset_class')
+          .in('isin', isinsToFetch)
+        for (const inst of instData ?? []) {
+          if (inst.isin) {
+            instrumentByIsin.set(inst.isin as string, {
+              id:          inst.id as string,
+              asset_class: inst.asset_class as AssetClass,
+            })
+          }
+        }
+        // Position de l'utilisateur sur ces instruments
+        const newInstIds = (instData ?? []).map((i) => i.id as string)
+        if (newInstIds.length > 0) {
+          const { data: posData } = await supabase
+            .from('positions')
+            .select('id, instrument_id, quantity, average_price')
+            .eq('user_id', user.id)
+            .in('instrument_id', newInstIds)
+          for (const p of posData ?? []) {
+            if (!existingByInstrumentId.has(p.instrument_id as string)) {
+              existingByInstrumentId.set(p.instrument_id as string, {
+                id:            p.id as string,
+                quantity:      Number(p.quantity),
+                average_price: Number(p.average_price),
+              })
+            }
+          }
+        }
+      }
+
+      // Build les rows insérables et compte les skipped
+      const dividendRows = []
+      for (const d of dividendCsvTxs) {
+        if (!d.isin) {
+          summary.dividends_skipped++
+          continue
+        }
+        const instrument = instrumentByIsin.get(d.isin)
+        const position   = instrument ? existingByInstrumentId.get(instrument.id) : undefined
+        if (!instrument || !position) {
+          summary.dividends_skipped++
+          continue
+        }
+        const row = buildImportTransactionRow(d, {
+          userId:       user.id,
+          positionId:   position.id,
+          instrumentId: instrument.id,
+        })
+        if (row) dividendRows.push(row)
+      }
+
+      if (dividendRows.length > 0) {
+        const { data: insertedDivs, error: divErr } = await supabase
+          .from('transactions')
+          .upsert(dividendRows, {
+            onConflict:       'user_id,external_ref',
+            ignoreDuplicates: true,
+          })
+          .select('id')
+        if (divErr) {
+          console.warn('[import] orphan dividends insert failed:', divErr.message)
+        } else {
+          // .select('id') sur upsert ignoreDuplicates ne renvoie QUE les
+          // lignes effectivement insérées — pas les conflicts no-op. Le
+          // compteur reflète donc les vraies insertions.
+          summary.dividends_inserted = insertedDivs?.length ?? 0
+        }
+      }
     }
   }
 

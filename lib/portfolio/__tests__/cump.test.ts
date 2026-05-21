@@ -104,3 +104,67 @@ describe('computeRunningCump — CUMP roulant', () => {
     expect(r.finalPru).toBe(100)
   })
 })
+
+describe('computeRunningCump — trail (D4)', () => {
+  it('buy puis sell partiel : trail[1].realizedPnl = (sellPrice − pruAvantVente) × soldQty', () => {
+    const r = computeRunningCump([
+      tx({ date: '2024-01-01', transaction_type: 'buy',  quantity: 10, unit_price: 100 }),
+      tx({ date: '2024-06-01', transaction_type: 'sell', quantity:  4, unit_price: 150 }),
+    ])
+    expect(r.trail).toHaveLength(2)
+    expect(r.trail[0]!.txType).toBe('buy')
+    expect(r.trail[0]!.qty).toBe(10)
+    expect(r.trail[0]!.pru).toBeCloseTo(100, 10)
+    expect(r.trail[0]!.realizedPnl).toBeNull()
+    expect(r.trail[1]!.txType).toBe('sell')
+    expect(r.trail[1]!.qty).toBe(6)
+    expect(r.trail[1]!.pru).toBeCloseTo(100, 10)         // PRU inchangé sur vente partielle
+    expect(r.trail[1]!.realizedPnl).toBeCloseTo(200, 10) // (150 − 100) × 4
+  })
+
+  it('sell total (retour à zéro) : qty=0, pru=0, realizedPnl capture la PV avant purge', () => {
+    const r = computeRunningCump([
+      tx({ date: '2024-01-01', transaction_type: 'buy',  quantity: 10, unit_price: 100 }),
+      tx({ date: '2024-06-01', transaction_type: 'sell', quantity: 10, unit_price: 150 }),
+    ])
+    const last = r.trail[r.trail.length - 1]!
+    expect(last.qty).toBe(0)
+    expect(last.pru).toBe(0)
+    expect(last.realizedPnl).toBeCloseTo(500, 10) // (150 − 100) × 10
+  })
+
+  it('sur-vente : soldQty clampé à la quantité détenue, pas de PV fantôme', () => {
+    const r = computeRunningCump([
+      tx({ date: '2024-01-01', transaction_type: 'buy',  quantity:  5, unit_price: 100 }),
+      tx({ date: '2024-06-01', transaction_type: 'sell', quantity: 10, unit_price: 150 }),
+    ])
+    expect(r.trail[1]!.qty).toBe(0)
+    expect(r.trail[1]!.pru).toBe(0)
+    expect(r.trail[1]!.realizedPnl).toBeCloseTo(250, 10) // (150 − 100) × 5 (et non × 10)
+  })
+
+  it('dividend : snapshot émis sans realizedPnl, qty/pru inchangés', () => {
+    const r = computeRunningCump([
+      tx({ date: '2024-01-01', transaction_type: 'buy',      quantity: 10, unit_price: 100 }),
+      tx({ date: '2024-06-01', transaction_type: 'dividend', quantity:  1, unit_price:   5 }),
+    ])
+    expect(r.trail).toHaveLength(2)
+    expect(r.trail[1]!.txType).toBe('dividend')
+    expect(r.trail[1]!.qty).toBe(10)        // inchangé
+    expect(r.trail[1]!.pru).toBeCloseTo(100, 10) // inchangé
+    expect(r.trail[1]!.realizedPnl).toBeNull()
+  })
+
+  it('rachat après vente totale : trail aligné chronologiquement, PV capturée puis nouveau cycle', () => {
+    const r = computeRunningCump([
+      tx({ date: '2024-01-01', transaction_type: 'buy',  quantity: 10, unit_price: 100 }),
+      tx({ date: '2024-06-01', transaction_type: 'sell', quantity: 10, unit_price: 150 }),
+      tx({ date: '2024-09-01', transaction_type: 'buy',  quantity:  5, unit_price:  80 }),
+    ])
+    expect(r.trail).toHaveLength(3)
+    expect(r.trail[1]!.realizedPnl).toBeCloseTo(500, 10) // PV capturée avant la purge
+    expect(r.trail[2]!.qty).toBe(5)
+    expect(r.trail[2]!.pru).toBeCloseTo(80, 10) // nouveau cycle, base propre
+    expect(r.trail[2]!.realizedPnl).toBeNull()
+  })
+})

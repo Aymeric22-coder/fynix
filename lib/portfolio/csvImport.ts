@@ -42,13 +42,20 @@ export interface NormalizedTransaction {
   asset_class:      AssetClassNormalized
   transaction_type: 'buy' | 'sell' | 'dividend'
   date:             string         // YYYY-MM-DD
-  quantity:         number         // > 0
+  quantity:         number         // > 0 (pour buy/sell ; 0 ou 1 toléré pour dividend)
   unit_price:       number         // ≥ 0
   currency:         string         // 'EUR', 'USD', ...
   fees:             number         // ≥ 0
   broker:           BrokerFormat
   confidence:       'high' | 'low'
   raw_row:          Record<string, string>
+  /**
+   * Montant brut encaissé (R3). Renseigné uniquement pour les dividendes
+   * et intérêts quand le CSV fournit un montant total sans détail
+   * `quantity × unit_price`. Si absent, `buildImportTransactionRow`
+   * retombe sur `quantity × unit_price` pour rester rétrocompatible.
+   */
+  amount?:          number
 }
 
 export interface AggregatedPosition {
@@ -335,6 +342,10 @@ export function parseTradeRepublic(headers: string[], rows: string[][]): Normali
   const cPrice      = findCol(headers, 'price')
   const cFee        = findCol(headers, 'fee')
   const cCurrency   = findCol(headers, 'currency')
+  // R3 — colonnes utilisées pour les dividendes / intérêts. TR fournit
+  // tantôt un total via `value`, tantôt un détail (shares × price). On
+  // accepte les deux formes.
+  const cAmount     = findCol(headers, 'amount', 'value', 'total')
 
   const out: NormalizedTransaction[] = []
 
@@ -347,6 +358,12 @@ export function parseTradeRepublic(headers: string[], rows: string[][]): Normali
     else if (category === 'TRADING' && type === 'SELL')                                  txType = 'sell'
     else if (category === 'DELIVERY' && type === 'FREE_RECEIPT'  && (row[cPrice] ?? '')) txType = 'buy'
     else if (category === 'DELIVERY' && type === 'FREE_DELIVERY')                        txType = 'sell'
+    // R3 — Dividendes et intérêts. TR utilise plusieurs combinaisons
+    // selon les exports : on en couvre les plus fréquentes.
+    else if (category === 'DIVIDEND')                                                    txType = 'dividend'
+    else if (category === 'INTEREST_PAYMENT' || type === 'INTEREST_PAYMENT')             txType = 'dividend'
+    else if (category === 'BENEFITS' && type === 'DIVIDEND')                             txType = 'dividend'
+    else if (type === 'DIVIDEND')                                                        txType = 'dividend'
     // Tout le reste (cartes, virements, frais...) est ignoré silencieusement.
     if (!txType) continue
 
@@ -355,6 +372,42 @@ export function parseTradeRepublic(headers: string[], rows: string[][]): Normali
     const shares     = parseNumberLoose(row[cShares])
     const priceRaw   = parseNumberLoose(row[cPrice])
     const feeRaw     = parseNumberLoose(row[cFee])
+    const amountRaw  = cAmount >= 0 ? parseNumberLoose(row[cAmount]) : NaN
+
+    if (txType === 'dividend') {
+      // Pour un dividende on accepte soit `amount` direct, soit
+      // shares × price. On a besoin d'au moins l'un des deux.
+      const hasAmount       = Number.isFinite(amountRaw) && amountRaw !== 0
+      const hasSharesXPrice =
+        Number.isFinite(shares) && Number.isFinite(priceRaw) && shares !== 0 && priceRaw !== 0
+      if (!hasAmount && !hasSharesXPrice) continue
+
+      const amount = hasAmount
+        ? Math.abs(amountRaw)
+        : Math.abs(shares * priceRaw)
+
+      out.push({
+        isin,
+        ticker:           symbol || null,
+        name:             (row[cName] ?? symbol).trim() || symbol || 'Trade Republic position',
+        asset_class:      mapAssetClass(row[cAssetClass]),
+        transaction_type: 'dividend',
+        date:             parseDateLoose(row[cDate]) ?? new Date().toISOString().slice(0, 10),
+        // Aucune notion de quantité/prix pour un dividende — on stocke
+        // (1, amount) pour que les helpers existants restent corrects et
+        // pour que `external_ref` reste déterministe.
+        quantity:         1,
+        unit_price:       amount,
+        currency:         ((row[cCurrency] ?? 'EUR').trim().toUpperCase() || 'EUR'),
+        fees:             0,
+        broker:           'trade_republic',
+        confidence:       isin ? 'high' : 'low',
+        raw_row:          rowToObject(headers, row),
+        amount,
+      })
+      continue
+    }
+
     if (!Number.isFinite(shares) || shares === 0)        continue
     if (!Number.isFinite(priceRaw))                      continue
 
@@ -449,10 +502,34 @@ export function parseBoursorama(headers: string[], rows: string[][]): Normalized
     if (!Number.isFinite(price) || price < 0)   continue
 
     const label = (row[cLabel] ?? '').toLowerCase()
-    // Heuristique : "vente" / "achat" dans le libellé. Sinon basé sur signe qty.
+    // Heuristique : "vente" / "achat" / "dividende" dans le libellé.
+    // Sinon basé sur signe qty.
     let txType: NormalizedTransaction['transaction_type'] = qty >= 0 ? 'buy' : 'sell'
     if (/\bvente\b|\bsell\b/.test(label)) txType = 'sell'
     else if (/\bachat\b|\bbuy\b/.test(label)) txType = 'buy'
+    else if (/dividende|coupon|int[ée]r[êe]t/.test(label)) txType = 'dividend'
+
+    if (txType === 'dividend') {
+      const amount = Math.abs(qty * price)
+      if (amount === 0) continue
+      out.push({
+        isin,
+        ticker:           null,
+        name:             (row[cLabel] ?? isin).trim() || isin,
+        asset_class:      'stock',
+        transaction_type: 'dividend',
+        date:             parseDateLoose(row[cDate]) ?? new Date().toISOString().slice(0, 10),
+        quantity:         1,
+        unit_price:       amount,
+        currency:         ((row[cCurrency] ?? 'EUR').trim().toUpperCase() || 'EUR'),
+        fees:             0,
+        broker:           'boursorama',
+        confidence:       'high',
+        raw_row:          rowToObject(headers, row),
+        amount,
+      })
+      continue
+    }
 
     out.push({
       isin,
@@ -538,8 +615,32 @@ export function parseFortuneo(headers: string[], rows: string[][]): NormalizedTr
     if (!Number.isFinite(qty) || qty === 0) continue
     if (!Number.isFinite(price)) continue
     const nature = (row[cNature] ?? '').toLowerCase()
-    const txType: NormalizedTransaction['transaction_type'] =
+    let txType: NormalizedTransaction['transaction_type'] =
       /vente|sell/.test(nature) ? 'sell' : 'buy'
+    if (/dividende|coupon|int[ée]r[êe]t/.test(nature)) txType = 'dividend'
+
+    if (txType === 'dividend') {
+      const amount = Math.abs(qty * price)
+      if (amount === 0) continue
+      out.push({
+        isin,
+        ticker:           null,
+        name:             (row[cNature] ?? isin).trim() || isin,
+        asset_class:      'stock',
+        transaction_type: 'dividend',
+        date:             parseDateLoose(row[cDate]) ?? new Date().toISOString().slice(0, 10),
+        quantity:         1,
+        unit_price:       amount,
+        currency:         ((row[cCurrency] ?? 'EUR').trim().toUpperCase() || 'EUR'),
+        fees:             0,
+        broker:           'fortuneo',
+        confidence:       'high',
+        raw_row:          rowToObject(headers, row),
+        amount,
+      })
+      continue
+    }
+
     out.push({
       isin,
       ticker:           null,
@@ -579,8 +680,32 @@ export function parseLinxeaAV(headers: string[], rows: string[][]): NormalizedTr
     if (!Number.isFinite(vl)) continue
     const isin = cIsin >= 0 && looksLikeISIN(row[cIsin]) ? (row[cIsin] ?? '').toUpperCase() : null
     const nature = (row[cMouv] ?? '').toLowerCase()
-    const txType: NormalizedTransaction['transaction_type'] =
+    let txType: NormalizedTransaction['transaction_type'] =
       /(rachat|vente|arbitrage sortant)/.test(nature) ? 'sell' : 'buy'
+    if (/dividende|coupon|int[ée]r[êe]t/.test(nature)) txType = 'dividend'
+
+    if (txType === 'dividend') {
+      const amount = Math.abs(qty * vl)
+      if (amount === 0) continue
+      out.push({
+        isin,
+        ticker:           null,
+        name:             (row[cSupport] ?? isin ?? 'Support AV').trim() || 'Support AV',
+        asset_class:      'etf',
+        transaction_type: 'dividend',
+        date:             parseDateLoose(row[cDate]) ?? new Date().toISOString().slice(0, 10),
+        quantity:         1,
+        unit_price:       amount,
+        currency:         'EUR',
+        fees:             0,
+        broker:           'linxea_av',
+        confidence:       isin ? 'high' : 'low',
+        raw_row:          rowToObject(headers, row),
+        amount,
+      })
+      continue
+    }
+
     out.push({
       isin,
       ticker:           null,
@@ -624,8 +749,32 @@ export function parseCreditAgricole(headers: string[], rows: string[][]): Normal
     if (!Number.isFinite(qty) || qty === 0)        continue
     if (!Number.isFinite(price))                   continue
     const label = (row[cLabel] ?? '').toLowerCase()
-    const txType: NormalizedTransaction['transaction_type'] =
+    let txType: NormalizedTransaction['transaction_type'] =
       /vente|sell/.test(label) ? 'sell' : 'buy'
+    if (/dividende|coupon|int[ée]r[êe]t/.test(label)) txType = 'dividend'
+
+    if (txType === 'dividend') {
+      const amount = Math.abs(qty * price)
+      if (amount === 0) continue
+      out.push({
+        isin,
+        ticker:           null,
+        name:             (row[cLabel] ?? isin).trim() || isin,
+        asset_class:      'stock',
+        transaction_type: 'dividend',
+        date:             parseDateLoose(row[cDate]) ?? new Date().toISOString().slice(0, 10),
+        quantity:         1,
+        unit_price:       amount,
+        currency:         ((row[cCurrency] ?? 'EUR').trim().toUpperCase() || 'EUR'),
+        fees:             0,
+        broker:           'credit_agricole',
+        confidence:       'low',
+        raw_row:          rowToObject(headers, row),
+        amount,
+      })
+      continue
+    }
+
     out.push({
       isin,
       ticker:           null,
@@ -677,8 +826,32 @@ export function parseGeneric(headers: string[], rows: string[][]): NormalizedTra
     if (!Number.isFinite(qty) || qty === 0)   continue
     if (!Number.isFinite(price) || price < 0) continue
     const t = cType >= 0 ? (row[cType] ?? '').toLowerCase() : ''
-    const txType: NormalizedTransaction['transaction_type'] =
+    let txType: NormalizedTransaction['transaction_type'] =
       /vente|sell/.test(t) ? 'sell' : 'buy'
+    if (/dividende|dividend|coupon|int[ée]r[êe]t|interest/.test(t)) txType = 'dividend'
+
+    if (txType === 'dividend') {
+      const amount = Math.abs(qty * price)
+      if (amount === 0) continue
+      out.push({
+        isin,
+        ticker:           null,
+        name:             cName >= 0 ? (row[cName] ?? isin).trim() || isin : isin,
+        asset_class:      'stock',
+        transaction_type: 'dividend',
+        date:             cDate >= 0 ? (parseDateLoose(row[cDate]) ?? new Date().toISOString().slice(0, 10)) : new Date().toISOString().slice(0, 10),
+        quantity:         1,
+        unit_price:       amount,
+        currency:         cCurrency >= 0 ? ((row[cCurrency] ?? 'EUR').trim().toUpperCase() || 'EUR') : 'EUR',
+        fees:             0,
+        broker:           'generic',
+        confidence:       'low',
+        raw_row:          rowToObject(headers, row),
+        amount,
+      })
+      continue
+    }
+
     out.push({
       isin,
       ticker:           null,
@@ -745,28 +918,72 @@ export function parseBrokerCsv(csv: string, hint?: BrokerFormat): ParseResult {
 // ─────────────────────────────────────────────────────────────────────
 
 /**
- * Calcule la quantité résiduelle et le PRU selon la méthode CUMP.
+ * Snapshot d'une transaction dans le déroulé chronologique du CUMP.
+ *
+ * Permet aux consommateurs (notamment la persistance d'imports CSV)
+ * de récupérer le PRU **au moment exact d'une vente** pour calculer
+ * la plus-value réalisée. La position dans le tableau `trail` reflète
+ * l'ordre chronologique strict après tri ; l'appelant peut itérer en
+ * parallèle sur les transactions triées et le trail pour les apparier.
+ */
+export interface CumpSnapshot {
+  /** Date de la transaction (YYYY-MM-DD). */
+  date:        string
+  /** Type de la transaction d'origine. */
+  txType:      NormalizedTransaction['transaction_type']
+  /** Quantité APRÈS application de la transaction. */
+  qty:         number
+  /** PRU APRÈS application de la transaction (inchangé sur vente partielle, remis à 0 sur retour à zéro). */
+  pru:         number
+  /**
+   * Plus-value réalisée par cette transaction, en devise de la transaction.
+   *   - buy / dividend : null (aucune PV réalisée)
+   *   - sell : (unit_price − pru_avant) × soldQty
+   *     où soldQty est clampé à la quantité réellement détenue avant la vente
+   *     (un sur-vente CSV ne génère pas de PV fantôme sur des titres absents).
+   *     Inclut le cas "retour à zéro" : pru passe à 0 *après* avoir capturé la PV.
+   */
+  realizedPnl: number | null
+}
+
+export interface CumpResult {
+  finalQty: number
+  finalPru: number
+  /** Une entrée par transaction d'entrée, dans l'ordre chronologique trié. */
+  trail:    CumpSnapshot[]
+}
+
+/**
+ * Calcule la quantité résiduelle et le PRU selon la méthode CUMP, et
+ * renvoie en plus un `trail` des états (qty, pru, realizedPnl) après
+ * chaque transaction.
  *
  * Règles :
  *   - achat : PRU recalculé en pondération roulante, frais intégrés au
- *             coût d'acquisition (numérateur).
- *   - vente : quantité diminue, PRU INCHANGÉ. Si la position retombe à
- *             zéro, le PRU est remis à 0 — un éventuel rachat repart
- *             d'une base propre.
- *   - autres (dividend, etc.) : ignorés.
+ *             coût d'acquisition (numérateur). `realizedPnl = null`.
+ *   - vente : quantité diminue, PRU INCHANGÉ. `realizedPnl =
+ *             (unit_price − pru_avant) × soldQty`. Si la position retombe
+ *             à zéro, le PRU est remis à 0 *après* capture de la PV — un
+ *             éventuel rachat repart d'une base propre.
+ *   - dividend : ni qty ni pru modifiés, `realizedPnl = null`. Le snapshot
+ *                est tout de même émis pour que le `trail` reste aligné
+ *                avec la liste triée d'entrée (1 entrée → 1 snapshot).
  *
  * Tri chronologique strict sur `date` (YYYY-MM-DD). L'appelant doit
  * fournir une liste déjà filtrée sur un seul titre.
  */
 export function computeRunningCump(
   txs: NormalizedTransaction[],
-): { finalQty: number; finalPru: number } {
+): CumpResult {
   const sorted = [...txs].sort((a, b) => a.date.localeCompare(b.date))
 
   let qty = 0
   let pru = 0
+  const trail: CumpSnapshot[] = []
 
   for (const t of sorted) {
+    let realizedPnl: number | null = null
+
     if (t.transaction_type === 'buy') {
       const buyQty = t.quantity
       const newQty = qty + buyQty
@@ -775,13 +992,28 @@ export function computeRunningCump(
       }
       qty = newQty
     } else if (t.transaction_type === 'sell') {
+      // Clampe la quantité vendue à la position détenue : un CSV qui
+      // sur-vend (erreur de saisie, transferts hors plateforme...) ne
+      // doit pas générer de PV sur des titres absents.
+      const soldQty = Math.min(qty, t.quantity)
+      if (soldQty > 0) {
+        realizedPnl = (t.unit_price - pru) * soldQty
+      }
       qty = Math.max(0, qty - t.quantity)
       if (qty === 0) pru = 0
     }
-    // dividend / autres types : sans effet sur (qty, pru)
+    // dividend / autres types : sans effet sur (qty, pru, realizedPnl).
+
+    trail.push({
+      date:        t.date,
+      txType:      t.transaction_type,
+      qty,
+      pru,
+      realizedPnl,
+    })
   }
 
-  return { finalQty: qty, finalPru: pru }
+  return { finalQty: qty, finalPru: pru, trail }
 }
 
 // ─────────────────────────────────────────────────────────────────────

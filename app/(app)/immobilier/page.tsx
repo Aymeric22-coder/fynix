@@ -140,9 +140,9 @@ export default async function ImmobilierPage() {
   // ── Coordonnees geocodees (DB) ──────────────────────────────────────────
   const coords: Record<string, { lat: number; lng: number } | null> = {}
   for (const p of (properties ?? [])) {
-    const lat = (p as unknown as { latitude?: number | null }).latitude
-    const lng = (p as unknown as { longitude?: number | null }).longitude
-    coords[p.id as string] = (lat != null && lng != null) ? { lat, lng } : null
+    coords[p.id as string] = (p.latitude != null && p.longitude != null)
+      ? { lat: p.latitude, lng: p.longitude }
+      : null
   }
 
   // ── Render ───────────────────────────────────────────────────────────────
