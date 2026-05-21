@@ -241,21 +241,26 @@ export default async function ImmobilierDetailPage({ params, searchParams }: Pro
     other:         charges.other,
   } : null
 
-  const dbDebt: DbDebt | null = debtRow ? {
-    initial_amount:    debtRow.initial_amount,
-    interest_rate:     debtRow.interest_rate,
-    insurance_rate:    debtRow.insurance_rate,
-    duration_months:   debtRow.duration_months,
-    start_date:        debtRow.start_date,
-    bank_fees:         debtRow.bank_fees ?? 0,
-    guarantee_fees:    debtRow.guarantee_fees ?? 0,
-    amortization_type: debtRow.amortization_type ?? 'constant',
-    deferral_type:     debtRow.deferral_type     ?? 'none',
-    deferral_months:   debtRow.deferral_months   ?? 0,
-    insurance_base:    debtRow.insurance_base    ?? 'capital_initial',
-    insurance_quotite: debtRow.insurance_quotite ?? 100,
-    guarantee_type:    debtRow.guarantee_type    ?? 'caution',
-  } : null
+  // V3.1 — Multi-crédit : on transmet TOUS les crédits actifs aux composants
+  // SimulationPanel / WhatIfSimulator. Pour un bien mono-crédit, ce tableau
+  // a 1 élément et les KPIs sont strictement identiques à l'ancien chemin
+  // (cf. multi-credit-consistency.test.ts).
+  const allDbDebts: DbDebt[] = allDebts.map(d => ({
+    initial_amount:    d.initial_amount,
+    interest_rate:     d.interest_rate,
+    insurance_rate:    d.insurance_rate,
+    duration_months:   d.duration_months,
+    start_date:        d.start_date,
+    bank_fees:         d.bank_fees ?? 0,
+    guarantee_fees:    d.guarantee_fees ?? 0,
+    amortization_type: d.amortization_type ?? 'constant',
+    deferral_type:     d.deferral_type     ?? 'none',
+    deferral_months:   d.deferral_months   ?? 0,
+    insurance_base:    d.insurance_base    ?? 'capital_initial',
+    insurance_quotite: d.insurance_quotite ?? 100,
+    guarantee_type:    d.guarantee_type    ?? 'caution',
+    loan_kind:         d.loan_kind         ?? 'principal',
+  }))
 
   const dbProfile: DbProfile | null = profileRow ? { tmi_rate: profileRow.tmi_rate } : null
 
@@ -366,9 +371,11 @@ export default async function ImmobilierDetailPage({ params, searchParams }: Pro
   const netPropertyValue   = currentVal - crdNow
 
   // ── Phase 2 : suivi réel vs simulation ──────────────────────────────────
-  const downPayment = Math.max(0, acqCost - (dbDebt?.initial_amount ?? 0))
-  const simInput    = buildSimulationInputFromDb(
-    dbProperty, dbAsset, dbLots, dbCharges, dbDebt, dbProfile,
+  // V3.1 — Apport = coût acquisition - somme des capitaux empruntés (multi-crédit).
+  const totalBorrowed = allDbDebts.reduce((s, d) => s + (d.initial_amount ?? 0), 0)
+  const downPayment   = Math.max(0, acqCost - totalBorrowed)
+  const simInput      = buildSimulationInputFromDb(
+    dbProperty, dbAsset, dbLots, dbCharges, allDbDebts, dbProfile,
     { downPayment },
   )
 
@@ -662,7 +669,7 @@ export default async function ImmobilierDetailPage({ params, searchParams }: Pro
             asset={dbAsset}
             lots={dbLots}
             charges={dbCharges}
-            debt={dbDebt}
+            debts={allDbDebts}
             profile={dbProfile}
           />
 
@@ -687,7 +694,7 @@ export default async function ImmobilierDetailPage({ params, searchParams }: Pro
             asset={dbAsset}
             lots={dbLots}
             charges={dbCharges}
-            debt={dbDebt}
+            debts={allDbDebts}
             profile={dbProfile}
             isShortTerm={shortTermKpis.hasShortTermLots}
           />
@@ -816,7 +823,7 @@ export default async function ImmobilierDetailPage({ params, searchParams }: Pro
             }))}
             monthlyRent={monthlyRents}
             annualCharges={annualCharges}
-            monthlyLoanPayment={schedule?.totalMonthly ?? 0}
+            monthlyLoanPayment={multiCredit.totalMonthly}
             events={propertyEvents}
             hasShortTermLots={shortTermKpis.hasShortTermLots}
           />

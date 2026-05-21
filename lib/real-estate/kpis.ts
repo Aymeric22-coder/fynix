@@ -3,40 +3,56 @@
  * Toutes les valeurs sont calculées à partir de la projection.
  */
 
-import { computeRemainingCapitalAt } from './amortization'
+import { aggregateLoans } from './multi-credit'
 import type {
   AmortizationSchedule,
+  LoanInput,
   ProjectionYear,
   PropertyKPIs,
   SimulationInput,
 } from './types'
+
+/**
+ * V3.1 — Idem projection.ts : `loans` prime, fallback `loan` legacy.
+ * Filtre les crédits triviaux pour rester cohérent avec `computeProjection`.
+ */
+function resolveActiveLoans(input: SimulationInput): LoanInput[] {
+  const candidates = (input.loans && input.loans.length > 0)
+    ? input.loans
+    : (input.loan ? [input.loan] : [])
+  return candidates.filter(l => l.principal > 0 && l.durationYears > 0)
+}
 
 export function computeKPIs(
   input:        SimulationInput,
   amortization: AmortizationSchedule | null,
   projection:   ProjectionYear[],
 ): PropertyKPIs {
-  const { property, loan, rent, charges, downPayment } = input
+  const { property, rent, charges, downPayment } = input
+  const activeLoans = resolveActiveLoans(input)
 
   // ─── Prix de revient total ─────────────────────────────────────
   // Réf : tous les rendements (sauf grossYieldOnPrice qui garde sa
   // sémantique "sur prix d'achat") utilisent ce dénominateur unifié.
   // Inclut : prix net vendeur + frais notaire + travaux + mobilier
   // (LMNP/LMP — vit sur le régime, pas la propriété) + frais bancaires
-  // et de garantie du prêt s'il y en a un.
+  // et de garantie de TOUS les prêts actifs (multi-crédit V3.1).
   const regimeFurniture =
     'furnitureAmount' in input.regime
       ? (input.regime as { furnitureAmount?: number }).furnitureAmount ?? 0
       : 0
+  const totalBankFees      = activeLoans.reduce((s, l) => s + l.bankFees, 0)
+  const totalGuaranteeFees = activeLoans.reduce((s, l) => s + l.guaranteeFees, 0)
   const totalCost =
     property.purchasePrice +
     property.notaryFees +
     property.worksAmount +
     regimeFurniture +
-    (loan?.bankFees ?? 0) +
-    (loan?.guaranteeFees ?? 0)
+    totalBankFees +
+    totalGuaranteeFees
 
-  const borrowedAmount = loan?.principal ?? 0
+  // Montant emprunté = somme des principals (multi-crédit V3.1)
+  const borrowedAmount = activeLoans.reduce((s, l) => s + l.principal, 0)
 
   // Mensualité totale (capital + intérêts + assurance)
   const monthlyPayment   = (amortization?.monthlyPayment ?? 0) + (amortization?.monthlyInsurance ?? 0)
@@ -90,10 +106,18 @@ export function computeKPIs(
   const annualCashFlowY1  = y1?.cashFlowAfterTax ?? 0
   const monthlyCashFlowY1 = annualCashFlowY1 / 12
 
-  // Patrimoine actuel
-  const remainingCapitalNow = loan && loan.startDate
-    ? computeRemainingCapitalAt(loan, input.simulationDate ?? new Date())
-    : (loan?.principal ?? 0)
+  // Patrimoine actuel — multi-crédit V3.1 :
+  // CRD à date = somme des CRD individuels. Pour un seul crédit avec
+  // startDate défini, équivalent au comportement legacy
+  // (computeRemainingCapitalAt(loan, simDate)).
+  const simDateForCrd = input.simulationDate ?? new Date()
+  let remainingCapitalNow = 0
+  if (activeLoans.length > 0) {
+    const anyHasStart = activeLoans.some(l => l.startDate != null)
+    remainingCapitalNow = anyHasStart
+      ? aggregateLoans(activeLoans, simDateForCrd).totalRemainingCapital
+      : activeLoans.reduce((s, l) => s + l.principal, 0)
+  }
   const initialEstimatedValue =
     property.currentEstimatedValue
     ?? (property.purchasePrice + property.worksAmount)

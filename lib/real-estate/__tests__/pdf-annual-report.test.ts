@@ -52,7 +52,7 @@ const profile: DbProfile = { tmi_rate: 30 }
 
 function buildInput(year: number): AnnualReportInput {
   const input = buildSimulationInputFromDb(
-    property, asset, lots, charges, debt, profile,
+    property, asset, lots, charges, [debt], profile,
     { downPayment: 55_000 },
   )
   const simulation = runSimulation(input)

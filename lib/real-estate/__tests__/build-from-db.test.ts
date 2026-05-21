@@ -66,7 +66,7 @@ describe('buildSimulationInputFromDb — assumed_total_rent', () => {
     ]
 
     const input = buildSimulationInputFromDb(
-      property, ASSET_BASE, lots, CHARGES_BASE, DEBT_COMPLETE, PROFILE_BASE,
+      property, ASSET_BASE, lots, CHARGES_BASE, [DEBT_COMPLETE],PROFILE_BASE,
       { downPayment: 30_000 },
     )
     expect(input.rent.monthlyRent).toBe(1_500)
@@ -80,7 +80,7 @@ describe('buildSimulationInputFromDb — assumed_total_rent', () => {
     ]
 
     const input = buildSimulationInputFromDb(
-      property, ASSET_BASE, lots, CHARGES_BASE, DEBT_COMPLETE, PROFILE_BASE,
+      property, ASSET_BASE, lots, CHARGES_BASE, [DEBT_COMPLETE],PROFILE_BASE,
       { downPayment: 30_000 },
     )
     expect(input.rent.monthlyRent).toBe(1_500)
@@ -89,7 +89,7 @@ describe('buildSimulationInputFromDb — assumed_total_rent', () => {
   it('renvoie 0 si pas de lots et pas d\'override', () => {
     const property: DbProperty = { ...PROPERTY_BASE, assumed_total_rent: null }
     const input = buildSimulationInputFromDb(
-      property, ASSET_BASE, [], CHARGES_BASE, DEBT_COMPLETE, PROFILE_BASE,
+      property, ASSET_BASE, [], CHARGES_BASE, [DEBT_COMPLETE],PROFILE_BASE,
       { downPayment: 30_000 },
     )
     expect(input.rent.monthlyRent).toBe(0)
@@ -101,7 +101,7 @@ describe('buildSimulationInputFromDb — assumed_total_rent', () => {
       { rent_amount: null },
     ]
     const input = buildSimulationInputFromDb(
-      PROPERTY_BASE, ASSET_BASE, lots, CHARGES_BASE, DEBT_COMPLETE, PROFILE_BASE,
+      PROPERTY_BASE, ASSET_BASE, lots, CHARGES_BASE, [DEBT_COMPLETE],PROFILE_BASE,
       { downPayment: 30_000 },
     )
     expect(input.rent.monthlyRent).toBe(0)
@@ -111,7 +111,7 @@ describe('buildSimulationInputFromDb — assumed_total_rent', () => {
     const property: DbProperty = { ...PROPERTY_BASE, assumed_total_rent: 0 }
     const lots: DbLot[] = [{ rent_amount: 500 }]
     const input = buildSimulationInputFromDb(
-      property, ASSET_BASE, lots, CHARGES_BASE, DEBT_COMPLETE, PROFILE_BASE,
+      property, ASSET_BASE, lots, CHARGES_BASE, [DEBT_COMPLETE],PROFILE_BASE,
       { downPayment: 30_000 },
     )
     // 0 != null donc l'override prime
@@ -124,7 +124,7 @@ describe('buildSimulationInputFromDb — TMI fallback', () => {
   it('utilise profile.tmi_rate si renseigné', () => {
     const input = buildSimulationInputFromDb(
       { ...PROPERTY_BASE, fiscal_regime: 'foncier_nu' },
-      ASSET_BASE, [], CHARGES_BASE, DEBT_COMPLETE,
+      ASSET_BASE, [], CHARGES_BASE, [DEBT_COMPLETE],
       { tmi_rate: 41 },
       { downPayment: 30_000 },
     )
@@ -134,7 +134,7 @@ describe('buildSimulationInputFromDb — TMI fallback', () => {
   it('fallback à 30 % si profile.tmi_rate est null', () => {
     const input = buildSimulationInputFromDb(
       { ...PROPERTY_BASE, fiscal_regime: 'foncier_nu' },
-      ASSET_BASE, [], CHARGES_BASE, DEBT_COMPLETE,
+      ASSET_BASE, [], CHARGES_BASE, [DEBT_COMPLETE],
       { tmi_rate: null },
       { downPayment: 30_000 },
     )
@@ -144,7 +144,7 @@ describe('buildSimulationInputFromDb — TMI fallback', () => {
   it('fallback configurable via opts.fallbackTmiPct', () => {
     const input = buildSimulationInputFromDb(
       { ...PROPERTY_BASE, fiscal_regime: 'foncier_nu' },
-      ASSET_BASE, [], CHARGES_BASE, DEBT_COMPLETE,
+      ASSET_BASE, [], CHARGES_BASE, [DEBT_COMPLETE],
       null,    // pas de profil du tout
       { downPayment: 30_000, fallbackTmiPct: 11 },
     )
@@ -157,7 +157,7 @@ describe('buildSimulationInputFromDb — régimes', () => {
   it('construit un FiscalRegimeSciIs avec les paramètres réels', () => {
     const input = buildSimulationInputFromDb(
       { ...PROPERTY_BASE, fiscal_regime: 'sci_is' },
-      ASSET_BASE, [], CHARGES_BASE, DEBT_COMPLETE, PROFILE_BASE,
+      ASSET_BASE, [], CHARGES_BASE, [DEBT_COMPLETE],PROFILE_BASE,
       { downPayment: 30_000 },
     )
     expect(input.regime.kind).toBe('sci_is')
@@ -171,7 +171,7 @@ describe('buildSimulationInputFromDb — régimes', () => {
   it('construit un FiscalRegimeLmp avec ssiRatePct depuis property.lmp_ssi_rate', () => {
     const input = buildSimulationInputFromDb(
       { ...PROPERTY_BASE, fiscal_regime: 'lmp', lmp_ssi_rate: 42 },
-      ASSET_BASE, [], CHARGES_BASE, DEBT_COMPLETE, PROFILE_BASE,
+      ASSET_BASE, [], CHARGES_BASE, [DEBT_COMPLETE],PROFILE_BASE,
       { downPayment: 30_000 },
     )
     if (input.regime.kind === 'lmp') {
@@ -185,7 +185,7 @@ describe('buildSimulationInputFromDb — régimes', () => {
   it('construit un FiscalRegimeLmnpMicro avec abattement depuis property', () => {
     const input = buildSimulationInputFromDb(
       { ...PROPERTY_BASE, fiscal_regime: 'lmnp_micro', lmnp_micro_abattement_pct: 71 },
-      ASSET_BASE, [], CHARGES_BASE, DEBT_COMPLETE, PROFILE_BASE,
+      ASSET_BASE, [], CHARGES_BASE, [DEBT_COMPLETE],PROFILE_BASE,
       { downPayment: 30_000 },
     )
     if (input.regime.kind === 'lmnp_micro') {
@@ -198,7 +198,7 @@ describe('buildSimulationInputFromDb — régimes', () => {
   it('fallback à foncier_nu si fiscal_regime est null', () => {
     const input = buildSimulationInputFromDb(
       { ...PROPERTY_BASE, fiscal_regime: null },
-      ASSET_BASE, [], CHARGES_BASE, DEBT_COMPLETE, PROFILE_BASE,
+      ASSET_BASE, [], CHARGES_BASE, [DEBT_COMPLETE],PROFILE_BASE,
       { downPayment: 30_000 },
     )
     expect(input.regime.kind).toBe('foncier_nu')
@@ -215,7 +215,7 @@ describe('buildSimulationInputFromDb — crédit partiel → incomplete', () => 
     }
     const input = buildSimulationInputFromDb(
       PROPERTY_BASE, ASSET_BASE, [{ rent_amount: 900 }],
-      CHARGES_BASE, debtIncomplete, PROFILE_BASE,
+      CHARGES_BASE, [debtIncomplete], PROFILE_BASE,
       { downPayment: 30_000 },
     )
 
@@ -229,13 +229,14 @@ describe('buildSimulationInputFromDb — crédit partiel → incomplete', () => 
     expect(r.missingFields).toContain('loan.annualRatePct')
   })
 
-  it('renvoie loan = undefined si debt = null (achat cash implicite)', () => {
+  it('renvoie loan = undefined si debts = [] (achat cash implicite)', () => {
     const input = buildSimulationInputFromDb(
       PROPERTY_BASE, ASSET_BASE, [{ rent_amount: 900 }],
-      CHARGES_BASE, null, PROFILE_BASE,
+      CHARGES_BASE, [], PROFILE_BASE,
       { downPayment: 217_000 },
     )
     expect(input.loan).toBeUndefined()
+    expect(input.loans).toBeUndefined()
 
     const r = runSimulation(input)
     expect(r.incompleteData).toBeFalsy()
@@ -245,7 +246,7 @@ describe('buildSimulationInputFromDb — crédit partiel → incomplete', () => 
   it('un crédit complet en DB produit une simulation complète sans flag incomplet', () => {
     const input = buildSimulationInputFromDb(
       PROPERTY_BASE, ASSET_BASE, [{ rent_amount: 900 }],
-      CHARGES_BASE, DEBT_COMPLETE, PROFILE_BASE,
+      CHARGES_BASE, [DEBT_COMPLETE],PROFILE_BASE,
       { downPayment: 30_000 },
     )
     const r = runSimulation(input)
@@ -260,7 +261,7 @@ describe('buildSimulationInputFromDb — utilise current_value de l\'asset comme
   it('passe asset.current_value en currentEstimatedValue', () => {
     const input = buildSimulationInputFromDb(
       PROPERTY_BASE, { current_value: 250_000 },
-      [], CHARGES_BASE, DEBT_COMPLETE, PROFILE_BASE,
+      [], CHARGES_BASE, [DEBT_COMPLETE],PROFILE_BASE,
       { downPayment: 30_000 },
     )
     expect(input.property.currentEstimatedValue).toBe(250_000)
@@ -268,7 +269,7 @@ describe('buildSimulationInputFromDb — utilise current_value de l\'asset comme
 
   it('omet currentEstimatedValue si asset null ou current_value null', () => {
     const input = buildSimulationInputFromDb(
-      PROPERTY_BASE, null, [], CHARGES_BASE, DEBT_COMPLETE, PROFILE_BASE,
+      PROPERTY_BASE, null, [], CHARGES_BASE, [DEBT_COMPLETE],PROFILE_BASE,
       { downPayment: 30_000 },
     )
     expect(input.property.currentEstimatedValue).toBeUndefined()

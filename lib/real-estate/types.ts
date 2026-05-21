@@ -313,7 +313,24 @@ export interface PropertyKPIs {
 
 export interface SimulationInput {
   property:        PropertyInput
+  /**
+   * @deprecated Utilise `loans: LoanInput[]` pour tout nouveau code (V3.1).
+   * Ce champ legacy reste accepté pour la rétro-compat des tests historiques
+   * et des appels mono-crédit. Si `loans` est présent et non vide, il prime
+   * sur `loan` et la projection / les KPIs passent par `aggregateLoans`.
+   */
   loan?:           LoanInput        // optionnel : achat cash possible
+  /**
+   * Multi-crédit (V3.1) : 0..N prêts actifs sur le bien (principal + PTZ +
+   * travaux, etc.). Si non vide, la projection cumule les schedules via
+   * `aggregateLoans` et les KPIs (`monthlyPayment`, `totalCost`,
+   * `borrowedAmount`, `remainingCapitalNow`) reflètent l'agrégat. Si vide
+   * ou absent, on retombe sur `loan` (mono-crédit) ou achat cash.
+   *
+   * Invariant : `loans: [x]` doit produire des KPIs strictement identiques
+   * à `loan: x` (cf. multi-credit-consistency.test.ts).
+   */
+  loans?:          LoanInput[]
   rent:            RentInput
   charges:         ChargesInput
   regime:          FiscalRegime
@@ -385,6 +402,15 @@ export interface RawLoanInput {
  * `runSimulation` accepte cette forme et renvoie `incompleteData: true`
  * quand des champs critiques manquent.
  */
-export interface RawSimulationInput extends Omit<SimulationInput, 'loan'> {
-  loan?: RawLoanInput
+export interface RawSimulationInput extends Omit<SimulationInput, 'loan' | 'loans'> {
+  /**
+   * @deprecated Cf. {@link SimulationInput.loan} — conservé pour rétro-compat.
+   */
+  loan?:  RawLoanInput
+  /**
+   * V3.1 — Multi-crédit, version permissive. Voir {@link SimulationInput.loans}.
+   * Chaque crédit DB partiel est traduit en RawLoanInput ; runSimulation()
+   * détecte l'incomplétude par crédit (champs critiques manquants).
+   */
+  loans?: RawLoanInput[]
 }

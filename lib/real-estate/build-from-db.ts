@@ -71,6 +71,10 @@ export interface DbDebt {
   insurance_base?:   string | null
   insurance_quotite?: number | null
   guarantee_type?:   string | null
+  // ── Migration 034 — Type de prêt (multi-crédit, V3.1) ──
+  /** principal / ptz / travaux / pel / action_logement / relais / in_fine / autre.
+   *  Permet d'identifier le crédit principal parmi plusieurs (slider what-if). */
+  loan_kind?:        string | null
 }
 
 /** Sous-ensemble de `real_estate_lots` Row */
@@ -190,15 +194,19 @@ export interface BuildOptions {
  *  - `monthlyRent` = `property.assumed_total_rent` si défini, sinon SUM(`lots.rent_amount`)
  *  - `furnitureAmount` = `property.furniture_amount` (default 0)
  *  - `tmiPct` = `profile.tmi_rate` si renseigné, sinon `fallbackTmiPct` (default 30)
- *  - Si `debt` n'a pas de `interest_rate` ou `start_date` → on renvoie un RawLoanInput partiel
- *    avec ces champs `undefined` ; runSimulation() détectera l'incomplétude.
+ *  - Si un crédit DB n'a pas de `interest_rate` / `start_date` etc., on renvoie un
+ *    RawLoanInput partiel ; runSimulation() détectera l'incomplétude (par crédit).
+ *
+ * V3.1 — Signature multi-crédit : `debts: DbDebt[]` (peut être vide pour achat cash).
+ * `loans` est rempli avec tous les crédits non triviaux. Pour rétro-compat,
+ * `loan` est aussi posé sur `loans[0]` quand non vide (consommateurs legacy).
  */
 export function buildSimulationInputFromDb(
   property: DbProperty,
   asset:    DbAsset | null,
   lots:     DbLot[],
   charges:  DbCharges | null,
-  debt:     DbDebt | null,
+  debts:    DbDebt[],
   profile:  DbProfile | null,
   opts:     BuildOptions,
 ): RawSimulationInput {
@@ -214,40 +222,10 @@ export function buildSimulationInputFromDb(
       : {}),
   }
 
-  // ─── LOAN (potentiellement partiel) ─────────────────────────────
-  let loanInput: RawLoanInput | undefined
-  if (debt) {
-    const principal = debt.initial_amount ?? undefined
-    // Un crédit DB existe → on transmet ce qu'on a, runSimulation gère l'incomplétude
-    loanInput = {
-      ...(principal != null ? { principal } : {}),
-      ...(debt.interest_rate  != null ? { annualRatePct:    debt.interest_rate  } : {}),
-      ...(debt.insurance_rate != null ? { insuranceRatePct: debt.insurance_rate } : {}),
-      ...(debt.duration_months != null
-        ? { durationYears: debt.duration_months / 12 }
-        : {}),
-      ...(debt.start_date
-        ? { startDate: new Date(debt.start_date) }
-        : {}),
-      ...(debt.bank_fees      != null ? { bankFees:      debt.bank_fees      } : {}),
-      ...(debt.guarantee_fees != null ? { guaranteeFees: debt.guarantee_fees } : {}),
-      ...(debt.amortization_type
-        ? { amortizationType: debt.amortization_type as 'constant' | 'linear' | 'in_fine' }
-        : {}),
-      // ── Migration 005 : différé ──
-      ...(debt.deferral_type
-        ? { deferralType: debt.deferral_type as 'none' | 'partial' | 'total' }
-        : {}),
-      ...(debt.deferral_months != null ? { deferralMonths: debt.deferral_months } : {}),
-      // ── Migration 006 : assurance enrichie ──
-      ...(debt.insurance_base
-        ? { insuranceBase: debt.insurance_base as 'capital_initial' | 'capital_remaining' }
-        : {}),
-      ...(debt.insurance_quotite != null
-        ? { insuranceQuotitePct: debt.insurance_quotite }
-        : {}),
-    }
-  }
+  // ─── LOANS (V3.1 multi-crédit, potentiellement partiel) ─────────
+  // Chaque DbDebt est traduit en RawLoanInput. La validation par crédit
+  // a lieu dans validateSimulationInput (loans[i] manquants → missingFields).
+  const loanInputs: RawLoanInput[] = debts.map(toRawLoanInput)
 
   // ─── RENT (assumed_total_rent prime sur somme des lots) ─────────
   // Pour la courte duree, le revenu mensuel = netOwnerRevenue / 12
@@ -313,13 +291,55 @@ export function buildSimulationInputFromDb(
 
   return {
     property: propertyInput,
-    loan:     loanInput,
+    // V3.1 — `loans` est la source canonique multi-crédit.
+    // On pose aussi `loan` = loans[0] pour rétro-compat des lecteurs
+    // qui n'auraient pas encore migré (purement informatif : la
+    // projection / les KPIs lisent `loans` en priorité).
+    ...(loanInputs.length > 0
+      ? { loans: loanInputs, loan: loanInputs[0]! }
+      : {}),
     rent:     rentInput,
     charges:  chargesInput,
     regime,
     downPayment:    opts.downPayment,
     ...(opts.simulationDate ? { simulationDate: opts.simulationDate } : {}),
     ...(opts.horizonYears   ? { horizonYears:   opts.horizonYears   } : {}),
+  }
+}
+
+/**
+ * Traduit un DbDebt unique en RawLoanInput permissif.
+ * Helper interne pour la boucle multi-crédit de buildSimulationInputFromDb.
+ */
+function toRawLoanInput(debt: DbDebt): RawLoanInput {
+  const principal = debt.initial_amount ?? undefined
+  return {
+    ...(principal != null ? { principal } : {}),
+    ...(debt.interest_rate  != null ? { annualRatePct:    debt.interest_rate  } : {}),
+    ...(debt.insurance_rate != null ? { insuranceRatePct: debt.insurance_rate } : {}),
+    ...(debt.duration_months != null
+      ? { durationYears: debt.duration_months / 12 }
+      : {}),
+    ...(debt.start_date
+      ? { startDate: new Date(debt.start_date) }
+      : {}),
+    ...(debt.bank_fees      != null ? { bankFees:      debt.bank_fees      } : {}),
+    ...(debt.guarantee_fees != null ? { guaranteeFees: debt.guarantee_fees } : {}),
+    ...(debt.amortization_type
+      ? { amortizationType: debt.amortization_type as 'constant' | 'linear' | 'in_fine' }
+      : {}),
+    // ── Migration 005 : différé ──
+    ...(debt.deferral_type
+      ? { deferralType: debt.deferral_type as 'none' | 'partial' | 'total' }
+      : {}),
+    ...(debt.deferral_months != null ? { deferralMonths: debt.deferral_months } : {}),
+    // ── Migration 006 : assurance enrichie ──
+    ...(debt.insurance_base
+      ? { insuranceBase: debt.insurance_base as 'capital_initial' | 'capital_remaining' }
+      : {}),
+    ...(debt.insurance_quotite != null
+      ? { insuranceQuotitePct: debt.insurance_quotite }
+      : {}),
   }
 }
 

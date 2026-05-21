@@ -46,7 +46,8 @@ interface Props {
   asset:      DbAsset | null
   lots:       DbLot[]
   charges:    DbCharges | null
-  debt:       DbDebt | null
+  /** V3.1 — Multi-crédit : tous les crédits actifs du bien (peut être []). */
+  debts:      DbDebt[]
   profile:    DbProfile | null
 }
 
@@ -57,18 +58,20 @@ function toNum(v: string | number | null | undefined, fallback = 0): number {
   return isNaN(n) ? fallback : n
 }
 
-function computeDownPayment(property: DbProperty, debt: DbDebt | null): number {
+function computeDownPayment(property: DbProperty, debts: DbDebt[]): number {
   const acq = (property.purchase_price ?? 0) + (property.purchase_fees ?? 0) + (property.works_amount ?? 0)
-  const borrowed = debt?.initial_amount ?? 0
+  const borrowed = debts.reduce((s, d) => s + (d.initial_amount ?? 0), 0)
   return Math.max(0, acq - borrowed)
 }
 
-function computeHorizon(debt: DbDebt | null): number {
-  if (debt?.duration_months) return Math.max(25, Math.ceil(debt.duration_months / 12))
+function computeHorizon(debts: DbDebt[]): number {
+  // Horizon = durée du prêt le plus long (au moins 25 ans).
+  const maxMonths = debts.reduce((m, d) => Math.max(m, d.duration_months ?? 0), 0)
+  if (maxMonths > 0) return Math.max(25, Math.ceil(maxMonths / 12))
   return 25
 }
 
-function paramsFromDb(property: DbProperty, debt: DbDebt | null): SimParams {
+function paramsFromDb(property: DbProperty, debts: DbDebt[]): SimParams {
   return {
     fiscalRegime:             property.fiscal_regime ?? 'foncier_nu',
     tmiPct:                   30,  // sera surchargé par le profile
@@ -78,8 +81,8 @@ function paramsFromDb(property: DbProperty, debt: DbDebt | null): SimParams {
     rentalIndexPct:           property.rental_index_pct  ?? 2.0,
     chargesIndexPct:          property.charges_index_pct ?? 2.0,
     propertyIndexPct:         property.property_index_pct ?? 1.0,
-    downPayment:              computeDownPayment(property, debt),
-    horizonYears:             computeHorizon(debt),
+    downPayment:              computeDownPayment(property, debts),
+    horizonYears:             computeHorizon(debts),
     landSharePct:             property.land_share_pct        ?? 15,
     amortBuildingYears:       property.amort_building_years  ?? 30,
     amortWorksYears:          property.amort_works_years     ?? 15,
@@ -145,8 +148,8 @@ function exportCsv(result: SimulationResult) {
 
 // ─── Composant principal ───────────────────────────────────────────────────
 
-export function SimulationPanel({ propertyId, property, asset, lots, charges, debt, profile }: Props) {
-  const initial = useMemo(() => paramsWithProfile(paramsFromDb(property, debt), profile), [property, debt, profile])
+export function SimulationPanel({ propertyId, property, asset, lots, charges, debts, profile }: Props) {
+  const initial = useMemo(() => paramsWithProfile(paramsFromDb(property, debts), profile), [property, debts, profile])
   const [params, setParams] = useState<SimParams>(initial)
   const [showTable, setShowTable] = useState(false)
   const [saving, startSave] = useTransition()
@@ -179,11 +182,11 @@ export function SimulationPanel({ propertyId, property, asset, lots, charges, de
     const dbProfile: DbProfile = { tmi_rate: params.tmiPct }
 
     const input = buildSimulationInputFromDb(
-      dbProp, asset, lots, charges, debt, dbProfile,
+      dbProp, asset, lots, charges, debts, dbProfile,
       { downPayment: params.downPayment, horizonYears: params.horizonYears },
     )
     return runSimulation(input)
-  }, [params, property, asset, lots, charges, debt])
+  }, [params, property, asset, lots, charges, debts])
 
   // ── Mise à jour d'un champ ───────────────────────────────────────────────
   const set = useCallback(<K extends keyof SimParams>(key: K, value: SimParams[K]) => {

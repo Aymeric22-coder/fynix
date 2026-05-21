@@ -67,8 +67,8 @@ const baseParams = {
 
 describe('runWhatIfSim — what-if calculation', () => {
   it('Test 1 — loyer +10 % => cash-flow augmente', () => {
-    const base = runWhatIfSim(property, asset, lots, charges, debt, profile, baseParams)
-    const up10 = runWhatIfSim(property, asset, lots, charges, debt, profile, {
+    const base = runWhatIfSim(property, asset, lots, charges, [debt], profile, baseParams)
+    const up10 = runWhatIfSim(property, asset, lots, charges, [debt], profile, {
       ...baseParams, monthlyRent: 880,
     })
     expect(up10.monthlyCashFlow).toBeGreaterThan(base.monthlyCashFlow)
@@ -77,8 +77,8 @@ describe('runWhatIfSim — what-if calculation', () => {
   })
 
   it('Test 2 — taux +1 % => mensualite augmente, CF diminue', () => {
-    const base = runWhatIfSim(property, asset, lots, charges, debt, profile, baseParams)
-    const rateUp = runWhatIfSim(property, asset, lots, charges, debt, profile, {
+    const base = runWhatIfSim(property, asset, lots, charges, [debt], profile, baseParams)
+    const rateUp = runWhatIfSim(property, asset, lots, charges, [debt], profile, {
       ...baseParams, annualRatePct: 4.5,
     })
     expect(rateUp.monthlyPayment).toBeGreaterThan(base.monthlyPayment)
@@ -86,8 +86,8 @@ describe('runWhatIfSim — what-if calculation', () => {
   })
 
   it('Test 3 — vacance 2 mois => CF inferieur, ~2/12 de loyers perdus', () => {
-    const base = runWhatIfSim(property, asset, lots, charges, debt, profile, baseParams)
-    const vac = runWhatIfSim(property, asset, lots, charges, debt, profile, {
+    const base = runWhatIfSim(property, asset, lots, charges, [debt], profile, baseParams)
+    const vac = runWhatIfSim(property, asset, lots, charges, [debt], profile, {
       ...baseParams, vacancyMonths: 2,
     })
     expect(vac.monthlyCashFlow).toBeLessThan(base.monthlyCashFlow)
@@ -98,8 +98,8 @@ describe('runWhatIfSim — what-if calculation', () => {
   })
 
   it('Test 4 — reinitialisation => resultats identiques a la base', () => {
-    const a = runWhatIfSim(property, asset, lots, charges, debt, profile, baseParams)
-    const b = runWhatIfSim(property, asset, lots, charges, debt, profile, baseParams)
+    const a = runWhatIfSim(property, asset, lots, charges, [debt], profile, baseParams)
+    const b = runWhatIfSim(property, asset, lots, charges, [debt], profile, baseParams)
     expect(a.monthlyCashFlow).toBe(b.monthlyCashFlow)
     expect(a.grossYield).toBe(b.grossYield)
     expect(a.monthlyPayment).toBe(b.monthlyPayment)
@@ -108,14 +108,14 @@ describe('runWhatIfSim — what-if calculation', () => {
   })
 
   it('Test 5 — scenario pessimiste => CF inferieur a optimiste', () => {
-    const pessimist = runWhatIfSim(property, asset, lots, charges, debt, profile, {
+    const pessimist = runWhatIfSim(property, asset, lots, charges, [debt], profile, {
       ...baseParams,
       monthlyRent:   Math.round(800 * 0.92),
       annualRatePct: 3.5 + 0.75,
       vacancyMonths: 1.5,
       annualCharges: Math.round(2520 * 1.15),
     })
-    const optimist = runWhatIfSim(property, asset, lots, charges, debt, profile, {
+    const optimist = runWhatIfSim(property, asset, lots, charges, [debt], profile, {
       ...baseParams,
       monthlyRent:   Math.round(800 * 1.08),
       vacancyMonths: 0,
@@ -125,8 +125,8 @@ describe('runWhatIfSim — what-if calculation', () => {
   })
 
   it('Test 6 — current_value override change netValue lineairement', () => {
-    const base = runWhatIfSim(property, asset, lots, charges, debt, profile, baseParams)
-    const valueUp = runWhatIfSim(property, asset, lots, charges, debt, profile, {
+    const base = runWhatIfSim(property, asset, lots, charges, [debt], profile, baseParams)
+    const valueUp = runWhatIfSim(property, asset, lots, charges, [debt], profile, {
       ...baseParams, currentValue: 250_000,
     })
     // +30k de valeur estimee => +30k de net value (CRD inchange)
@@ -134,8 +134,8 @@ describe('runWhatIfSim — what-if calculation', () => {
   })
 
   it('Test 7 — charges +30 % => CF diminue', () => {
-    const base = runWhatIfSim(property, asset, lots, charges, debt, profile, baseParams)
-    const chargesUp = runWhatIfSim(property, asset, lots, charges, debt, profile, {
+    const base = runWhatIfSim(property, asset, lots, charges, [debt], profile, baseParams)
+    const chargesUp = runWhatIfSim(property, asset, lots, charges, [debt], profile, {
       ...baseParams, annualCharges: Math.round(2520 * 1.3),
     })
     expect(chargesUp.monthlyCashFlow).toBeLessThan(base.monthlyCashFlow)

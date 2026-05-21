@@ -126,11 +126,15 @@ export const GET = withAuth(async (req: Request, user: User, ctx: Ctx) => {
   const dbProfile: DbProfile = { tmi_rate: profileRes.data?.tmi_rate ?? 30 }
 
   // Apport personnel
+  // V3.1 — La route PDF lit pour l'instant un crédit unique (debtRow → dbDebt).
+  // On l'enveloppe dans un tableau pour la signature multi-crédit. Le PDF
+  // export complet multi-crédit fera l'objet d'une vague séparée.
   const acqCost = (dbProperty.purchase_price ?? 0) + (dbProperty.purchase_fees ?? 0) + (dbProperty.works_amount ?? 0)
   const downPayment = Math.max(0, acqCost - (dbDebt?.initial_amount ?? 0))
+  const dbDebts = dbDebt ? [dbDebt] : []
 
   const input = buildSimulationInputFromDb(
-    dbProperty, dbAsset, dbLots, dbCharges, dbDebt, dbProfile,
+    dbProperty, dbAsset, dbLots, dbCharges, dbDebts, dbProfile,
     { downPayment, horizonYears: Math.max(25, year - new Date().getUTCFullYear() + 25) },
   )
   // Re-attache address au property pour l'en-tete du PDF (cast intentionnel)

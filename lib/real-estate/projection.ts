@@ -3,7 +3,7 @@
  * des inputs de simulation et applique le bon calculateur fiscal.
  */
 
-import { buildAmortizationSchedule } from './amortization'
+import { aggregateLoans } from './multi-credit'
 import {
   getFiscalCalculator,
   makeInitialCarryForward,
@@ -13,6 +13,7 @@ import {
 import type { YearAccountingInputs } from './fiscal/common'
 import type {
   AmortizationSchedule,
+  LoanInput,
   ProjectionYear,
   RealRegimeParams,
   SimulationInput,
@@ -24,27 +25,44 @@ function isRealRegime(regime: SimulationInput['regime']): regime is SimulationIn
   return regimeSupportsAmortization(regime)
 }
 
+/**
+ * V3.1 — Source unique : retourne le tableau de crédits actifs à projeter.
+ * Si `loans` est fourni et non vide, prime. Sinon retombe sur `loan` legacy.
+ * Filtre les crédits triviaux (principal <= 0 ou duration <= 0).
+ */
+function resolveActiveLoans(input: SimulationInput): LoanInput[] {
+  const candidates = (input.loans && input.loans.length > 0)
+    ? input.loans
+    : (input.loan ? [input.loan] : [])
+  return candidates.filter(l => l.principal > 0 && l.durationYears > 0)
+}
+
 export function computeProjection(input: SimulationInput): {
   amortization: AmortizationSchedule | null
   projection:   ProjectionYear[]
 } {
-  const { property, loan, rent, charges, regime, downPayment } = input
+  const { property, rent, charges, regime, downPayment } = input
+  const activeLoans = resolveActiveLoans(input)
 
-  // ── Horizon ────────────────────────────────────────────────────────
-  const loanYears = loan?.principal && loan.principal > 0 ? loan.durationYears : 0
+  // ── Horizon = durée du prêt le plus long, sinon FALLBACK ───────────
+  const maxLoanYears = activeLoans.reduce((m, l) => Math.max(m, l.durationYears), 0)
   const horizonYears = input.horizonYears
-    ?? Math.max(loanYears, FALLBACK_HORIZON_YEARS)
+    ?? Math.max(maxLoanYears, FALLBACK_HORIZON_YEARS)
 
-  // ── Schedule emprunt (peut être null si achat cash) ────────────────
-  const hasLoan = !!loan && loan.principal > 0 && loan.durationYears > 0
+  // ── Schedule emprunt agrégé (null si achat cash) ───────────────────
+  // Pour 1 seul crédit : aggregateLoans([x]).schedule == buildAmortizationSchedule(x).
+  // Garanti par multi-credit-consistency.test.ts.
+  const simDate = input.simulationDate ?? new Date()
   const amortization: AmortizationSchedule | null =
-    hasLoan ? buildAmortizationSchedule(loan!) : null
+    activeLoans.length > 0
+      ? aggregateLoans(activeLoans, simDate).schedule
+      : null
 
-  // ── Frais d'acquisition pour traitement fiscal ─────────────────────
+  // ── Frais d'acquisition pour traitement fiscal — somme tous prêts ──
+  const totalBankFees      = activeLoans.reduce((s, l) => s + l.bankFees, 0)
+  const totalGuaranteeFees = activeLoans.reduce((s, l) => s + l.guaranteeFees, 0)
   const totalAcquisitionFees =
-    property.notaryFees +
-    (loan?.bankFees ?? 0) +
-    (loan?.guaranteeFees ?? 0)
+    property.notaryFees + totalBankFees + totalGuaranteeFees
 
   // ── Amortissements annuels (régimes réels uniquement) ──────────────
   let amortBuildingAnnual = 0

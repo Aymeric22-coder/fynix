@@ -45,22 +45,48 @@ export function validateSimulationInput(raw: RawSimulationInput): ValidationResu
     missing.push('rent.monthlyRent')
   }
 
-  // 3. Crédit : si l'utilisateur a commencé à le renseigner, tous les champs critiques requis
-  const loan = raw.loan
-  const loanStarted = isLoanStarted(loan)
+  // 3. Crédits — V3.1 supporte deux chemins :
+  //    - `loans: RawLoanInput[]` (nouveau, multi-crédit) → on valide chacun
+  //    - `loan: RawLoanInput` (legacy mono-crédit, @deprecated) → valide solo
+  //    Si les deux sont fournis, `loans` (s'il est non vide) prime.
+  //    Les crédits avec `principal === 0` ou totalement vides sont ignorés
+  //    (sémantique "achat cash partiel" / placeholder UI).
+  const rawLoans: RawLoanInput[] = (raw.loans && raw.loans.length > 0)
+    ? raw.loans
+    : (raw.loan ? [raw.loan] : [])
 
-  if (loanStarted) {
-    if (loan!.principal == null || loan!.principal < 0) {
-      missing.push('loan.principal')
+  const validatedLoans: LoanInput[] = []
+  for (let i = 0; i < rawLoans.length; i++) {
+    const l = rawLoans[i]!
+    if (!isLoanStarted(l)) continue   // crédit vide ou principal=0 → ignoré
+    const prefix = rawLoans.length > 1 ? `loans[${i}]` : 'loan'
+
+    let hasError = false
+    if (l.principal == null || l.principal < 0) {
+      missing.push(`${prefix}.principal`); hasError = true
     }
-    if (loan!.annualRatePct == null) {
-      missing.push('loan.annualRatePct')
+    if (l.annualRatePct == null) {
+      missing.push(`${prefix}.annualRatePct`); hasError = true
     }
-    if (loan!.durationYears == null || loan!.durationYears <= 0) {
-      missing.push('loan.durationYears')
+    if (l.durationYears == null || l.durationYears <= 0) {
+      missing.push(`${prefix}.durationYears`); hasError = true
     }
-    // insuranceRatePct est tolérant (default 0)
-    // startDate, bankFees, guaranteeFees ne sont pas critiques pour la projection
+    if (hasError) continue
+
+    validatedLoans.push({
+      principal:        l.principal!,
+      annualRatePct:    l.annualRatePct!,
+      durationYears:    l.durationYears!,
+      insuranceRatePct: l.insuranceRatePct ?? 0,
+      bankFees:         l.bankFees         ?? 0,
+      guaranteeFees:    l.guaranteeFees    ?? 0,
+      ...(l.startDate           !== undefined ? { startDate:           l.startDate           } : {}),
+      ...(l.amortizationType    !== undefined ? { amortizationType:    l.amortizationType    } : {}),
+      ...(l.deferralType        !== undefined ? { deferralType:        l.deferralType        } : {}),
+      ...(l.deferralMonths      !== undefined ? { deferralMonths:      l.deferralMonths      } : {}),
+      ...(l.insuranceBase       !== undefined ? { insuranceBase:       l.insuranceBase       } : {}),
+      ...(l.insuranceQuotitePct !== undefined ? { insuranceQuotitePct: l.insuranceQuotitePct } : {}),
+    })
   }
 
   // 4. Régime : TMI requise pour les régimes IR-based
@@ -79,27 +105,19 @@ export function validateSimulationInput(raw: RawSimulationInput): ValidationResu
     return { ok: false, missingFields: missing }
   }
 
-  // Construction du SimulationInput strictement typé
-  const validatedLoan: LoanInput | undefined = loanStarted
-    ? {
-        principal:        loan!.principal!,
-        annualRatePct:    loan!.annualRatePct!,
-        durationYears:    loan!.durationYears!,
-        insuranceRatePct: loan!.insuranceRatePct ?? 0,
-        bankFees:         loan!.bankFees         ?? 0,
-        guaranteeFees:    loan!.guaranteeFees    ?? 0,
-        ...(loan!.startDate        !== undefined ? { startDate:        loan!.startDate        } : {}),
-        ...(loan!.amortizationType !== undefined ? { amortizationType: loan!.amortizationType } : {}),
-      }
-    : undefined
+  // Construction du SimulationInput strictement typé.
+  // Convention : on alimente `loans` quand il y a des crédits valides, et on
+  // conserve `loan` = loans[0] pour la rétro-compat des consommateurs qui
+  // lisent encore `input.loan` (kpis.ts, projection.ts retombent dessus si
+  // `loans` est absent — mais on garde la cohérence des deux chemins).
+  const { loans: _rawLoans, loan: _rawLoan, ...rest } = raw
+  void _rawLoans; void _rawLoan
+  const result: SimulationInput = {
+    ...rest,
+    ...(validatedLoans.length > 0 ? { loans: validatedLoans, loan: validatedLoans[0]! } : {}),
+  } as SimulationInput
 
-  return {
-    ok: true,
-    input: {
-      ...raw,
-      loan: validatedLoan,
-    } as SimulationInput,
-  }
+  return { ok: true, input: result }
 }
 
 /**

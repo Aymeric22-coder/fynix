@@ -8,11 +8,12 @@
  * Accepte n'importe quel client Supabase (server component ou API route).
  */
 
-import { buildSimulationInputFromDb, runSimulation, computeRemainingCapitalAt } from '.'
+import { buildSimulationInputFromDb, runSimulation } from '.'
+import { aggregateLoans } from './multi-credit'
 import { loadActualData } from './actual'
 import { compareActualToSimulation } from './compare'
 import { detectDriftAlerts } from './insights'
-import type { SimulationResult } from './types'
+import type { LoanInput, SimulationResult } from './types'
 import type { ComparisonResult } from './compare'
 import type { DriftAlert } from './insights'
 import type { DbProperty, DbAsset, DbLot, DbCharges, DbDebt, DbProfile } from './build-from-db'
@@ -96,32 +97,49 @@ export async function computeRealEstatePortfolio(
     }
   }
 
-  // ── 3. Dettes actives indexées par asset_id ───────────────────────────────
+  // ── 3. Dettes actives groupées par asset_id (V3.1 multi-crédit) ──────────
+  // Avant V3.1 : Record<string, DbDebt> → écrasement silencieux du 2e crédit.
+  // Maintenant : Record<string, DbDebt[]>, on garde tous les crédits actifs
+  // (principal + PTZ + travaux…) et `buildSimulationInputFromDb` + portfolio.ts
+  // les agrègent via `aggregateLoans`.
   const { data: allDebts } = await supabase
     .from('debts')
     .select(`
       id, asset_id, initial_amount, interest_rate, insurance_rate,
-      duration_months, start_date, bank_fees, guarantee_fees, amortization_type
+      duration_months, start_date, bank_fees, guarantee_fees,
+      amortization_type, deferral_type, deferral_months,
+      insurance_base, insurance_quotite, loan_kind
     `)
     .eq('user_id', userId)
     .eq('status', 'active')
 
-  const debtByAsset:    Record<string, DbDebt>          = {}
-  const debtIdByAsset:  Record<string, string>          = {}
-  const debtStartByAsset: Record<string, string | null> = {}
+  const debtsByAsset:       Record<string, DbDebt[]>       = {}
+  const debtIdsByAsset:     Record<string, string[]>       = {}
+  const debtStartByAsset:   Record<string, string | null>  = {}
   for (const d of allDebts ?? []) {
-    if (d.asset_id) {
-      debtByAsset[d.asset_id] = {
-        initial_amount:    d.initial_amount,
-        interest_rate:     d.interest_rate,
-        insurance_rate:    d.insurance_rate,
-        duration_months:   d.duration_months,
-        start_date:        d.start_date,
-        bank_fees:         d.bank_fees  ?? 0,
-        guarantee_fees:    d.guarantee_fees ?? 0,
-        amortization_type: d.amortization_type ?? 'constant',
-      }
-      debtIdByAsset[d.asset_id]    = d.id as string
+    if (!d.asset_id) continue
+    const dbDebt: DbDebt = {
+      initial_amount:    d.initial_amount,
+      interest_rate:     d.interest_rate,
+      insurance_rate:    d.insurance_rate,
+      duration_months:   d.duration_months,
+      start_date:        d.start_date,
+      bank_fees:         d.bank_fees  ?? 0,
+      guarantee_fees:    d.guarantee_fees ?? 0,
+      amortization_type: d.amortization_type ?? 'constant',
+      deferral_type:     d.deferral_type     ?? 'none',
+      deferral_months:   d.deferral_months   ?? 0,
+      insurance_base:    d.insurance_base    ?? 'capital_initial',
+      insurance_quotite: d.insurance_quotite ?? 100,
+      loan_kind:         d.loan_kind         ?? 'principal',
+    }
+    if (!debtsByAsset[d.asset_id])     debtsByAsset[d.asset_id]     = []
+    if (!debtIdsByAsset[d.asset_id])   debtIdsByAsset[d.asset_id]   = []
+    debtsByAsset[d.asset_id]!.push(dbDebt)
+    debtIdsByAsset[d.asset_id]!.push(d.id as string)
+    // Pour le comparateur réel-vs-simulé (loadActualData), on garde la
+    // start_date du PREMIER crédit principal (cohérence historique).
+    if ((d.loan_kind ?? 'principal') === 'principal' && !debtStartByAsset[d.asset_id]) {
       debtStartByAsset[d.asset_id] = d.start_date as string | null
     }
   }
@@ -168,36 +186,44 @@ export async function computeRealEstatePortfolio(
     const dbAsset: DbAsset | null = assetRaw ? { current_value: assetRaw.current_value } : null
     const dbLots: DbLot[] = lotsRaw.map((l) => ({ rent_amount: l.rent_amount, status: l.status }))
     const dbCharges: DbCharges | null = chargesByProp[prop.id as string] ?? null
-    const debt: DbDebt | null = debtByAsset[assetId] ?? null
+    const debts: DbDebt[] = debtsByAsset[assetId] ?? []
 
-    // Apport = coût acquisition - capital emprunté (ou coût total si cash)
-    const acqCost    = (prop.purchase_price ?? 0) + (prop.purchase_fees ?? 0) + (prop.works_amount ?? 0)
-    const downPayment = Math.max(0, acqCost - (debt?.initial_amount ?? 0))
+    // Apport = coût acquisition - somme capitaux empruntés (ou coût total si cash).
+    // Multi-crédit V3.1 : sum(initial_amount) au lieu d'un seul prêt.
+    const acqCost = (prop.purchase_price ?? 0) + (prop.purchase_fees ?? 0) + (prop.works_amount ?? 0)
+    const totalBorrowed = debts.reduce((s, d) => s + (d.initial_amount ?? 0), 0)
+    const downPayment = Math.max(0, acqCost - totalBorrowed)
 
     const input = buildSimulationInputFromDb(
-      dbProp, dbAsset, dbLots, dbCharges, debt, dbProfile,
+      dbProp, dbAsset, dbLots, dbCharges, debts, dbProfile,
       { downPayment },
     )
     const simulation = runSimulation(input)
 
-    // Capital restant calculé analytiquement à aujourd'hui
-    let capitalRemaining = 0
-    if (debt?.interest_rate != null && debt.duration_months != null && debt.initial_amount != null) {
-      capitalRemaining = computeRemainingCapitalAt(
-        {
-          principal:        debt.initial_amount,
-          annualRatePct:    debt.interest_rate,
-          durationYears:    debt.duration_months / 12,
-          insuranceRatePct: debt.insurance_rate  ?? 0,
-          bankFees:         debt.bank_fees        ?? 0,
-          guaranteeFees:    debt.guarantee_fees   ?? 0,
-          ...(debt.start_date ? { startDate: new Date(debt.start_date) } : {}),
-        },
-        today,
+    // Capital restant analytique à aujourd'hui — somme tous prêts actifs.
+    // Pour 1 seul crédit, équivalent strict à l'ancien calcul
+    // (computeRemainingCapitalAt). Cf. multi-credit-consistency.test.ts.
+    const validLoans: LoanInput[] = debts
+      .filter(d =>
+        d.interest_rate  != null &&
+        d.duration_months != null &&
+        d.initial_amount  != null,
       )
-    } else if (debt?.initial_amount) {
-      // Crédit incomplet : fallback sur le capital initial
-      capitalRemaining = debt.initial_amount
+      .map(d => ({
+        principal:        d.initial_amount!,
+        annualRatePct:    d.interest_rate!,
+        durationYears:    d.duration_months! / 12,
+        insuranceRatePct: d.insurance_rate  ?? 0,
+        bankFees:         d.bank_fees        ?? 0,
+        guaranteeFees:    d.guarantee_fees   ?? 0,
+        ...(d.start_date ? { startDate: new Date(d.start_date) } : {}),
+      }))
+    let capitalRemaining = 0
+    if (validLoans.length > 0) {
+      capitalRemaining = aggregateLoans(validLoans, today).totalRemainingCapital
+    } else {
+      // Crédits incomplets : fallback sur la somme des capitaux initiaux.
+      capitalRemaining = debts.reduce((s, d) => s + (d.initial_amount ?? 0), 0)
     }
 
     const propertyName = assetRaw?.name as string | undefined
@@ -205,7 +231,9 @@ export async function computeRealEstatePortfolio(
 
     // ── Phase 2 (optionnel) : charge le réel + comparaison + alertes ──
     if (opts.withActuals) {
-      const debtId = debtIdByAsset[assetId] ?? null
+      // V3.1 : on garde l'id du crédit principal pour le suivi réel (loadActualData
+      // s'attend à un debtId unique). Les crédits secondaires ne sont pas trackés.
+      const debtId = debtIdsByAsset[assetId]?.[0] ?? null
       const actualData = await loadActualData(supabase, userId, assetId, prop.id as string, debtId)
       const startYearStr = debtStartByAsset[assetId]
       const simStartYear = startYearStr

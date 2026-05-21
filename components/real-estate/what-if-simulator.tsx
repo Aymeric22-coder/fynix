@@ -25,10 +25,19 @@ interface Props {
   asset:    DbAsset | null
   lots:     DbLot[]
   charges:  DbCharges | null
-  debt:     DbDebt | null
+  /** V3.1 — Multi-crédit : tous les crédits actifs (peut être []). */
+  debts:    DbDebt[]
   profile:  DbProfile | null
   /** True si le bien est en location courte duree (modifie les sliders). */
   isShortTerm?: boolean
+}
+
+/**
+ * Cible le crédit principal parmi un tableau de DbDebt. Retombe sur le
+ * premier crédit si aucun n'a `loan_kind === 'principal'`, ou null si vide.
+ */
+function findPrincipal(debts: DbDebt[]): DbDebt | null {
+  return debts.find(d => (d.loan_kind ?? 'principal') === 'principal') ?? debts[0] ?? null
 }
 
 interface WhatIfParams {
@@ -52,38 +61,42 @@ interface ComparisonKpis {
 }
 
 export function WhatIfSimulator({
-  property, asset, lots, charges, debt, profile, isShortTerm,
+  property, asset, lots, charges, debts, profile, isShortTerm,
 }: Props) {
   const [open, setOpen] = useState(false)
 
   // ─── Base : valeurs reelles depuis la DB ────────────────────────────
+  // Le slider "Taux d'intérêt" ne pilote QUE le crédit principal (les
+  // crédits secondaires — PTZ, prêt travaux — gardent leur taux propre,
+  // souvent fixe ou 0). Documente l'intention au-dessus du slider.
   const baseValues = useMemo(() => {
     const monthlyRent = lots
       .filter(l => l.status === 'rented')
       .reduce((s, l) => s + (l.rent_amount ?? 0), 0)
     const annualCharges = sumCharges(charges)
+    const principal = findPrincipal(debts)
     return {
       monthlyRent:      property.assumed_total_rent ?? monthlyRent,
-      annualRatePct:    debt?.interest_rate ?? 3.5,
+      annualRatePct:    principal?.interest_rate ?? 3.5,
       vacancyMonths:    property.vacancy_months ?? 0,
       annualCharges,
       currentValue:     asset?.current_value ?? 0,
       occupancyRatePct: 70,
       nightlyRateLow:   80,
     }
-  }, [property, asset, lots, charges, debt])
+  }, [property, asset, lots, charges, debts])
 
   const [params, setParams] = useState<WhatIfParams>(baseValues)
 
   // ─── KPIs base (vraie simulation actuelle) ──────────────────────────
   const baseKpis = useMemo<ComparisonKpis>(() => {
-    return runWhatIfSim(property, asset, lots, charges, debt, profile, baseValues)
-  }, [property, asset, lots, charges, debt, profile, baseValues])
+    return runWhatIfSim(property, asset, lots, charges, debts, profile, baseValues)
+  }, [property, asset, lots, charges, debts, profile, baseValues])
 
   // ─── KPIs scenario ──────────────────────────────────────────────────
   const whatIfKpis = useMemo<ComparisonKpis>(() => {
-    return runWhatIfSim(property, asset, lots, charges, debt, profile, params)
-  }, [property, asset, lots, charges, debt, profile, params])
+    return runWhatIfSim(property, asset, lots, charges, debts, profile, params)
+  }, [property, asset, lots, charges, debts, profile, params])
 
   function setParam<K extends keyof WhatIfParams>(k: K, v: WhatIfParams[K]) {
     setParams(p => ({ ...p, [k]: v }))
@@ -292,7 +305,7 @@ export function runWhatIfSim(
   asset:    DbAsset | null,
   lots:     DbLot[],
   charges:  DbCharges | null,
-  debt:     DbDebt | null,
+  debts:    DbDebt[],
   profile:  DbProfile | null,
   params:   WhatIfParams,
 ): ComparisonKpis {
@@ -329,17 +342,21 @@ export function runWhatIfSim(
     }
   }
 
-  // Override taux du credit
-  const debtOverride: DbDebt | null = debt
-    ? { ...debt, interest_rate: params.annualRatePct }
-    : null
+  // V3.1 — Override taux : on ne modifie QUE le crédit principal. Les
+  // crédits secondaires (PTZ taux 0, prêt travaux) gardent leur taux DB.
+  const debtsOverride: DbDebt[] = debts.map(d =>
+    (d.loan_kind ?? 'principal') === 'principal'
+      ? { ...d, interest_rate: params.annualRatePct }
+      : d,
+  )
 
-  // Apport
+  // Apport = coût acquisition - somme capitaux empruntés (multi-crédit).
   const acqCost = (property.purchase_price ?? 0) + (property.purchase_fees ?? 0) + (property.works_amount ?? 0)
-  const downPayment = Math.max(0, acqCost - (debt?.initial_amount ?? 0))
+  const totalBorrowed = debts.reduce((s, d) => s + (d.initial_amount ?? 0), 0)
+  const downPayment = Math.max(0, acqCost - totalBorrowed)
 
   const input = buildSimulationInputFromDb(
-    propertyOverride, assetOverride, lots, chargesOverride, debtOverride, profile,
+    propertyOverride, assetOverride, lots, chargesOverride, debtsOverride, profile,
     { downPayment },
   )
   const result = runSimulation(input)
