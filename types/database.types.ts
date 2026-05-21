@@ -1,5 +1,17 @@
-// Auto-maintenu manuellement — régénérer avec `supabase gen types typescript`
-// après chaque migration pour rester synchronisé.
+// ⚠️ FICHIER MAINTENU À LA MAIN — NE PAS RÉGÉNÉRER ⚠️
+//
+// Ce fichier n'est PAS auto-généré. Il contient :
+//   - Les types miroirs du schéma Supabase (interfaces Row + Insert/Update)
+//   - Des helpers, enums, labels FR et constants (LOAN_KIND_LABELS,
+//     PROPERTY_EVENT_LABELS, USAGE_TYPE_LABELS, SHORT_TERM_EVENT_KINDS,
+//     isRentalUsage, etc.) qui sont consommés partout dans le code.
+//
+// Lancer `supabase gen types typescript` ÉCRASERAIT tous ces helpers FR
+// et casserait massivement les imports. NE PAS le faire.
+//
+// Pour ajouter une colonne après une migration : éditer ce fichier à la
+// main, ajouter la colonne dans l'interface concernée (Row + cohérence
+// Insert/Update implicite via Omit), et lancer `npx tsc --noEmit`.
 
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[]
 
@@ -218,6 +230,13 @@ export interface Profile {
   email_unsubscribe_token:     string
   /** Date du dernier rapport mensuel envoyé avec succès. */
   last_monthly_report_sent_at: string | null
+
+  // ── Migration 036 — Contexte foyer fiscal (LMP detection + QF) ───
+  /** Revenus professionnels annuels du foyer (salaires nets imposables,
+   *  BNC, BIC pro, pensions). Hors revenus locatifs. Sert à détecter LMP. */
+  professional_income_eur: number | null
+  /** Nombre de parts fiscales du foyer (quotient familial). */
+  foyer_fiscal_parts:      number | null
 }
 
 export interface Asset {
@@ -306,6 +325,11 @@ export interface Debt {
   insurance_quotite: number
   /** Type de garantie du prêt. */
   guarantee_type: GuaranteeType
+  // ── Migration 034 — Multi-crédit par bien ────────────────────
+  /** Type de prêt (principal / PTZ / travaux / PEL / Action Logement /
+   *  relais / in fine / autre). Permet de distinguer plusieurs crédits
+   *  actifs sur un même bien. NOT NULL DEFAULT 'principal'. */
+  loan_kind: LoanKind
   created_at: string
   updated_at: string
 }
@@ -352,6 +376,18 @@ export interface RealEstateProperty {
   lmnp_micro_abattement_pct: number
   // ── Migration 033 — Type d'usage du bien ────────────────────
   usage_type: PropertyUsageType
+  // ── Migration 037 — Compte courant d'associé SCI ────────────
+  /** Comptes courants d'associés SCI (avances). Leur remboursement
+   *  est fiscalement neutre (CGI art. 200 A). */
+  cca_amount: number | null
+  // ── Migration 043 — Coordonnées géocodées ───────────────────
+  /** Latitude géocodée via api-adresse.data.gouv.fr (~1 cm précision).
+   *  Null si géocodage échoué ou pas encore tenté. */
+  latitude:    number | null
+  /** Longitude géocodée. Null si géocodage échoué ou pas encore tenté. */
+  longitude:   number | null
+  /** Date du dernier géocodage réussi (re-géocodage si adresse change). */
+  geocoded_at: string | null
   created_at: string
   updated_at: string
 }
@@ -435,15 +471,102 @@ export interface PropertyCharges {
   property_id: string
   user_id: string
   year: number
+  // ── Colonnes historiques (mig 001/005) ────────────────────────
   taxe_fonciere: number
-  insurance: number
+  insurance: number     // = PNO (Propriétaire Non Occupant) — conservé
   accountant: number
   cfe: number
-  condo_fees: number
-  maintenance: number
+  condo_fees: number    // courantes — conservé
+  maintenance: number   // routine — conservé
   other: number
   vacancy_rate: number
   notes: string | null
+  // ── Migration 040 — Charges exhaustives ───────────────────────
+  // Toutes nullable avec defaut 0 en DB — typées number | null pour
+  // refléter qu'un INSERT partiel/row pré-mig 040 peut laisser null.
+  // Taxes locales
+  taxe_habitation:        number | null
+  taxe_logements_vacants: number | null
+  teom:                   number | null
+  // Assurances complémentaires
+  insurance_gli_eur:      number | null
+  insurance_gli_pct:      number | null
+  insurance_mrh:          number | null
+  // Copropriété complémentaire
+  condo_fees_works:       number | null
+  condo_special_fund:     number | null
+  // Gestion locative
+  management_agency_eur:  number | null
+  management_agency_pct:  number | null
+  management_airbnb_pct:  number | null
+  management_booking_pct: number | null
+  management_cleaning:    number | null
+  management_concierge:   number | null
+  // Travaux & entretien
+  maintenance_major:      number | null
+  repairs_provision:      number | null
+  // Charges professionnelles complémentaires
+  legal_fees:             number | null
+  diagnostics_fees:       number | null
+  // Abonnements
+  utilities_internet:     number | null
+  utilities_electricity:  number | null
+  utilities_water:        number | null
+  // Note libre liée à "other"
+  other_note:             string | null
+  created_at: string
+  updated_at: string
+}
+
+// ── Migration 038 — Dispositifs fiscaux incitatifs ──────────────
+// Table 1-N (1 dispositif actif max par bien, voir index unique).
+// Couvre Pinel/Pinel+, Denormandie, Malraux, MH, Loc'Avantages, Censi-Bouvard.
+// Colonnes spécifiques nullables, utilisées selon le `kind`.
+
+export type PropertyTaxIncentiveKind =
+  | 'pinel'
+  | 'pinel_plus'
+  | 'denormandie'
+  | 'malraux'
+  | 'monuments_historiques'
+  | 'loc_avantages'
+  | 'censi_bouvard'
+
+export type PropertyTaxIncentiveZone = 'A_bis' | 'A' | 'B1' | 'B2' | 'C'
+
+export type LocAvantagesConvention = 'loc1' | 'loc2' | 'loc3'
+
+export interface PropertyTaxIncentive {
+  id:          string
+  property_id: string
+  user_id:     string
+  kind:        PropertyTaxIncentiveKind
+
+  // Pinel / Pinel+ / Denormandie
+  duration_years:   6 | 9 | 12 | null
+  zone:             PropertyTaxIncentiveZone | null
+  start_year:       number | null
+  rent_cap_monthly: number | null
+  is_pinel_plus:    boolean | null
+
+  // Denormandie spécifique
+  works_amount: number | null
+
+  // Malraux / MH
+  classification:        string | null
+  occupancy:             string | null
+  works_start_year:      number | null
+  works_end_year:        number | null
+  conservation_end_year: number | null
+  reduction_rate_pct:    number | null
+
+  // Loc'Avantages
+  convention_type:    LocAvantagesConvention | null
+  convention_start:   string | null
+  convention_end:     string | null
+  market_rent_annual: number | null
+
+  notes:      string | null
   created_at: string
   updated_at: string
 }
@@ -577,6 +700,9 @@ export type PropertyValuationInsert = Omit<PropertyValuation, 'id' | 'created_at
 
 export type PropertyChargesInsert = Omit<PropertyCharges, 'id' | 'created_at' | 'updated_at'>
 export type PropertyChargesUpdate = Partial<Omit<PropertyChargesInsert, 'user_id' | 'property_id' | 'year'>>
+
+export type PropertyTaxIncentiveInsert = Omit<PropertyTaxIncentive, 'id' | 'created_at' | 'updated_at'>
+export type PropertyTaxIncentiveUpdate = Partial<Omit<PropertyTaxIncentiveInsert, 'user_id' | 'property_id'>>
 
 // Migration 012 : ScpiAssetInsert/Update, ScpiDividendInsert,
 // FinancialAssetInsert/Update supprimés (tables droppées).

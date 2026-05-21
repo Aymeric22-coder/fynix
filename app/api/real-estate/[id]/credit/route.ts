@@ -22,6 +22,7 @@ import {
 } from '@/lib/real-estate/amortization'
 import type { LoanInput } from '@/lib/real-estate/types'
 import { round2 } from '@/lib/finance/formulas'
+import type { LoanKind } from '@/types/database.types'
 
 type Ctx = { params: Promise<{ id: string }> }
 
@@ -32,8 +33,7 @@ interface CreditUpsertBody {
   name?:                string
   lender?:              string | null
   /** Migration 034 — distingue plusieurs crédits sur le même bien */
-  loan_kind?:           'principal' | 'ptz' | 'travaux' | 'pel'
-                      | 'action_logement' | 'relais' | 'in_fine' | 'autre'
+  loan_kind?:           LoanKind
   initial_amount?:      number | null
   interest_rate?:       number | null
   insurance_rate?:      number | null
