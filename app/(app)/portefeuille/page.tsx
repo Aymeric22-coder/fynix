@@ -15,6 +15,7 @@ import {
   filterPortfolioByCategory, summarizeCategories, isValidCategoryId,
 } from '@/lib/portfolio/categories'
 import { CategoryTabs }               from '@/components/portfolio/category-tabs'
+import { FxFallbackBanner }           from '@/components/portfolio/fx-fallback-banner'
 import {
   formatCurrency, formatPercent, formatQuantity,
   ASSET_CLASS_LABELS,
@@ -190,6 +191,11 @@ export default async function PortefeuillePage({ searchParams }: Props) {
         />
       ) : (
         <>
+          {/* ── Avertissement repli FX 1:1 (au-dessus des KPI) ───────────── */}
+          <FxFallbackBanner
+            pairs={(fullResult.summary.excludedForFx ?? []).map((p) => `${p.from}/${p.to}`)}
+          />
+
           {/* ── KPIs ─────────────────────────────────────────────────────── */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
             {/* Carte 1 — Capital investi */}

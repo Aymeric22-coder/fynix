@@ -260,6 +260,11 @@ export interface Transaction {
   quantity: number | null
   unit_price: number | null
   fees: number
+  // ── Migration 039 — Plus-value réalisée (E4) ──
+  // Renseignée uniquement pour `transaction_type = 'sale'` :
+  // realized_pnl = (unitPrice − oldPru) × soldQty, en devise de référence.
+  // NULL pour les achats et les dividendes.
+  realized_pnl: number | null
 }
 
 export interface Debt {
