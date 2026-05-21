@@ -29,6 +29,7 @@ export default async function ImmobilierPage() {
     .select(`
       id, asset_id, property_type, address_city, address_zip, surface_m2,
       purchase_price, purchase_fees, works_amount, fiscal_regime, usage_type,
+      latitude, longitude,
       asset:assets!asset_id ( name, current_value, acquisition_price, acquisition_date, status ),
       lots:real_estate_lots ( id, status, rent_amount, charges_amount )
     `)
@@ -136,6 +137,14 @@ export default async function ImmobilierPage() {
     )
   }
 
+  // ── Coordonnees geocodees (DB) ──────────────────────────────────────────
+  const coords: Record<string, { lat: number; lng: number } | null> = {}
+  for (const p of (properties ?? [])) {
+    const lat = (p as unknown as { latitude?: number | null }).latitude
+    const lng = (p as unknown as { longitude?: number | null }).longitude
+    coords[p.id as string] = (lat != null && lng != null) ? { lat, lng } : null
+  }
+
   // ── Render ───────────────────────────────────────────────────────────────
   return (
     <div>
@@ -187,6 +196,7 @@ export default async function ImmobilierPage() {
           <PortfolioView
             summary={portfolioSummary}
             cardsByPropertyId={cardsByPropertyId}
+            coords={coords}
           />
         </>
       )}

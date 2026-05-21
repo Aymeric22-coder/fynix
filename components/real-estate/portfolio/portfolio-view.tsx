@@ -14,14 +14,15 @@
  */
 
 import { useEffect, useMemo, useState } from 'react'
-import { LayoutGrid, Rows3, BarChart3, Search, X } from 'lucide-react'
+import { LayoutGrid, Rows3, BarChart3, Map as MapIcon, Search, X } from 'lucide-react'
 import type { RealEstatePortfolioSummary, PropertySummary } from '@/lib/real-estate/portfolio-summary'
 import { USAGE_TYPE_LABELS, type PropertyUsageType } from '@/types/database.types'
 import { PortfolioAlertsBanner } from './portfolio-alerts-banner'
 import { PropertiesTableView } from './properties-table-view'
 import { PropertiesChartsView } from './properties-charts-view'
+import { PropertyMap } from './property-map'
 
-type View = 'cards' | 'table' | 'charts'
+type View = 'cards' | 'table' | 'charts' | 'map'
 type UsageFilter = 'all' | PropertyUsageType
 type RegimeFilter = 'all' | 'micro' | 'foncier_reel' | 'lmnp' | 'lmp' | 'sci_ir' | 'sci_is'
 type StatusFilter = 'all' | 'positive_cf' | 'negative_cf' | 'with_alerts'
@@ -70,9 +71,11 @@ interface Props {
   summary:     RealEstatePortfolioSummary
   /** Slot rendu par le serveur : cartes des biens existantes (pre-filtre). */
   cardsByPropertyId: Record<string, React.ReactNode>
+  /** Coordonnees pre-chargees depuis la DB (pour la vue carte). */
+  coords?:     Record<string, { lat: number; lng: number } | null>
 }
 
-export function PortfolioView({ summary, cardsByPropertyId }: Props) {
+export function PortfolioView({ summary, cardsByPropertyId, coords = {} }: Props) {
   const [filters, setFilters] = useState<FiltersState>(DEFAULTS)
   const [hydrated, setHydrated] = useState(false)
 
@@ -153,6 +156,7 @@ export function PortfolioView({ summary, cardsByPropertyId }: Props) {
           <ViewBtn current={filters.view} value="cards"  icon={LayoutGrid} label="Cartes"    onClick={() => update('view', 'cards')} />
           <ViewBtn current={filters.view} value="table"  icon={Rows3}      label="Tableau"   onClick={() => update('view', 'table')} />
           <ViewBtn current={filters.view} value="charts" icon={BarChart3}  label="Graphiques" onClick={() => update('view', 'charts')} />
+          <ViewBtn current={filters.view} value="map"    icon={MapIcon}    label="Carte"     onClick={() => update('view', 'map')} />
         </div>
       </div>
 
@@ -177,8 +181,10 @@ export function PortfolioView({ summary, cardsByPropertyId }: Props) {
         </div>
       ) : filters.view === 'table' ? (
         <PropertiesTableView summary={subSummary} />
-      ) : (
+      ) : filters.view === 'charts' ? (
         <PropertiesChartsView summary={subSummary} />
+      ) : (
+        <PropertyMap properties={filtered} coords={coords} />
       )}
     </div>
   )
