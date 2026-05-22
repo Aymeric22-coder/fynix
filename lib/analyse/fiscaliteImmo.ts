@@ -78,6 +78,15 @@ export interface ImpotFoncierResult {
  *   - 'sci_ir'        : transparent fiscal, mêmes règles que foncier_nu
  *   - 'sci_is'        : base = loyer − charges − intérêts − amortissement,
  *                       imposée à 25 % (IS simplifié)
+ *
+ * @deprecated **V4 — N'utilise plus ce calcul fiscal en runtime.** Le
+ *   dashboard /analyse passe désormais par le moteur fiscal complet
+ *   (`lib/real-estate/fiscal/`) via `runSimulation`, qui gère
+ *   amortissements pluri-annuels, carry-forward des déficits, différé
+ *   crédit, multi-crédit et dispositifs incitatifs (Pinel/Denormandie/
+ *   Loc'Avantages). Cette fonction simplifiée est conservée pour la
+ *   rétrocompat des tests historiques (`__tests__/fiscaliteImmo.test.ts`)
+ *   et un usage potentiel hors moteur.
  */
 export function calculerImpotFoncier(inputs: ImpotFoncierInputs): ImpotFoncierResult {
   const loyer    = Math.max(0, inputs.loyer_annuel)

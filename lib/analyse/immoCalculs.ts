@@ -95,6 +95,15 @@ function isAcquiredWithinMonths(
  *     + ajustement LTV : >80=+25, 60-80=+15, 40-60=+8, <40=+0
  *     + ajustement cashflow : <0=+10 (risque liquidité), >0=−5 (autofinancé)
  *     capé à 75 (≠ crypto 95)
+ *
+ * @deprecated **V4 — N'utilise plus ce calcul en runtime.** Le dashboard
+ *   /analyse passe désormais par `lib/real-estate/portfolio.ts >
+ *   computeRealEstatePortfolio` (source unique multi-crédit depuis V3.1)
+ *   puis mappe via `lib/analyse/immoFromSimulation.ts >
+ *   buildBienImmoFromSimulation`. La fonction est conservée pour la
+ *   rétrocompat des tests historiques (`__tests__/immoCalculs.test.ts`)
+ *   et un usage potentiel hors moteur. Pour tout calcul de KPI bien,
+ *   préférer `runSimulation` directement.
  */
 export function calculerKPIsBien(bien: BienImmoInput): BienImmoKPIs {
   const valeur            = Math.max(0, bien.valeur)

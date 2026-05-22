@@ -29,10 +29,11 @@ import {
   BENCHMARK_GEO_MSCI_ACWI, BENCHMARK_SECTOR_MSCI_WORLD,
 } from './benchmarks'
 import {
-  calculerKPIsBien, calculerRisqueImmoGlobal, calculerRevenuPassifImmo,
+  calculerRisqueImmoGlobal, calculerRevenuPassifImmo,
   rendementNetMoyenPondere,
 } from './immoCalculs'
-import { getDefaultCharges } from '@/lib/real-estate/defaultCharges'
+import { computeRealEstatePortfolio } from '@/lib/real-estate/portfolio'
+import { buildBienImmoFromSimulation } from './immoFromSimulation'
 import type {
   PatrimoineComplet, BienImmo, CompteCash,
   ClasseAlloc, SecteurAlloc, GeoAlloc, EnrichedPosition, AnalyseAssetType,
@@ -48,65 +49,15 @@ const num = (v: unknown): number => {
 
 // ─────────────────────────────────────────────────────────────────
 // Immobilier
+//
+// V4 — Le calcul des KPIs immo a été délégué au moteur unique
+// `lib/real-estate/portfolio.ts > computeRealEstatePortfolio`. Les
+// anciennes interfaces ImmoRow / DebtRow / LotRow / PropertyChargeRow
+// et le helper `estimerDureeRestante` ont été supprimés (le moteur
+// charge directement ces données + calcule la durée restante via le
+// schedule analytique). Cf. `lib/analyse/immoFromSimulation.ts` pour
+// le mapping PropertySimResult → BienImmo.
 // ─────────────────────────────────────────────────────────────────
-
-interface ImmoRow {
-  id:                 string
-  asset_id:           string
-  address_city:       string | null
-  address_country:    string | null
-  purchase_price:     number | string | null
-  works_amount:       number | string | null
-  fiscal_regime:      string | null
-  assumed_total_rent: number | string | null
-  /** % loyer net pour GLI (garantie loyers impayés). */
-  gli_pct:            number | string | null
-  /** % loyer net pour frais de gestion. */
-  management_pct:     number | string | null
-  asset?: { id: string; name: string | null; status: string | null; acquisition_date: string | null } | null
-}
-
-interface DebtRow {
-  asset_id:           string | null
-  capital_remaining:  number | string | null
-  monthly_payment:    number | string | null
-  interest_rate:      number | string | null
-}
-
-interface LotRow {
-  property_id: string
-  rent_amount: number | string | null
-}
-
-/** Ligne `property_charges` (1 par property par année). */
-interface PropertyChargeRow {
-  property_id:     string
-  taxe_fonciere:   number | string | null
-  insurance:       number | string | null   // PNO
-  condo_fees:      number | string | null
-  maintenance:     number | string | null
-  accountant:      number | string | null
-  cfe:             number | string | null
-  other:           number | string | null
-}
-
-/**
- * Estime le nombre de mois restants d'un crédit à mensualité fixe (PMT).
- *
- *   M = P × r × (1+r)^n / ((1+r)^n − 1)
- *   → n = −log(1 − r·P / M) / log(1+r)
- *
- * Renvoie 0 si formule non résoluble (mensualité ≤ intérêts), pour
- * éviter NaN / Infinity dans la projection.
- */
-function estimerDureeRestante(capital: number, mensualite: number, tauxAnnuel: number): number {
-  if (capital <= 0 || mensualite <= 0 || tauxAnnuel <= 0) return 0
-  const r = tauxAnnuel / 12
-  const ratio = r * capital / mensualite
-  if (ratio >= 1) return 0   // mensualité ne couvre même pas les intérêts → indéterminé
-  const n = -Math.log(1 - ratio) / Math.log(1 + r)
-  return Math.max(0, Math.round(n))
-}
 
 // Sprint 2 — D10 : remplace par fiscalRegimeLabel (lib/analyse/regimeFiscalImmo).
 // On garde une map locale "type d'usage" plus generique que les labels fiscaux
@@ -142,24 +93,39 @@ interface ImmoLoadResult {
   rendementNetImmoMoyen: number
 }
 
+/**
+ * V4 — Source unique : convergence /analyse sur le moteur lib/real-estate/.
+ *
+ * Avant V4, cette fonction calculait ses propres KPIs (rendements, cashflow,
+ * impôt) avec un moteur fiscal SÉPARÉ (lib/analyse/fiscaliteImmo.ts) sans
+ * amortissement multi-année, sans carry-forward, sans différé, sans
+ * multi-crédit. Conséquence : le `cashflow_net_fiscal` de /analyse différait
+ * de celui de la fiche détail (bugs BUG-007/008, INCOH-002/003/004 de
+ * .audit/AUDIT_ETAT_ACTUEL.md).
+ *
+ * V4 délègue à `computeRealEstatePortfolio` (lib/real-estate/portfolio.ts,
+ * source unique depuis V3.1 multi-crédit). On charge ici uniquement les
+ * méta UI non extractibles depuis `PropertySimResult` (libellé, adresse,
+ * date d'acquisition, taux + durée du crédit principal pour la projection
+ * FIRE, flag charges_are_estimated). Le mapping vers le type `BienImmo` se
+ * fait via le helper pur `buildBienImmoFromSimulation`.
+ *
+ * Mode strict charges (validé V4) : pas de fallback `getDefaultCharges` —
+ * un bien sans `property_charges` aura un cashflow surévalué côté /analyse
+ * ET côté fiche détail (même chiffre), le flag `charges_are_estimated`
+ * reste pour l'affichage. La résolution des charges manquantes sera
+ * traitée de façon centralisée dans une vague Charges ultérieure.
+ */
 async function loadImmo(userId: string): Promise<ImmoLoadResult> {
   const supabase = await createServerClient()
 
-  // TMI utilisateur (pour estimer l'impôt foncier de chaque bien).
-  const { data: profileTmi } = await supabase
-    .from('profiles')
-    .select('tmi_rate')
-    .eq('id', userId)
-    .single()
-  const tmiUser = profileTmi?.tmi_rate ?? null
-
+  // ── Méta UI : props (sans purchase_price ni works_amount — ces valeurs
+  //    transitent désormais par le moteur via PropertySimResult). ──────
   const { data: props } = await supabase
     .from('real_estate_properties')
     .select(`
-      id, asset_id, address_city, address_country, purchase_price,
-      works_amount, fiscal_regime, assumed_total_rent,
-      gli_pct, management_pct,
-      asset:assets!asset_id ( id, name, status, acquisition_date )
+      id, asset_id, address_city, address_country, fiscal_regime,
+      asset:assets!asset_id ( id, name, acquisition_date )
     `)
     .eq('user_id', userId)
 
@@ -171,144 +137,86 @@ async function loadImmo(userId: string): Promise<ImmoLoadResult> {
     }
   }
 
-  const rows     = props as unknown as ImmoRow[]
+  const rows     = props as unknown as ImmoRowMeta[]
   const assetIds = rows.map((r) => r.asset_id).filter(Boolean)
   const propIds  = rows.map((r) => r.id)
 
-  // Loyers : somme des rent_amount des lots actifs par property
-  const { data: lotsRaw } = await supabase
-    .from('real_estate_lots')
-    .select('property_id, rent_amount, status')
-    .in('property_id', propIds)
-  const lots = (lotsRaw ?? []) as Array<LotRow & { status: string | null }>
-  const rentByProperty = new Map<string, number>()
-  for (const l of lots) {
-    if (l.status === 'rented' || !l.status) {
-      rentByProperty.set(l.property_id, (rentByProperty.get(l.property_id) ?? 0) + num(l.rent_amount))
-    }
-  }
-
-  // Dettes : capital_remaining + monthly_payment + interest_rate par asset_id
+  // ── Crédit principal (taux + durée + start_date) — pour la projection
+  //    FIRE qui a besoin d'extrapoler les intérêts par bien. Filtre
+  //    status='active' (BUG-D1-M08) et loan_kind='principal' pour cibler
+  //    le prêt principal parmi un multi-crédit. ──────────────────────
   const { data: debtsRaw } = await supabase
     .from('debts')
-    .select('asset_id, capital_remaining, monthly_payment, interest_rate')
+    .select('asset_id, interest_rate, duration_months, start_date, loan_kind')
     .in('asset_id', assetIds)
-  const debtByAsset       = new Map<string, number>()
-  const mensualiteByAsset = new Map<string, number>()
-  const tauxByAsset       = new Map<string, number>()
-  for (const d of (debtsRaw ?? []) as DebtRow[]) {
-    if (d.asset_id) {
-      debtByAsset.set(d.asset_id, (debtByAsset.get(d.asset_id) ?? 0) + num(d.capital_remaining))
-      mensualiteByAsset.set(d.asset_id, (mensualiteByAsset.get(d.asset_id) ?? 0) + num(d.monthly_payment))
-      // taux : on prend le 1er rencontré (un asset = un crédit actif depuis migration 006)
-      if (!tauxByAsset.has(d.asset_id) && d.interest_rate !== null) {
-        tauxByAsset.set(d.asset_id, num(d.interest_rate))
-      }
-    }
+    .eq('status', 'active')
+  const principalByAsset = new Map<string, {
+    rate: number; durMonths: number; startDate: string | null
+  }>()
+  for (const d of (debtsRaw ?? []) as PrincipalDebtMeta[]) {
+    if (!d.asset_id) continue
+    if ((d.loan_kind ?? 'principal') !== 'principal') continue
+    if (principalByAsset.has(d.asset_id)) continue   // 1er principal rencontré
+    principalByAsset.set(d.asset_id, {
+      rate:      num(d.interest_rate),
+      durMonths: num(d.duration_months),
+      startDate: d.start_date,
+    })
   }
 
-  // Charges annuelles : property_charges (on prend la ligne la plus récente
-  // par property). Si plusieurs années stockées, on garde la dernière.
-  const { data: chargesRaw } = await supabase
+  // ── Flag charges_are_estimated (existence d'une ligne property_charges
+  //    pour le bien). On ne charge PAS les valeurs : c'est le moteur qui
+  //    s'en charge via computeRealEstatePortfolio. ──────────────────────
+  const { data: chargesPropIds } = await supabase
     .from('property_charges')
-    .select('property_id, taxe_fonciere, insurance, condo_fees, maintenance, accountant, cfe, other, year')
+    .select('property_id')
     .in('property_id', propIds)
-    .order('year', { ascending: false })
-  const chargesByProperty = new Map<string, number>()
-  for (const c of (chargesRaw ?? []) as Array<PropertyChargeRow & { year: number }>) {
-    if (chargesByProperty.has(c.property_id)) continue  // déjà l'année la plus récente
-    const totalAnnuel =
-      num(c.taxe_fonciere) + num(c.insurance) + num(c.condo_fees) +
-      num(c.maintenance)   + num(c.accountant) + num(c.cfe) + num(c.other)
-    chargesByProperty.set(c.property_id, totalAnnuel)
-  }
+  const propsWithCharges = new Set<string>(
+    ((chargesPropIds ?? []) as Array<{ property_id: string }>).map((c) => c.property_id),
+  )
 
+  // ── APPEL CENTRAL : computeRealEstatePortfolio = source unique des KPIs.
+  //    Charge en interne props/lots/debts (multi-crédit)/charges/profile
+  //    puis lance runSimulation pour chaque bien (amortissement, carry-
+  //    forward, différé, Pinel, multi-crédit). Garantit la cohérence avec
+  //    la fiche détail et la page liste /immobilier. ───────────────────
+  const portfolio = await computeRealEstatePortfolio(supabase, userId)
+  const portfolioByPropId = new Map(
+    portfolio.properties.map((p) => [p.propertyId, p]),
+  )
+
+  // ── Mapping props → BienImmo via le helper pur. ──────────────────────
   let totalImmo = 0, totalDettes = 0, loyersMensuels = 0, mensualitesTotal = 0
 
-  const biens: BienImmo[] = rows.map((r) => {
-    const asset         = Array.isArray(r.asset) ? r.asset[0] : r.asset
-    const valeur        = num(r.purchase_price) + num(r.works_amount)
-    const creditRestant = debtByAsset.get(r.asset_id) ?? 0
-    const mensualite    = mensualiteByAsset.get(r.asset_id) ?? 0
-    const loyerLots     = rentByProperty.get(r.id) ?? 0
-    const loyerMensuel  = loyerLots > 0 ? loyerLots : num(r.assumed_total_rent) / 12
+  const biens: BienImmo[] = []
+  for (const r of rows) {
+    const sim = portfolioByPropId.get(r.id)
+    if (!sim) continue   // bien sans simulation (ne devrait jamais arriver)
 
-    // Charges annuelles : property_charges + frais gestion calculés à
-    // partir des % loyer (GLI + gestion).
-    // Si aucune ligne `property_charges` n'existe ET qu'on a un prix
-    // d'achat, on retombe sur les charges par défaut (taxe foncière 0,8 %,
-    // PNO 0,4 %, entretien 1 %) — l'UI affichera un bandeau "estimées".
-    const hasRealCharges = chargesByProperty.has(r.id)
-    let chargesReelles   = chargesByProperty.get(r.id) ?? 0
-    if (!hasRealCharges) {
-      const defaults = getDefaultCharges(num(r.purchase_price))
-      chargesReelles = defaults.taxe_fonciere + defaults.insurance_pno + defaults.maintenance
-    }
-    const loyersAnnuels  = loyerMensuel * 12
-    const fraisGestion   = loyersAnnuels * (num(r.gli_pct) + num(r.management_pct)) / 100
-    const chargesAnnuelles = chargesReelles + fraisGestion
+    const asset     = Array.isArray(r.asset) ? r.asset[0] : r.asset
+    const principal = principalByAsset.get(r.asset_id)
 
-    // Taux + durée restante estimés (pour la projection FIRE et l'estimation
-    // des intérêts annuels passés au calcul fiscal).
-    const tauxAnnuelPct = tauxByAsset.get(r.asset_id) ?? 3.0  // défaut 3 %
-
-    const kpis = calculerKPIsBien({
-      valeur,
-      credit_restant:    creditRestant,
-      mensualite_credit: mensualite,
-      loyer_mensuel:     loyerMensuel,
-      charges_annuelles: chargesAnnuelles,
-      fiscal_regime:           r.fiscal_regime as Parameters<typeof calculerKPIsBien>[0]['fiscal_regime'] ?? null,
-      tmi_rate:                tmiUser,
-      taux_interet_annuel_pct: tauxAnnuelPct,
-      valeur_amortissable:     num(r.purchase_price),  // approx : prix d'achat hors works
-      // Sprint 2 — recalibrage : neutralise le malus cashflow négatif si bien
-      // acquis depuis moins de 24 mois (effort structurel d'un crédit récent).
-      acquisition_date:        asset?.acquisition_date ?? null,
+    const bien = buildBienImmoFromSimulation(sim, {
+      uiType:                   inferTypeUsageFromRegime(r.fiscal_regime),
+      city:                     r.address_city,
+      country:                  r.address_country,
+      fiscal_regime:            r.fiscal_regime,
+      acquisitionDate:          asset?.acquisition_date ?? null,
+      chargesEstimated:         !propsWithCharges.has(r.id),
+      principalRatePct:         principal?.rate      ?? 3.0,   // default 3 % si pas de principal
+      principalDurationMonths:  principal?.durMonths ?? 0,
+      principalStartDate:       principal?.startDate ?? null,
     })
-    const dureeRestanteMois = creditRestant > 0 && mensualite > 0
-      ? estimerDureeRestante(creditRestant, mensualite, tauxAnnuelPct / 100)
-      : 0
 
-    totalImmo        += valeur
-    totalDettes      += creditRestant
-    loyersMensuels   += loyerMensuel
-    mensualitesTotal += mensualite
+    // Override `nom` avec asset.name si dispo (le helper retombe sur city sinon)
+    if (asset?.name) bien.nom = asset.name
 
-    const type = inferTypeUsageFromRegime(r.fiscal_regime)
-    return {
-      id:                  r.id,
-      nom:                 asset?.name ?? r.address_city ?? 'Bien',
-      ville:               r.address_city ?? null,
-      pays:                r.address_country ?? null,
-      type,
-      valeur,
-      loyer_mensuel:       loyerMensuel,
-      credit_restant:      creditRestant,
-      mensualite_credit:   mensualite,
-      charges_annuelles:   chargesAnnuelles,
-      charges_are_estimated: !hasRealCharges,
-      equity:              kpis.equity,
-      rendement_brut:      kpis.rendement_brut,
-      rendement_net:       kpis.rendement_net,
-      cashflow_mensuel:    kpis.cashflow_mensuel,
-      cashflow_net_fiscal:  kpis.cashflow_net_fiscal,
-      impot_mensuel_estime: kpis.impot_mensuel_estime,
-      taux_effort_fiscal:   kpis.taux_effort_fiscal,
-      ltv:                 kpis.ltv,
-      niveau_levier:       kpis.niveau_levier,
-      risque_immo:         kpis.risque_immo,
-      donnees_completes:   kpis.donnees_completes,
-      taux_interet_estime: tauxAnnuelPct,
-      duree_restante_mois: dureeRestanteMois,
-      // Sprint 5 — consommé par lib/analyse/optimiseurFiscal.ts
-      fiscal_regime:       r.fiscal_regime,
-    }
-  })
-
-  const risqueGlobal     = calculerRisqueImmoGlobal(biens)
-  const revenuPassifNet  = calculerRevenuPassifImmo(biens)
-  const rendementMoyen   = rendementNetMoyenPondere(biens)
+    totalImmo        += bien.valeur
+    totalDettes      += bien.credit_restant
+    loyersMensuels   += bien.loyer_mensuel
+    mensualitesTotal += bien.mensualite_credit
+    biens.push(bien)
+  }
 
   return {
     biens,
@@ -316,11 +224,30 @@ async function loadImmo(userId: string): Promise<ImmoLoadResult> {
     totalDettes,
     loyersMensuels,
     totalImmoEquity:        totalImmo - totalDettes,
-    risqueImmoGlobal:       risqueGlobal,
-    revenuPassifImmo:       revenuPassifNet,
+    risqueImmoGlobal:       calculerRisqueImmoGlobal(biens),
+    revenuPassifImmo:       calculerRevenuPassifImmo(biens),
     mensualitesImmoTotal:   mensualitesTotal,
-    rendementNetImmoMoyen:  rendementMoyen,
+    rendementNetImmoMoyen:  rendementNetMoyenPondere(biens),
   }
+}
+
+/** Sous-ensemble de `real_estate_properties` chargé par loadImmo (méta UI). */
+interface ImmoRowMeta {
+  id:                 string
+  asset_id:           string
+  address_city:       string | null
+  address_country:    string | null
+  fiscal_regime:      string | null
+  asset?: { id: string; name: string | null; acquisition_date: string | null } | null
+}
+
+/** Sous-ensemble de `debts` chargé par loadImmo (crédit principal seul). */
+interface PrincipalDebtMeta {
+  asset_id:           string | null
+  interest_rate:      number | string | null
+  duration_months:    number | string | null
+  start_date:         string | null
+  loan_kind:          string | null
 }
 
 // ─────────────────────────────────────────────────────────────────
