@@ -85,4 +85,17 @@ describe('aggregateLoans — multi-crédit', () => {
     const agg  = aggregateLoans([PRINCIPAL, PTZ])
     expect(agg.totalCost).toBeCloseTo(ref1.totalCost + ref2.totalCost, 2)
   })
+
+  // V3.2 — Invariant clé pour MultiCreditList : la mensualité affichée
+  // par ligne (= buildAmortizationSchedule(loan).totalMonthly) DOIT
+  // sommer exactement au totalMonthly de aggregateLoans. Sinon la somme
+  // visuelle des lignes ne colle pas avec le total affiché en bas.
+  // (Bug D1-M01 corrigé en V3.2 via le calcul server-side de `monthly`
+  // par crédit.)
+  it('V3.2 — sum(individualSchedule.totalMonthly) === aggregateLoans.totalMonthly', () => {
+    const individuals = [PRINCIPAL, PTZ].map(buildAmortizationSchedule)
+    const sumMonthly  = individuals.reduce((s, x) => s + x.totalMonthly, 0)
+    const agg         = aggregateLoans([PRINCIPAL, PTZ])
+    expect(sumMonthly).toBeCloseTo(agg.totalMonthly, 6)
+  })
 })

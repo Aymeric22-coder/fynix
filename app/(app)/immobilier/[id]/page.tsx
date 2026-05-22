@@ -36,9 +36,9 @@ import type { ExistingCredit } from '@/components/real-estate/credit-form'
 import { loadActualData } from '@/lib/real-estate/actual'
 import { compareActualToSimulation } from '@/lib/real-estate/compare'
 import { buildYearEndReport } from '@/lib/real-estate/year-end-report'
-import { buildAmortizationSchedule } from '@/lib/real-estate/amortization'
+import { buildAmortizationSchedule, computeRemainingCapitalAt } from '@/lib/real-estate/amortization'
 import { aggregateLoans } from '@/lib/real-estate/multi-credit'
-import type { LoanKind } from '@/types/database.types'
+import { LOAN_KIND_LABELS, type LoanKind } from '@/types/database.types'
 import { buildSimulationInputFromDb, runSimulation } from '@/lib/real-estate'
 import { formatCurrency, formatPercent, formatDate } from '@/lib/utils/format'
 import type { LoanInput } from '@/lib/real-estate/types'
@@ -286,54 +286,58 @@ export default async function ImmobilierDetailPage({ params, searchParams }: Pro
     notes:              debtRow.notes,
   } : null
 
-  // ── Schedule & CRD à date (calculés côté serveur via lib pure) ──────────
-  const loanForCalc: LoanInput | null = (
-    creditForTab?.initial_amount != null &&
-    creditForTab?.interest_rate != null &&
-    creditForTab?.duration_months != null
-  ) ? {
-    principal:           creditForTab.initial_amount,
-    annualRatePct:       creditForTab.interest_rate,
-    durationYears:       creditForTab.duration_months / 12,
-    insuranceRatePct:    creditForTab.insurance_rate ?? 0,
-    bankFees:            creditForTab.bank_fees,
-    guaranteeFees:       creditForTab.guarantee_fees,
-    startDate:           creditForTab.start_date ? new Date(creditForTab.start_date) : undefined,
-    deferralType:        creditForTab.deferral_type,
-    deferralMonths:      creditForTab.deferral_months,
-    insuranceBase:       creditForTab.insurance_base,
-    insuranceQuotitePct: creditForTab.insurance_quotite,
-  } : null
-
-  // ── Multi-crédit (migration 034) ────────────────────────────────────────
-  // Construit un LoanInput pour CHAQUE crédit actif puis agrège leur
-  // schedule. Pour rétrocompat avec un bien à un seul crédit, le résultat
-  // est strictement identique à l'ancien calcul.
-  const allLoansForCalc: LoanInput[] = allDebts
+  // ── Multi-crédit (migration 034 / V3.2) ─────────────────────────────────
+  // Note V3.2 : l'ancien `loanForCalc` (crédit principal seul, utilisé pour
+  // le tableau d'amortissement mono et RegimeComparator mono) a été
+  // supprimé. Tous les consommateurs passent désormais par enrichedLoans /
+  // allLoansForCalc / multiCredit.
+  // On enrichit chaque crédit avec son schedule, sa mensualité totale
+  // (capital + intérêts + assurance) et son CRD à date — tous calculés via
+  // `buildAmortizationSchedule` / `computeRemainingCapitalAt`. Cette structure
+  // unifiée alimente :
+  //   - MultiCreditList (monthly + CRD par ligne, cohérents avec l'agrégat)
+  //   - AmortizationTable (onglets multi : Tous + un par crédit)
+  //   - aggregateLoans (somme des schedules → multiCredit.totalMonthly etc.)
+  //
+  // Garantie : `sum(enrichedLoans[i].monthly) === multiCredit.totalMonthly`
+  // (cf. lib/real-estate/__tests__/multi-credit.test.ts).
+  const todayRef = new Date()
+  const enrichedLoans = allDebts
     .filter(d =>
       d.initial_amount != null &&
       d.interest_rate  != null &&
       d.duration_months != null,
     )
-    .map(d => ({
-      principal:           d.initial_amount,
-      annualRatePct:       d.interest_rate,
-      durationYears:       d.duration_months / 12,
-      insuranceRatePct:    d.insurance_rate ?? 0,
-      bankFees:            d.bank_fees      ?? 0,
-      guaranteeFees:       d.guarantee_fees ?? 0,
-      startDate:           d.start_date ? new Date(d.start_date) : undefined,
-      deferralType:        (d.deferral_type     ?? 'none')             as 'none' | 'partial' | 'total',
-      deferralMonths:      d.deferral_months   ?? 0,
-      insuranceBase:       (d.insurance_base    ?? 'capital_initial') as 'capital_initial' | 'capital_remaining',
-      insuranceQuotitePct: d.insurance_quotite ?? 100,
-    }))
+    .map(d => {
+      const loan: LoanInput = {
+        principal:           d.initial_amount!,
+        annualRatePct:       d.interest_rate!,
+        durationYears:       d.duration_months! / 12,
+        insuranceRatePct:    d.insurance_rate ?? 0,
+        bankFees:            d.bank_fees      ?? 0,
+        guaranteeFees:       d.guarantee_fees ?? 0,
+        ...(d.start_date ? { startDate: new Date(d.start_date) } : {}),
+        deferralType:        (d.deferral_type     ?? 'none')             as 'none' | 'partial' | 'total',
+        deferralMonths:      d.deferral_months   ?? 0,
+        insuranceBase:       (d.insurance_base    ?? 'capital_initial') as 'capital_initial' | 'capital_remaining',
+        insuranceQuotitePct: d.insurance_quotite ?? 100,
+      }
+      const indSchedule = buildAmortizationSchedule(loan)
+      const indCrd      = computeRemainingCapitalAt(loan, todayRef)
+      return {
+        debtRow:  d,
+        loan,
+        loanKind: (d.loan_kind ?? 'principal') as LoanKind,
+        schedule: indSchedule,
+        monthly:  indSchedule.totalMonthly,  // capital + intérêts + assurance moy.
+        crd:      indCrd,
+      }
+    })
 
-  const multiCredit = aggregateLoans(allLoansForCalc, new Date())
-  // Schedule du crédit principal (utilisé par l'onglet "Amortissement").
-  const schedule = loanForCalc ? buildAmortizationSchedule(loanForCalc) : null
+  const allLoansForCalc: LoanInput[] = enrichedLoans.map(x => x.loan)
+  const multiCredit = aggregateLoans(allLoansForCalc, todayRef)
   // CRD à date — total tous prêts actifs confondus.
-  const crdNow   = allLoansForCalc.length > 0
+  const crdNow = enrichedLoans.length > 0
     ? multiCredit.totalRemainingCapital
     : 0
 
@@ -610,18 +614,23 @@ export default async function ImmobilierDetailPage({ params, searchParams }: Pro
       icon:  <Banknote size={14} />,
       content: (
         <div className="space-y-6">
-          {/* Vue d'ensemble multi-crédit (migration 034) */}
-          {allDebts.length > 0 && (
+          {/* Vue d'ensemble multi-crédit (migration 034 / V3.2) */}
+          {/* On utilise enrichedLoans pour bénéficier des monthly + crd
+              pré-calculés, cohérents avec multiCredit.totalMonthly. */}
+          {enrichedLoans.length > 0 && (
             <MultiCreditList
-              credits={allDebts.map(d => ({
-                id:               d.id,
-                loan_kind:        (d.loan_kind ?? 'principal') as LoanKind,
-                lender:           d.lender ?? null,
-                initial_amount:   d.initial_amount,
-                interest_rate:    d.interest_rate,
-                insurance_rate:   d.insurance_rate ?? 0,
-                duration_months:  d.duration_months,
-                start_date:       d.start_date,
+              propertyId={prop.id}
+              credits={enrichedLoans.map(x => ({
+                id:               x.debtRow.id,
+                loan_kind:        x.loanKind,
+                lender:           x.debtRow.lender ?? null,
+                initial_amount:   x.loan.principal,
+                interest_rate:    x.loan.annualRatePct,
+                insurance_rate:   x.loan.insuranceRatePct,
+                duration_months:  Math.round(x.loan.durationYears * 12),
+                start_date:       x.debtRow.start_date,
+                monthly:          x.monthly,   // V3.2 — assurance incluse
+                crd:              x.crd,
               }))}
               totalMonthly={multiCredit.totalMonthly}
               totalRemainingCapital={multiCredit.totalRemainingCapital}
@@ -638,15 +647,29 @@ export default async function ImmobilierDetailPage({ params, searchParams }: Pro
       ),
     },
 
-    // ── 3. Tableau d'amortissement ────────────────────────────────────────
+    // ── 3. Tableau d'amortissement (V3.2 — multi-crédit) ─────────────────
+    // Si plusieurs crédits actifs, AmortizationTable affiche des onglets
+    // « Tous / Principal / PTZ / … ». Le schedule principal affiché par
+    // défaut est l'agrégat (= multiCredit.schedule). Les schedules
+    // individuels (perLoanSchedules) alimentent les onglets sub. Avec 1
+    // seul crédit ou aucun schedules: le composant retombe sur le mode
+    // mono historique (pas de tabs visibles).
     {
       id:    'amortissement',
       label: 'Amortissement',
       icon:  <FileSpreadsheet size={14} />,
-      content: schedule ? (
+      content: enrichedLoans.length > 0 ? (
         <AmortizationTable
-          schedule={schedule}
-          startDate={creditForTab?.start_date ? new Date(creditForTab.start_date) : null}
+          schedule={multiCredit.schedule}
+          startDate={enrichedLoans[0]!.loan.startDate ?? null}
+          schedules={enrichedLoans.length > 1
+            ? enrichedLoans.map(x => ({
+                label:     LOAN_KIND_LABELS[x.loanKind] ?? x.loanKind,
+                schedule:  x.schedule,
+                startDate: x.loan.startDate ?? null,
+              }))
+            : undefined
+          }
           propertyName={prop.asset?.name}
         />
       ) : (
@@ -736,8 +759,10 @@ export default async function ImmobilierDetailPage({ params, searchParams }: Pro
             <RegimeComparator
               base={{
                 property:    simInput.property,
-                // Si loan partiel, on l'ignore (le comparateur fonctionne aussi sans).
-                loan:        loanForCalc ?? undefined,
+                // V3.2 — multi-crédit : on passe tous les prêts actifs.
+                // `compareRegimes` (lib/real-estate/fiscal/) consomme
+                // `SimulationInput.loans` depuis V3.1.
+                loans:       allLoansForCalc,
                 rent:        simInput.rent,
                 charges:     simInput.charges,
                 downPayment: simInput.downPayment,

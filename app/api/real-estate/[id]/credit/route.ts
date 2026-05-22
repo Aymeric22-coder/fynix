@@ -22,7 +22,7 @@ import {
 } from '@/lib/real-estate/amortization'
 import type { LoanInput } from '@/lib/real-estate/types'
 import { round2 } from '@/lib/finance/formulas'
-import type { LoanKind } from '@/types/database.types'
+import { LOAN_KIND_LABELS, type LoanKind } from '@/types/database.types'
 
 type Ctx = { params: Promise<{ id: string }> }
 
@@ -261,12 +261,29 @@ export const PUT = withAuth(async (req: Request, user: User, ctx: Ctx) => {
   }
 })
 
-// ─── DELETE /api/real-estate/[id]/credit ──────────────────────────────────
+// ─── DELETE /api/real-estate/[id]/credit?loan_kind=... ───────────────────
+// V3.2 — STRICT : `loan_kind` est requis (sans, retour 400). Le DELETE cible
+// UN SEUL crédit identifié par (asset_id, user_id, status='active', loan_kind).
+// Cette règle est symétrique du PUT (qui cible déjà un upsert par
+// (asset_id, loan_kind)) et supprime la possibilité d'effacer en bloc tous
+// les crédits actifs d'un bien — risque réel sur les biens multi-crédit
+// (principal + PTZ + travaux). Les callers UI (credit-form, MultiCreditList)
+// passent toujours `?loan_kind=`.
 
-export const DELETE = withAuth(async (_req: Request, user: User, ctx: Ctx) => {
+export const DELETE = withAuth(async (req: Request, user: User, ctx: Ctx) => {
   const { id: propertyId } = await ctx!.params
-  const supabase = await createServerClient()
+  const { searchParams } = new URL(req.url)
 
+  const kind = searchParams.get('loan_kind')
+  if (!kind) {
+    return err('loan_kind query param required (e.g. ?loan_kind=principal)', 400)
+  }
+  if (!(kind in LOAN_KIND_LABELS)) {
+    const valid = Object.keys(LOAN_KIND_LABELS).join(', ')
+    return err(`loan_kind must be one of: ${valid}`, 400)
+  }
+
+  const supabase = await createServerClient()
   const assetId = await getPropertyAssetId(supabase, user.id, propertyId)
   if (!assetId) return err('Property not found', 404)
 
@@ -276,7 +293,8 @@ export const DELETE = withAuth(async (_req: Request, user: User, ctx: Ctx) => {
     .eq('asset_id', assetId)
     .eq('user_id', user.id)
     .eq('status', 'active')
+    .eq('loan_kind', kind as LoanKind)
 
   if (error) return err(error.message, 500)
-  return ok({ deleted: true })
+  return ok({ deleted: true, loan_kind: kind })
 })

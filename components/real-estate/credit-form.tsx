@@ -181,10 +181,16 @@ export function CreditForm({ open, onClose, propertyId, existing, propertyName }
   }, [values])
 
   // ── Suppression du crédit ──
+  // V3.2 — DELETE strict côté API : on passe ?loan_kind= pour ne supprimer
+  // QUE le crédit en cours d'édition (pas tous les crédits actifs du bien).
   async function handleDelete() {
     if (!existing?.id) return
+    const kind = existing.loan_kind ?? 'principal'
     setDeleting(true)
-    const res = await fetch(`/api/real-estate/${propertyId}/credit`, { method: 'DELETE' })
+    const res = await fetch(
+      `/api/real-estate/${propertyId}/credit?loan_kind=${encodeURIComponent(kind)}`,
+      { method: 'DELETE' },
+    )
     setDeleting(false)
     const json = await res.json()
     if (json.error) {

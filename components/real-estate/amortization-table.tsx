@@ -7,35 +7,61 @@ import { formatCurrency } from '@/lib/utils/format'
 import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
 
-interface Props {
+interface ScheduleEntry {
+  /** Libellé affiché dans l'onglet (ex. "Prêt principal", "PTZ"). */
+  label:     string
   schedule:  AmortizationSchedule
   startDate: Date | null
+}
+
+interface Props {
+  /** Schedule par défaut affiché. Si `schedules` est fourni, ce sera l'onglet "Tous". */
+  schedule:  AmortizationSchedule
+  startDate: Date | null
+  /**
+   * V3.2 — Multi-crédit : un schedule individuel par crédit. Si fourni avec
+   * au moins 2 entrées, le composant affiche des onglets en tête :
+   * « Tous » (= `schedule` agrégé) suivi d'un onglet par entrée. Si absent
+   * ou length <= 1 : mode mono historique, pas de tabs visibles.
+   */
+  schedules?: ScheduleEntry[]
   /** Nom du bien (utilisé pour le nom du fichier CSV) */
   propertyName?: string
 }
 
 const ROWS_PER_PAGE = 60   // 5 ans par page
 
-export function AmortizationTable({ schedule, startDate, propertyName }: Props) {
+export function AmortizationTable({ schedule, startDate, schedules, propertyName }: Props) {
   const [view, setView] = useState<'monthly' | 'yearly'>('monthly')
   const [page, setPage] = useState(0)
+  // V3.2 — index 0 = "Tous" (= schedule agrégé), 1..N = schedules[i-1].
+  // Pas de tabs si <= 1 schedule individuel.
+  const showTabs = (schedules?.length ?? 0) > 1
+  const [activeIdx, setActiveIdx] = useState(0)
+
+  // Schedule effectivement affiché : agrégé (idx 0) ou individuel (idx > 0).
+  const activeEntry: ScheduleEntry = !showTabs || activeIdx === 0
+    ? { label: 'Tous', schedule, startDate }
+    : schedules![activeIdx - 1]!
+  const activeSchedule  = activeEntry.schedule
+  const activeStartDate = activeEntry.startDate
 
   // Pagination des lignes mensuelles (yearly est toujours <= 40 lignes, pas besoin)
-  const totalPages = Math.ceil(schedule.months.length / ROWS_PER_PAGE)
+  const totalPages = Math.ceil(activeSchedule.months.length / ROWS_PER_PAGE)
   const pagedMonths = useMemo(() => {
     const start = page * ROWS_PER_PAGE
-    return schedule.months.slice(start, start + ROWS_PER_PAGE)
-  }, [schedule.months, page])
+    return activeSchedule.months.slice(start, start + ROWS_PER_PAGE)
+  }, [activeSchedule.months, page])
 
   // Date d'une mensualité donnée
   function dateForMonth(monthIndex: number): string {
-    if (!startDate) return `M${monthIndex}`
-    const d = new Date(startDate)
+    if (!activeStartDate) return `M${monthIndex}`
+    const d = new Date(activeStartDate)
     d.setMonth(d.getMonth() + monthIndex - 1)
     return format(d, 'MMM yyyy', { locale: fr })
   }
 
-  // Export CSV
+  // Export CSV — sur le schedule actuellement sélectionné (Tous ou un crédit).
   function downloadCsv() {
     const sep = ';'
     const esc = (v: string | number): string => {
@@ -50,20 +76,21 @@ export function AmortizationTable({ schedule, startDate, propertyName }: Props) 
     const lines: string[] = []
     lines.push(`Tableau d'amortissement`)
     if (propertyName) lines.push(`Bien${sep}${esc(propertyName)}`)
-    lines.push(`Mensualite (capital + interets)${sep}${fmt(schedule.monthlyPayment)}`)
-    lines.push(`Assurance moyenne${sep}${fmt(schedule.monthlyInsurance)}`)
-    lines.push(`Mensualite totale${sep}${fmt(schedule.totalMonthly)}`)
-    lines.push(`Total interets${sep}${fmt(schedule.totalInterest)}`)
-    lines.push(`Total assurance${sep}${fmt(schedule.totalInsurance)}`)
-    lines.push(`Total frais${sep}${fmt(schedule.totalFees)}`)
-    lines.push(`Cout total credit${sep}${fmt(schedule.totalCost)}`)
-    lines.push(`TAEG approximatif (%)${sep}${fmt(schedule.aprPct)}`)
+    if (showTabs)     lines.push(`Credit${sep}${esc(activeEntry.label)}`)
+    lines.push(`Mensualite (capital + interets)${sep}${fmt(activeSchedule.monthlyPayment)}`)
+    lines.push(`Assurance moyenne${sep}${fmt(activeSchedule.monthlyInsurance)}`)
+    lines.push(`Mensualite totale${sep}${fmt(activeSchedule.totalMonthly)}`)
+    lines.push(`Total interets${sep}${fmt(activeSchedule.totalInterest)}`)
+    lines.push(`Total assurance${sep}${fmt(activeSchedule.totalInsurance)}`)
+    lines.push(`Total frais${sep}${fmt(activeSchedule.totalFees)}`)
+    lines.push(`Cout total credit${sep}${fmt(activeSchedule.totalCost)}`)
+    lines.push(`TAEG approximatif (%)${sep}${fmt(activeSchedule.aprPct)}`)
     lines.push('')
     lines.push(`Mois${sep}Date${sep}Mensualite${sep}Capital${sep}Interets${sep}Assurance${sep}CRD${sep}Differe`)
-    for (const m of schedule.months) {
+    for (const m of activeSchedule.months) {
       lines.push([
         m.monthIndex,
-        startDate ? format(new Date(new Date(startDate).setMonth(startDate.getMonth() + m.monthIndex - 1)), 'yyyy-MM-dd') : `M${m.monthIndex}`,
+        activeStartDate ? format(new Date(new Date(activeStartDate).setMonth(activeStartDate.getMonth() + m.monthIndex - 1)), 'yyyy-MM-dd') : `M${m.monthIndex}`,
         fmt(m.payment + m.insurance),
         fmt(m.principal),
         fmt(m.interest),
@@ -78,15 +105,18 @@ export function AmortizationTable({ schedule, startDate, propertyName }: Props) 
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     const safeName = (propertyName ?? 'bien').replace(/[^a-z0-9]+/gi, '-').toLowerCase()
+    const safeLabel = showTabs
+      ? '-' + activeEntry.label.replace(/[^a-z0-9]+/gi, '-').toLowerCase()
+      : ''
     link.href = url
-    link.download = `amortissement-${safeName}.csv`
+    link.download = `amortissement-${safeName}${safeLabel}.csv`
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
     URL.revokeObjectURL(url)
   }
 
-  if (schedule.months.length === 0) {
+  if (activeSchedule.months.length === 0) {
     return (
       <div className="card p-8 text-center text-sm text-secondary">
         Aucun crédit configuré pour ce bien.
@@ -96,6 +126,24 @@ export function AmortizationTable({ schedule, startDate, propertyName }: Props) 
 
   return (
     <div className="space-y-4">
+      {/* V3.2 — Tabs multi-crédit. "Tous" affiche le schedule agrégé,
+          chaque autre onglet affiche le schedule individuel du crédit.
+          Pas affiché en mode mono (showTabs === false). */}
+      {showTabs && (
+        <div className="flex flex-wrap items-center gap-1 bg-surface-2 rounded-lg p-1">
+          {(['Tous', ...schedules!.map(s => s.label)] as const).map((label, idx) => (
+            <button
+              key={`${label}-${idx}`}
+              type="button"
+              onClick={() => { setActiveIdx(idx); setPage(0) }}
+              className={`px-3 py-1.5 text-xs rounded-md transition-colors ${activeIdx === idx ? 'bg-accent text-bg font-medium' : 'text-secondary hover:text-primary'}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Header avec switch + export */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 bg-surface-2 rounded-lg p-1">
@@ -103,13 +151,13 @@ export function AmortizationTable({ schedule, startDate, propertyName }: Props) 
             onClick={() => { setView('monthly'); setPage(0) }}
             className={`px-3 py-1.5 text-xs rounded-md transition-colors ${view === 'monthly' ? 'bg-accent text-white' : 'text-secondary hover:text-primary'}`}
           >
-            Mensuel · {schedule.months.length} lignes
+            Mensuel · {activeSchedule.months.length} lignes
           </button>
           <button
             onClick={() => setView('yearly')}
             className={`px-3 py-1.5 text-xs rounded-md transition-colors ${view === 'yearly' ? 'bg-accent text-white' : 'text-secondary hover:text-primary'}`}
           >
-            Annuel · {schedule.years.length} ans
+            Annuel · {activeSchedule.years.length} ans
           </button>
         </div>
         <button
@@ -166,7 +214,7 @@ export function AmortizationTable({ schedule, startDate, propertyName }: Props) 
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {schedule.years.map((y) => (
+                {activeSchedule.years.map((y) => (
                   <tr key={y.year} className="hover:bg-surface-2/50">
                     <td className="px-3 py-2 text-secondary font-medium">Année {y.year}</td>
                     <td className="px-3 py-2 text-right financial-value text-primary">{formatCurrency(y.totalPayment + y.insurance, 'EUR', { compact: true })}</td>
@@ -193,7 +241,7 @@ export function AmortizationTable({ schedule, startDate, propertyName }: Props) 
             <ChevronLeft size={12} /> Précédent
           </button>
           <span>
-            Mois {page * ROWS_PER_PAGE + 1} – {Math.min((page + 1) * ROWS_PER_PAGE, schedule.months.length)} sur {schedule.months.length}
+            Mois {page * ROWS_PER_PAGE + 1} – {Math.min((page + 1) * ROWS_PER_PAGE, activeSchedule.months.length)} sur {activeSchedule.months.length}
           </span>
           <button
             onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}

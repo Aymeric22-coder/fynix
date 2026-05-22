@@ -45,8 +45,16 @@ interface Props {
 export function PropertyCard(p: Props) {
   const rented      = p.lots.filter(l => l.status === 'rented')
   const monthlyRent = rented.reduce((s, l) => s + (l.rent_amount ?? 0), 0)
-  const acqCost     = (p.purchasePrice ?? 0) + (p.purchaseFees ?? 0) + (p.worksAmount ?? 0)
-  const latentGain  = (p.currentValue ?? 0) - acqCost
+  // V3.2 — Plus-value latente : dénominateur cohérent avec la fiche détail.
+  // `kpis.totalCost` (du moteur) inclut prix + frais notaire + travaux +
+  // mobilier + frais bancaires + garantie de tous les prêts. L'ancien
+  // `acqCost` local n'incluait pas mobilier ni frais bancaires/garantie,
+  // ce qui sous-estimait `latentGain` versus la Synthèse (INCOH-005).
+  // Fallback acqCost partiel si kpis null (crédit incomplet — affichage
+  // déjà conditionnel sur p.kpis dans le JSX).
+  const acqCostFallback = (p.purchasePrice ?? 0) + (p.purchaseFees ?? 0) + (p.worksAmount ?? 0)
+  const totalCost   = p.kpis?.totalCost ?? acqCostFallback
+  const latentGain  = (p.currentValue ?? 0) - totalCost
   const occupancy   = p.lots.length > 0 ? (rented.length / p.lots.length) * 100 : 0
   const netValue    = (p.currentValue ?? 0) - p.capitalRemaining
 
