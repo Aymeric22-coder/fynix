@@ -8,8 +8,9 @@ import { ImmobilierActions }             from '@/components/pages/immobilier-act
 import { computeRealEstatePortfolio }    from '@/lib/real-estate/portfolio'
 import { detectLmpStatus, sumMeubleeRevenues } from '@/lib/real-estate/fiscal/lmp-detector'
 import {
-  buildPropertySummaries,
+  buildPropertySummariesFromPortfolio,
   computePortfolioSummary,
+  type PropertyMetaForPortfolio,
 } from '@/lib/real-estate/portfolio-summary'
 import type { FiscalRegimeKind } from '@/lib/real-estate/types'
 import type { PropertyUsageType } from '@/types/database.types'
@@ -80,15 +81,16 @@ export default async function ImmobilierPage() {
   const getAsset = (raw: unknown): AssetJoin | null =>
     Array.isArray(raw) ? (raw[0] ?? null) : (raw as AssetJoin | null)
 
-  // ── Construction des PropertySummary[] ──────────────────────────────────
-  const rawProps = (properties ?? []).map((p) => {
-    const asset       = getAsset(p.asset)
-    const lots        = p.lots ?? []
-    const rented      = lots.filter((l: { status: string }) => l.status === 'rented')
-    const monthlyRent = rented.reduce(
-      (s: number, l: { rent_amount: number | null }) => s + (l.rent_amount ?? 0), 0,
-    )
-    const totalCost   = (p.purchase_price ?? 0) + (p.purchase_fees ?? 0) + (p.works_amount ?? 0)
+  // ── Construction des PropertySummary[] (V5 — via le moteur) ────────────
+  // On ne calcule plus en parallèle totalCost / monthlyRent / monthlyCharges :
+  // le helper V5 `buildPropertySummariesFromPortfolio` lit ces valeurs
+  // directement depuis `sim.simulation` (kpis + projection Y1), garantissant
+  // que le bandeau du haut affiche les MÊMES chiffres que les cartes.
+  //
+  // `alertCount` reste à 0 ici — branchement `property_events` = CAS-DASH-001,
+  // vague séparée (décision produit sur le seuil d'alerte impayé pending).
+  const metas: PropertyMetaForPortfolio[] = (properties ?? []).map((p) => {
+    const asset = getAsset(p.asset)
     return {
       id:           p.id as string,
       name:         asset?.name ?? 'Bien immobilier',
@@ -96,15 +98,12 @@ export default async function ImmobilierPage() {
       usageType:    (p.usage_type ?? 'long_term_rental') as PropertyUsageType,
       fiscalRegime: (p.fiscal_regime ?? null) as FiscalRegimeKind | null,
       currentValue: asset?.current_value ?? null,
-      totalCost,
-      monthlyRent,
-      monthlyCharges: 0,   // calcul detaille pas necessaire pour l'agregat liste
-      isShortTerm:   p.usage_type === 'short_term_rental',
-      alertCount:    0,
+      isShortTerm:  p.usage_type === 'short_term_rental',
+      alertCount:   0,
     }
   })
 
-  const summaries = buildPropertySummaries(portfolio.properties, rawProps)
+  const summaries = buildPropertySummariesFromPortfolio(portfolio.properties, metas)
   const portfolioSummary = computePortfolioSummary(summaries)
 
   // ── Render des cartes pre-calculees (server-side) ───────────────────────

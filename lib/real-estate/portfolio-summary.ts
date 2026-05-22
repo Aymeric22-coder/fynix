@@ -300,11 +300,112 @@ export function computePortfolioSummary(
 // ─── Adapter PortfolioResult -> PropertySummary[] ──────────────────────────
 
 /**
+ * V5 — Méta-données UI minimales nécessaires pour construire un
+ * `PropertySummary` depuis un `PropertySimResult`. Toutes les valeurs
+ * financières (totalCost, monthlyRent, monthlyCharges, KPIs) sont tirées
+ * de `sim.simulation` directement — plus aucun calcul parallèle.
+ */
+export interface PropertyMetaForPortfolio {
+  id:                string
+  name:              string
+  city:              string | null
+  usageType:         PropertyUsageType
+  fiscalRegime:      FiscalRegimeKind | null
+  /** Valeur estimée du bien (asset.current_value). null si pas de valuation. */
+  currentValue:      number | null
+  isShortTerm:       boolean
+  occupancyRatePct?: number
+  alertCount:        number
+}
+
+/**
+ * V5 — Construit les `PropertySummary[]` directement depuis le retour de
+ * `computeRealEstatePortfolio` (= source unique des KPIs depuis V3.1).
+ *
+ * Garanties :
+ *   - `totalCost` = `kpis.totalCost` (FAI complet : prix + frais notaire +
+ *     travaux + mobilier + bank_fees + guarantee_fees de tous les prêts).
+ *     **Cohérent avec PropertyCard depuis V3.2** → la PV latente du bandeau
+ *     est strictement égale à la somme des PV affichées sur les cartes.
+ *   - `monthlyRent` = `projection[0].grossRent / 12` (prend
+ *     `assumed_total_rent` en compte ; pas le filtre maladroit
+ *     `lots.status === 'rented'` qui faisait perdre les biens en travaux).
+ *   - `monthlyCharges` = `projection[0].charges / 12` (inclut GLI + gestion %
+ *     + colonnes mig 040). **Fix BUG-D1-M03** (avant : 0 codé en dur).
+ *   - `incomplete = sim.simulation.incompleteData === true` (égalité stricte,
+ *     pas `?? true`). **Fix asymétrie carte ↔ bandeau** : `runSimulation`
+ *     omet le champ quand tout va bien (= `undefined`), ce qui était traité
+ *     comme « incomplet » par l'ancien helper → KPIs forcés à 0 même pour
+ *     les biens complets. Désormais, un bien complet (Tandoori → 864 €/mois)
+ *     contribue bien au `totalMonthlyCashFlow` du bandeau.
+ *
+ * @param sims  Résultat de `computeRealEstatePortfolio`.
+ * @param metas Méta UI minimales par bien (cf. {@link PropertyMetaForPortfolio}).
+ */
+export function buildPropertySummariesFromPortfolio(
+  sims:  PropertySimResult[],
+  metas: PropertyMetaForPortfolio[],
+): PropertySummary[] {
+  const simById = new Map(sims.map(s => [s.propertyId, s]))
+
+  return metas.map(meta => {
+    const sim  = simById.get(meta.id)
+    const kpis = sim?.simulation.kpis
+    const y1   = sim?.simulation.projection[0]
+    // V5 — égalité stricte avec true. Cohérent avec PropertyCard qui fait
+    // `!p.incompleteData` (undefined traité comme falsy → bien complet).
+    const incomplete = sim?.simulation.incompleteData === true
+
+    const currentValue     = meta.currentValue ?? 0
+    const remainingCapital = sim?.capitalRemaining ?? 0
+    const totalCost        = kpis?.totalCost ?? 0           // ✅ FAI complet
+    const netWorth         = currentValue - remainingCapital
+    const latentGain       = currentValue - totalCost       // ✅ aligné PropertyCard V3.2
+
+    // Loyers et charges depuis la projection Y1 (cohérent fiche détail).
+    // Pour un bien `incompleteData`, projection est vide → 0 propre.
+    const monthlyRent    = y1 ? y1.grossRent / 12 : 0
+    const monthlyCharges = y1 ? y1.charges   / 12 : 0
+
+    return {
+      id:                  meta.id,
+      name:                meta.name,
+      city:                meta.city,
+      usageType:           meta.usageType,
+      fiscalRegime:        meta.fiscalRegime,
+      currentValue,
+      totalCost,
+      remainingCapital,
+      netWorth,
+      latentCapitalGain:   latentGain,
+      monthlyRent,
+      monthlyCharges,
+      monthlyLoanPayment:  kpis?.monthlyPayment ?? 0,
+      monthlyNetCashFlow:  incomplete ? 0 : (kpis?.monthlyCashFlowYear1 ?? 0),
+      grossYieldPct:       incomplete ? 0 : (kpis?.grossYieldFAI ?? 0),
+      netNetYieldPct:      incomplete ? 0 : (kpis?.netNetYield   ?? 0),
+      hasAlerts:           meta.alertCount > 0,
+      alertCount:          meta.alertCount,
+      isShortTerm:         meta.isShortTerm,
+      ...(meta.occupancyRatePct != null ? { occupancyRatePct: meta.occupancyRatePct } : {}),
+    }
+  })
+}
+
+/**
  * Transforme le retour de `computeRealEstatePortfolio` en PropertySummary[]
  * en croisant avec les donnees brutes des biens.
  *
  * @param sims     Resultat de computeRealEstatePortfolio
  * @param rawProps Donnees brutes des biens (asset.current_value, usage_type, etc.)
+ *
+ * @deprecated **V5 — Utilise {@link buildPropertySummariesFromPortfolio}**
+ *   à la place. Cet ancien helper requiert un `rawProps` qui dupliquait
+ *   les calculs du moteur (totalCost partiel sans furniture/bank_fees,
+ *   monthlyCharges hardcoded à 0 = BUG-D1-M03, monthlyRent recalculé à
+ *   la main sans `assumed_total_rent`) et utilisait `incompleteData ?? true`
+ *   qui flaggait les biens complets comme incomplets (CF forcé à 0 dans
+ *   le bandeau). Conservé pour la rétrocompat des tests historiques.
  */
 export function buildPropertySummaries(
   sims:     PropertySimResult[],
