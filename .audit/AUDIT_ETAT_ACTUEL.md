@@ -1,6 +1,6 @@
 # AUDIT ÉTAT ACTUEL — Section immobilière FIRECORE
 
-Date initiale : 2026-05-21 · Dernière mise à jour : 2026-05-22 (V3.2)
+Date initiale : 2026-05-21 · Dernière mise à jour : 2026-05-22 (V4)
 Périmètre : Sprints 1 à 5 + correctifs Sprint 3.5
 Méthode : audit lecture seule, 6 domaines parallélisés sur 6 agents, consolidation.
 
@@ -18,9 +18,10 @@ Le travail de correction est sérialisé en vagues (1 vague = 1 branche = 1 PR, 
 | **V2** | Hygiène types DB (extension manuelle pour migrations 034/036/037/038/040/043 + 4 casts retirés) | ✅ Mergé | [PR #2](https://github.com/Aymeric22-coder/fynix/pull/2) → `4d542b6` |
 | **V3.1** | Multi-crédit moteur + portfolio (`loans[]`, `aggregateLoans` partout) | ✅ Mergé direct master | `3b568f4` |
 | **V3.2** | Boutons + tableaux multi-crédit (DELETE strict + bouton corbeille + tableau d'amortissement à onglets + mensualité par ligne + latentGain cohérent + RegimeComparator multi) | ✅ Mergé direct master | `d84bfd9` |
-| **V4-V6** | Cf. plan section 8 — non démarrées | ⏳ À venir | — |
+| **V4** | Dashboard `/analyse` converge sur le moteur `lib/real-estate/` (BUG-007/008 + BUG-D1-M08 + INCOH-002/003/004). `loadImmo` délègue à `computeRealEstatePortfolio` au lieu de calculer via un moteur fiscal séparé | ✅ Mergé direct master | `3ec90eb` |
+| **V5-V6** | Cf. plan section 8 — non démarrées | ⏳ À venir | — |
 
-**Total items traités à ce jour** : **10/41** (P1: 5/11 — ROB-001/002/003 + BUG-002/003 + INTEG-001/002 ; P2: 5/19 — régen types + BUG-009 + INTEG-005/006 + BUG-D1-M01 + BUG-D1-M02) · **13 nouveaux tests** ajoutés (non-régression mono + cohérence multi-écrans + DELETE ciblé + somme mensualités cohérente).
+**Total items traités à ce jour** : **13/41** (P1: 6/11 — ROB-001/002/003 + BUG-002/003 + INTEG-001/002 + BUG-007/008 ; P2: 6/19 — régen types + BUG-009 + INTEG-005/006 + BUG-D1-M01 + BUG-D1-M02 + BUG-D1-M08) · **29 nouveaux tests** ajoutés (non-régression mono + cohérence multi-écrans + DELETE ciblé + somme mensualités cohérente + convergence /analyse vs moteur).
 
 ---
 
@@ -90,17 +91,17 @@ Le travail de correction est sérialisé en vagues (1 vague = 1 branche = 1 PR, 
 - **Impact** : réduction surévaluée du facteur vacance/12.
 - **Correction** : retirer la part de vacance ou utiliser `netRent`.
 
-### BUG-007 — Dashboard `/analyse` utilise un moteur fiscal séparé
+### BUG-007 — Dashboard `/analyse` utilise un moteur fiscal séparé ✅ _(V4 → `3ec90eb`)_
 - **Fichier** : [lib/analyse/immoCalculs.ts:167-180](lib/analyse/immoCalculs.ts) + `lib/analyse/fiscaliteImmo.ts`
 - **Description** : le tableau de bord n'utilise PAS `lib/real-estate/fiscal/` mais une calculatrice séparée sans amortissement, sans report de déficit, sans carry-forward.
 - **Impact** : `cashflow_net_fiscal` dashboard ≠ `cashFlowAfterTax` fiche détail. Scores et recommandations consolidés faussés.
-- **Correction** : faire converger sur `runSimulation` (ou minimum `lib/real-estate/fiscal/`).
+- **Résolu V4** : `loadImmo` délègue à `computeRealEstatePortfolio` (qui appelle `runSimulation` = moteur complet). Helper `buildBienImmoFromSimulation` mappe vers `BienImmo`. Les fonctions `calculerKPIsBien` / `calculerImpotFoncier` sont conservées `@deprecated` (plus appelées en runtime, tests historiques préservés).
 
-### BUG-008 — Dashboard `/analyse` lit `debts.capital_remaining` DB au lieu du CRD analytique
+### BUG-008 — Dashboard `/analyse` lit `debts.capital_remaining` DB au lieu du CRD analytique ✅ _(V4 → `3ec90eb`)_
 - **Fichier** : [lib/analyse/aggregateur.ts:192-208](lib/analyse/aggregateur.ts)
 - **Description** : Capital restant lu de la DB (snapshot ponctuel, dérive jour après jour) au lieu de `computeRemainingCapitalAt` analytique utilisé fiche détail. Pas de filtre `status='active'` non plus.
 - **Impact** : total dette et équity dashboard peuvent être périmés de plusieurs mois.
-- **Correction** : utiliser `computeRemainingCapitalAt` + filtrer `status='active'`.
+- **Résolu V4** : `BienImmo.credit_restant = sim.capitalRemaining` (= `aggregateLoans(...).totalRemainingCapital` analytique multi-crédit calculé par le moteur portfolio). Filtre `status='active'` ajouté sur le SELECT debts (cf. BUG-D1-M08).
 
 ### BUG-009 — Tableau d'amortissement ne montre pas les crédits séparément
 - **Fichier** : [app/(app)/immobilier/[id]/page.tsx:315,625-630](app/(app)/immobilier/[id]/page.tsx)
@@ -184,9 +185,10 @@ Voir BUG-003.
 - **Fichier** : [lib/real-estate/fiscal/foncier-micro.ts:27](lib/real-estate/fiscal/foncier-micro.ts)
 - Réglementairement ambigu (cf. clarifications).
 
-### BUG-D1-M08 — Aggregateur `/analyse` : pas de filtre `status='active'` sur debts
+### BUG-D1-M08 — Aggregateur `/analyse` : pas de filtre `status='active'` sur debts ✅ _(V4 → `3ec90eb`)_
 - **Fichier** : [lib/analyse/aggregateur.ts:192-198](lib/analyse/aggregateur.ts)
 - Un crédit `paid_off` avec capital_remaining résiduel pollue les agrégats.
+- **Résolu V4** : Filtre `.eq('status', 'active')` ajouté sur le SELECT debts local de `loadImmo` (récupération du crédit principal pour la projection FIRE), et le calcul des KPIs est désormais délégué au moteur portfolio qui filtrait déjà depuis V3.1.
 
 ### ROB-101 — Pas de validation `loan_start_date >= acquisition_date`
 - **Fichier** : [app/(app)/immobilier/nouveau/page.tsx:222-227](app/(app)/immobilier/nouveau/page.tsx)
@@ -241,22 +243,22 @@ Voir BUG-003.
 - **D** — Dashboard `/analyse` : `loyer - mensualité - charges/12 - impôt` (moteur fiscal séparé) — [immoCalculs.ts:120,177](lib/analyse/immoCalculs.ts)
 - **Valeur correcte** : aucune des 4 n'est exacte en multi-crédit. Cible : `kpis.monthlyCashFlowYear1` avec multi-crédit injecté dans la projection.
 
-### INCOH-002 — Rendement brut (3 numérateurs × 3 dénominateurs)
+### INCOH-002 — Rendement brut (3 numérateurs × 3 dénominateurs) ✅ _(V4 → `3ec90eb`)_
 - **A** — Liste : `(rent.monthlyRent × 12) / totalCost` — numérateur tous lots ou `assumed_total_rent`, dénominateur complet FAI.
 - **B** — Fiche Synthèse : `(monthlyRented × 12) / acqCost` — numérateur lots status='rented' uniquement.
 - **C** — Dashboard `/analyse` : `(loyer × 12) / (purchase_price + works)` — dénominateur amputé (pas de frais notaire, mobilier, bank_fees).
-- **Valeur correcte** : A (convention FAI = Frais d'Acquisition Inclus).
+- **Valeur correcte** : A (convention FAI = Frais d'Acquisition Inclus). Résolu en V4 (BUG-007 / P1 #11) : `/analyse > BienImmo.rendement_brut = kpis.grossYieldFAI` (dénominateur = coût FAI complet via le moteur, cohérent avec la liste et la fiche).
 
-### INCOH-003 — Capital restant dû (analytique vs DB)
+### INCOH-003 — Capital restant dû (analytique vs DB) ✅ _(V4 → `3ec90eb`)_
 - **A** — Fiche détail, MultiCreditList : `computeRemainingCapitalAt` analytique mois par mois (multi-crédit OK fiche).
 - **B** — Liste : `computeRemainingCapitalAt` sur 1 seul crédit par asset.
 - **C** — Dashboard `/analyse` : colonne DB `debts.capital_remaining` figée par snapshot.
-- **Valeur correcte** : A étendu au multi-crédit. Le snapshot DB ne devrait pas être lu en temps réel.
+- **Valeur correcte** : A étendu au multi-crédit. Résolu en V4 (BUG-008 / P1 #11) : `/analyse > BienImmo.credit_restant = sim.capitalRemaining` (= `aggregateLoans(...).totalRemainingCapital` analytique multi-crédit). Plus de snapshot DB.
 
-### INCOH-004 — Valeur du bien dans le rendement
+### INCOH-004 — Valeur du bien dans le rendement ✅ _(V4 → `3ec90eb`)_
 - **A** — Fiche, liste : `current_value ?? purchasePrice + works` pour patrimoine.
 - **B** — Dashboard `/analyse` : `purchase_price + works` partout, jamais la valuation actuelle.
-- **Valeur correcte** : valuation pour le patrimoine, coût de revient pour les rendements.
+- **Valeur correcte** : valuation pour le patrimoine, coût de revient pour les rendements. Résolu en V4 (P1 #11) : `/analyse > BienImmo.valeur = kpis.currentNetPropertyValue + capitalRemaining` (= `currentEstimatedValue`, donc `asset.current_value` ou fallback). Les rendements utilisent eux `kpis.grossYieldFAI` / `kpis.netYield` (dénominateur coût FAI). Distinction respectée.
 
 ### INCOH-005 — Plus-value latente (`latentGain`) ✅ _(V3.2 → `d84bfd9`)_
 - **A** — Fiche Synthèse : `currentVal - acqCost` complet (avec mobilier, bank_fees, guarantee_fees).
@@ -397,7 +399,7 @@ Effort : **S** = < 1h, **M** = 2-6h, **L** = > 1 jour.
 | 8 | **BUG-001** — Exclure `management_*` de `extraChargesFrom040` pour lots short_term | M | Double comptage commissions |
 | 9 | **BUG-004** — Plafonner Pinel à `r.yearByYear[i].reductionIR` | M | Niches fiscales |
 | 10 | ✅ **BUG-002 / INTEG-002** — Refondre `build-from-db.ts` pour `DbDebt[]` + propager à SimulationPanel / WhatIf / RealTracking _(V3.1 → `3b568f4`)_ | L | Cause racine des incohérences multi-crédit |
-| 11 | **BUG-007 / BUG-008** — Dashboard `/analyse` : passer à `runSimulation` + `computeRemainingCapitalAt` | L | Convergence moteurs de calcul |
+| 11 | ✅ **BUG-007 / BUG-008** — Dashboard `/analyse` : `loadImmo` délègue à `computeRealEstatePortfolio` (moteur unique multi-crédit V3.1) via le helper pur `buildBienImmoFromSimulation`. Plus de moteur fiscal séparé, plus de snapshot DB du CRD _(V4 → `3ec90eb`)_ | L | Convergence moteurs de calcul |
 
 ### Priorité 2 — Corrections importantes (bugs mineurs + incohérences)
 
@@ -416,7 +418,7 @@ Effort : **S** = < 1h, **M** = 2-6h, **L** = > 1 jour.
 | 22 | ✅ **BUG-D1-M02** — PropertyCard : `latentGain` via `kpis.totalCost` (cohérent fiche détail), fallback `acqCost` si kpis null _(V3.2 → `d84bfd9`)_ | S |
 | 23 | **BUG-D1-M05** — SCI distribution : exposer le vrai `netProfitAfterIS` comptable | S |
 | 24 | **BUG-D1-M06** — Passer le `ceiling` à `makeLmnpMicroCalculator` | S |
-| 25 | **BUG-D1-M08** — Filtre `status='active'` dans `aggregateur.ts` | S |
+| 25 | ✅ **BUG-D1-M08** — Filtre `status='active'` ajouté sur le SELECT debts de `loadImmo` (et le calcul est désormais délégué au moteur portfolio qui filtrait déjà depuis V3.1) _(V4 → `3ec90eb`)_ | S |
 | 26 | **ROB-101 / 102 / 103** — Validations dates crédit, cap taux, période événement | S |
 | 27 | **ROB-104** — Remplacer `alert()` natif par toast | S |
 | 28 | **ROB-105** — Range minimum dans what-if quand `rent=0` | S |
