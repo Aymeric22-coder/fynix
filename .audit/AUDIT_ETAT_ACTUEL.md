@@ -1,6 +1,6 @@
 # AUDIT ÉTAT ACTUEL — Section immobilière FIRECORE
 
-Date initiale : 2026-05-21 · Dernière mise à jour : 2026-05-22
+Date initiale : 2026-05-21 · Dernière mise à jour : 2026-05-22 (V3.2)
 Périmètre : Sprints 1 à 5 + correctifs Sprint 3.5
 Méthode : audit lecture seule, 6 domaines parallélisés sur 6 agents, consolidation.
 
@@ -17,10 +17,10 @@ Le travail de correction est sérialisé en vagues (1 vague = 1 branche = 1 PR, 
 | **V1** | ROB-001 + ROB-002 + ROB-003 (wizard rollback + bandeau ?warn= + ALLOWED_KINDS + charges null) | ✅ Mergé | [PR #1](https://github.com/Aymeric22-coder/fynix/pull/1) → `c96c37f` |
 | **V2** | Hygiène types DB (extension manuelle pour migrations 034/036/037/038/040/043 + 4 casts retirés) | ✅ Mergé | [PR #2](https://github.com/Aymeric22-coder/fynix/pull/2) → `4d542b6` |
 | **V3.1** | Multi-crédit moteur + portfolio (`loans[]`, `aggregateLoans` partout) | ✅ Mergé direct master | `3b568f4` |
-| **V3.2** | RegimeComparator multi-crédit + BUG-009 tableau d'amortissement multi (cf. § 8) | ⏳ À venir | — |
+| **V3.2** | Boutons + tableaux multi-crédit (DELETE strict + bouton corbeille + tableau d'amortissement à onglets + mensualité par ligne + latentGain cohérent + RegimeComparator multi) | ✅ Mergé direct master | `d84bfd9` |
 | **V4-V6** | Cf. plan section 8 — non démarrées | ⏳ À venir | — |
 
-**Total items traités à ce jour** : 5/41 (P1: 3/11 — ROB-001/002/003 + BUG-002/003 ; P2: 1/19 — régen types) · **6 nouveaux tests** ajoutés (non-régression mono + cohérence multi-écrans).
+**Total items traités à ce jour** : **10/41** (P1: 5/11 — ROB-001/002/003 + BUG-002/003 + INTEG-001/002 ; P2: 5/19 — régen types + BUG-009 + INTEG-005/006 + BUG-D1-M01 + BUG-D1-M02) · **13 nouveaux tests** ajoutés (non-régression mono + cohérence multi-écrans + DELETE ciblé + somme mensualités cohérente).
 
 ---
 
@@ -258,12 +258,12 @@ Voir BUG-003.
 - **B** — Dashboard `/analyse` : `purchase_price + works` partout, jamais la valuation actuelle.
 - **Valeur correcte** : valuation pour le patrimoine, coût de revient pour les rendements.
 
-### INCOH-005 — Plus-value latente (`latentGain`)
+### INCOH-005 — Plus-value latente (`latentGain`) ✅ _(V3.2 → `d84bfd9`)_
 - **A** — Fiche Synthèse : `currentVal - acqCost` complet (avec mobilier, bank_fees, guarantee_fees).
 - **B** — Liste PropertyCard : `currentValue - (purchase_price + purchase_fees + works)` — incomplet.
-- **Valeur correcte** : A.
+- **Valeur correcte** : A. Résolu en V3.2 (BUG-D1-M02, P2 #22) : PropertyCard utilise désormais `kpis.totalCost` (= dénominateur unifié du moteur), strictement cohérent avec la Synthèse.
 
-### INCOH-006 — Mensualité totale crédit (avec/sans assurance par ligne)
+### INCOH-006 — Mensualité totale crédit (avec/sans assurance par ligne) ✅ _(V3.2 → `d84bfd9`)_
 - **A** — MultiCreditList ligne : `computeMonthlyPayment` (sans assurance).
 - **B** — MultiCreditList total : `aggregateLoans.totalMonthly` (avec assurance).
 - **Valeur correcte** : B (ce que paye réellement le client).
@@ -410,10 +410,10 @@ Effort : **S** = < 1h, **M** = 2-6h, **L** = > 1 jour.
 | 16 | **CAS-WIZ-LOT-001** — Skip étape 5 wizard pour RP | S |
 | 17 | **BUG-D1-M03** — Brancher les vraies charges sur `portfolio-summary.totalMonthlyCharges` | S |
 | 18 | **BUG-D1-M04** — Réutiliser `resolveCharges` dans la Synthèse au lieu du recalcul manuel | M |
-| 19 | **BUG-009** — Tableau d'amortissement : afficher `multiCredit.schedule` ou un onglet par crédit (**candidat V3.2**) | M |
-| 20 | **INTEG-005 + INTEG-006** — DELETE crédit filtré par `loan_kind` + bouton corbeille par ligne | M |
-| 21 | **BUG-D1-M01** — `monthly` par ligne MultiCreditList avec assurance | S |
-| 22 | **BUG-D1-M02** — PropertyCard : `latentGain` sur `kpis.totalCost` | S |
+| 19 | ✅ **BUG-009** — Tableau d'amortissement : onglets « Tous / Principal / PTZ / … » via prop `schedules?` sur AmortizationTable, rétrocompat mono inchangée _(V3.2 → `d84bfd9`)_ | M |
+| 20 | ✅ **INTEG-005 + INTEG-006** — DELETE strict (`?loan_kind=` requis, validation enum, 400 sans) + bouton corbeille par ligne dans MultiCreditList (Modal pattern DeletePropertyButton). Caller credit-form mis à jour _(V3.2 → `d84bfd9`)_ | M |
+| 21 | ✅ **BUG-D1-M01** — `monthly` par ligne MultiCreditList = `buildAmortizationSchedule(loan).totalMonthly` (assurance incluse), pré-calculé côté serveur. Somme garantie = `aggregateLoans.totalMonthly` _(V3.2 → `d84bfd9`)_ | S |
+| 22 | ✅ **BUG-D1-M02** — PropertyCard : `latentGain` via `kpis.totalCost` (cohérent fiche détail), fallback `acqCost` si kpis null _(V3.2 → `d84bfd9`)_ | S |
 | 23 | **BUG-D1-M05** — SCI distribution : exposer le vrai `netProfitAfterIS` comptable | S |
 | 24 | **BUG-D1-M06** — Passer le `ceiling` à `makeLmnpMicroCalculator` | S |
 | 25 | **BUG-D1-M08** — Filtre `status='active'` dans `aggregateur.ts` | S |
