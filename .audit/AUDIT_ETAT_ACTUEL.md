@@ -1,6 +1,6 @@
 # AUDIT ÉTAT ACTUEL — Section immobilière FIRECORE
 
-Date initiale : 2026-05-21 · Dernière mise à jour : 2026-05-23 (V7)
+Date initiale : 2026-05-21 · Dernière mise à jour : 2026-05-23 (V8.1)
 Périmètre : Sprints 1 à 5 + correctifs Sprint 3.5
 Méthode : audit lecture seule, 6 domaines parallélisés sur 6 agents, consolidation.
 
@@ -22,9 +22,10 @@ Le travail de correction est sérialisé en vagues (1 vague = 1 branche = 1 PR, 
 | **V5** | Bandeau `/immobilier` converge sur le moteur (BUG-D1-M03 + cohérence cartes ↔ bandeau). `buildPropertySummariesFromPortfolio` remplace le calcul parallèle | ✅ Mergé direct master | `d1476be` |
 | **V6** | Synthèse fiche détail converge sur le moteur (BUG-001 commissions short-term + BUG-D1-M04 charges Synthèse + cash-flow Synthèse aligné `kpis.monthlyCashFlowYear1`). `resolveCharges` accepte `opts.excludeShortTermPlatformFees` pour casser le double comptage | ✅ Mergé direct master | `3e29edf` |
 | **V7** | Refonte `netNetYield` "sans crédit" (tous régimes) + BUG-D1-M05 SciDistribution. `netNetYield = netYield − (taxPaid / totalCost × 100)` — la seule différence entre nette et net-net est désormais l'impôt réellement payé. Invariant verrouillé : `taxPaid = 0 ⇒ netNetYield === netYield`. `SciDistribution.netProfitAfterIS` consomme `max(0, fiscalResult − taxPaid)` au lieu du proxy cash inflated | ✅ Mergé direct master | — |
-| **V8+** | Cf. plan section 8 — non démarrées (fiscal SCI IS / amortissement bâti à creuser, niches Pinel/Loc'Avantages/micro-foncier/LMNP) | ⏳ À venir | — |
+| **V8.1** | Trois fixes mécaniques fiscaux (audit niches). (a) Micro-foncier : plafond CGI art. 32 (15 000 €/an) — `FONCIER_MICRO_CEILING` + `forcedRegimeSwitch` propagé dans `ProjectionYear` (réutilisable lmnp-micro). (b) **BUG-004** Pinel/Denormandie : réduction plafonnée à 10 000 €/an (`GLOBAL_TAX_NICHE_CAP`, CGI art. 200-0 A) dans `reduction-schedule.ts`. (c) **BUG-006** Loc'Avantages : base = loyer effectivement perçu (`monthlyRent × max(0, 12 − vacancyMonths)`) au lieu du loyer théorique. 11 tests d'invariant ajoutés | ✅ Mergé direct master | — |
+| **V8.2+** | Cf. plan section 8 — non démarrées (BUG-005 Pinel éligibilité, BUG-D1-M06 LMNP micro ceiling, décisions produit foncier MaPrimeRénov / LMP déficit amort / agrégation foyer / MH / Pinel clos 2025) | ⏳ À venir | — |
 
-**Total items traités à ce jour** : **17/41** (P1: 7/11 — ROB-001/002/003 + BUG-002/003 + INTEG-001/002 + BUG-007/008 + BUG-001 ; P2: 9/19 — régen types + BUG-009 + INTEG-005/006 + BUG-D1-M01 + BUG-D1-M02 + BUG-D1-M08 + BUG-D1-M03 + BUG-D1-M04 + BUG-D1-M05) · **≥49 nouveaux tests** ajoutés (non-régression mono-crédit + cohérence multi-écrans + DELETE ciblé + somme mensualités cohérente + convergence /analyse vs moteur + cohérence bandeau ↔ cartes + double comptage short-term + Synthèse ↔ carte ↔ Rentabilité + invariant net-net = nette quand impôt = 0).
+**Total items traités à ce jour** : **20/41** (P1: 9/11 — ROB-001/002/003 + BUG-002/003 + INTEG-001/002 + BUG-007/008 + BUG-001 + **BUG-004 + BUG-006** ; P2: 9/19 — régen types + BUG-009 + INTEG-005/006 + BUG-D1-M01 + BUG-D1-M02 + BUG-D1-M08 + BUG-D1-M03 + BUG-D1-M04 + BUG-D1-M05) · **≥60 nouveaux tests** ajoutés (V1–V7 + 11 invariants V8.1 : foncier-micro forcedRegimeSwitch ≤/> 15 000 €, indexation déclenche bascule, cap Pinel/Denormandie ≤ 10 000 €/an générique, Loc'Avantages 0/1/3/15 mois de vacance).
 
 ---
 
@@ -76,11 +77,10 @@ Le travail de correction est sérialisé en vagues (1 vague = 1 branche = 1 PR, 
 - **Impact** : KPIs liste `/immobilier` divergent de la Synthèse fiche détail. Cash-flow et LTV consolidés faux.
 - **Correction** : charger un `Map<string, DbDebt[]>` puis utiliser `aggregateLoans`.
 
-### BUG-004 — Réduction Pinel/Denormandie non plafonnée niches fiscales
-- **Fichier** : [lib/real-estate/fiscal/incentives/reduction-schedule.ts:118](lib/real-estate/fiscal/incentives/reduction-schedule.ts) + [lib/real-estate/projection.ts:178](lib/real-estate/projection.ts)
-- **Description** : `computePinel` plafonne en interne à 10 000 € (`pinel.ts:141-148`), mais `reduction-schedule.ts` retourne `r.taxReductionPerYear` brut. La projection applique sans cap.
-- **Impact** : sur 2 biens Pinel à 4 000 €/an chacun, projection crédite 8 000 € au lieu de plafonner à 10 000 € par foyer.
-- **Correction** : utiliser `r.yearByYear[i].reductionIR` (déjà plafonné) et agréger par foyer si l'utilisateur a plusieurs biens.
+### BUG-004 — Réduction Pinel/Denormandie non plafonnée niches fiscales ✅ _(V8.1)_
+- **Fichier** : [lib/real-estate/fiscal/incentives/reduction-schedule.ts](lib/real-estate/fiscal/incentives/reduction-schedule.ts)
+- **Description** : `computePinel` plafonne en interne à 10 000 € (`pinel.ts:141-148`), mais `reduction-schedule.ts` retournait `r.taxReductionPerYear` brut.
+- **Résolu V8.1** : import `GLOBAL_TAX_NICHE_CAP` depuis `pinel.ts` + `cappedAnnualReduction = Math.min(annualReduction, GLOBAL_TAX_NICHE_CAP)` appliqué dans le tableau année par année. Invariant testé : aucune sortie Pinel/Denormandie ne dépasse 10 000 €/an, même en stressant les paramètres. Note : avec les plafonds Pinel actuels (300k base + 5500€/m²) et taux LF 2024, le max théorique par bien est ~6 000 €/an, donc le cap est inopérant en l'état actuel mais protège contre (a) une remontée des taux, (b) le branchement de la vraie surface (BUG-005), (c) l'agrégation foyer multi-biens (amélioration séparée).
 
 ### BUG-005 — Pinel/Denormandie appliqué sans vérifier l'éligibilité
 - **Fichier** : [lib/real-estate/fiscal/incentives/reduction-schedule.ts:84-118](lib/real-estate/fiscal/incentives/reduction-schedule.ts)
@@ -88,11 +88,10 @@ Le travail de correction est sérialisé en vagues (1 vague = 1 branche = 1 PR, 
 - **Impact** : projection mensongère pour bien zone C ou loyer > plafond zone.
 - **Correction** : passer les vraies `surfaceM2`/`annualRentHC`, ne créditer que si `eligible: true`.
 
-### BUG-006 — Loc'Avantages : réduction calculée sur loyer théorique
-- **Fichier** : [lib/real-estate/fiscal/incentives/reduction-schedule.ts:45,53](lib/real-estate/fiscal/incentives/reduction-schedule.ts)
-- **Description** : `annualRentHC = rent.monthlyRent × 12` = loyer théorique (sans vacance). CGI art. 199 tricies impose les loyers réellement perçus.
-- **Impact** : réduction surévaluée du facteur vacance/12.
-- **Correction** : retirer la part de vacance ou utiliser `netRent`.
+### BUG-006 — Loc'Avantages : réduction calculée sur loyer théorique ✅ _(V8.1)_
+- **Fichier** : [lib/real-estate/fiscal/incentives/reduction-schedule.ts](lib/real-estate/fiscal/incentives/reduction-schedule.ts)
+- **Description** : `annualRentHC = rent.monthlyRent × 12` = loyer théorique (sans vacance). CGI art. 199 tricies impose les loyers RÉELLEMENT perçus.
+- **Résolu V8.1** : `perceivedMonths = Math.max(0, 12 − vacancyMonths)` ; `annualRentPerceived = monthlyRent × perceivedMonths`. Sur Loc2 / 800 €/mois / 1 mois de vacance, la réduction passe de 3 360 € à 3 080 € (−280 € — bon impact dépend de la vacance saisie). Sur vacance excessive (15 mois), clampée à 0 (pas de réduction négative). 4 tests d'invariant (vacance 0/1/3/15 mois).
 
 ### BUG-007 — Dashboard `/analyse` utilise un moteur fiscal séparé ✅ _(V4 → `3ec90eb`)_
 - **Fichier** : [lib/analyse/immoCalculs.ts:167-180](lib/analyse/immoCalculs.ts) + `lib/analyse/fiscaliteImmo.ts`
@@ -398,11 +397,11 @@ Effort : **S** = < 1h, **M** = 2-6h, **L** = > 1 jour.
 | 2 | ✅ **ROB-003** — `?? 0` sur les colonnes charges dans `[id]/route.ts:42-45` _(V1 → `c96c37f`)_ | S | Métriques NaN |
 | 3 | ✅ **ROB-001** — Checker les fetch crédit/lots du wizard + bandeau `?warn=` _(V1 → `c96c37f`)_ | S | Données silencieusement incomplètes |
 | 4 | **BUG-005** — Pinel inéligible appliqué → passer surface/loyer réels | S | Projection mensongère |
-| 5 | **BUG-006** — Loc'Avantages sur loyer réel (− vacance) | S | Bug fiscal |
+| 5 | ✅ **BUG-006** — Loc'Avantages : `monthlyRent × max(0, 12 − vacancyMonths)` _(V8.1)_ | S | Bug fiscal |
 | 6 | **CAS-DASH-001 / INTEG-003** — Brancher `property_events` au dashboard + remplir `alertCount` | M | Intégration majeure manquante |
 | 7 | ✅ **BUG-003 / INTEG-001** — `portfolio.ts` agréger via `aggregateLoans` au lieu d'écraser _(V3.1 → `3b568f4`)_ | M | Multi-crédit visible dans liste |
 | 8 | ✅ **BUG-001** — `resolveCharges` accepte `opts.excludeShortTermPlatformFees`. `build-from-db.ts` détecte `hasShortTermLot` et passe l'option. 4 postes zéroés (airbnb/booking/cleaning/concierge), `management_agency_pct` préservé _(V6 → `3e29edf`)_ | M | Double comptage commissions |
-| 9 | **BUG-004** — Plafonner Pinel à `r.yearByYear[i].reductionIR` | M | Niches fiscales |
+| 9 | ✅ **BUG-004** — Pinel/Denormandie plafonnés à 10 000 €/an via `Math.min(annualReduction, GLOBAL_TAX_NICHE_CAP)` dans `reduction-schedule.ts`. Agrégation foyer multi-biens = amélioration séparée _(V8.1)_ | M | Niches fiscales |
 | 10 | ✅ **BUG-002 / INTEG-002** — Refondre `build-from-db.ts` pour `DbDebt[]` + propager à SimulationPanel / WhatIf / RealTracking _(V3.1 → `3b568f4`)_ | L | Cause racine des incohérences multi-crédit |
 | 11 | ✅ **BUG-007 / BUG-008** — Dashboard `/analyse` : `loadImmo` délègue à `computeRealEstatePortfolio` (moteur unique multi-crédit V3.1) via le helper pur `buildBienImmoFromSimulation`. Plus de moteur fiscal séparé, plus de snapshot DB du CRD _(V4 → `3ec90eb`)_ | L | Convergence moteurs de calcul |
 

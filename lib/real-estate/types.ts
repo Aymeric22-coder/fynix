@@ -280,6 +280,14 @@ export interface ProjectionYear {
   remainingCapital:   number    // capital restant dû en fin d’année
   estimatedValue:     number    // valeur estimée du bien en fin d’année (avec indexation)
   netPropertyValue:   number    // estimatedValue − remainingCapital
+  /**
+   * V8.1 — Signale qu'un seuil légal de basculement obligatoire micro→réel
+   * a été dépassé cette année (foncier_micro : plafond 15 000 €/an CGI
+   * art. 32 ; lmnp_micro : plafonds LF 2025 selon catégorie meublée).
+   * Le calcul de l'année est conservé tel quel (le moteur ne re-route pas
+   * automatiquement) ; l'UI peut alerter l'utilisateur. Absent par défaut.
+   */
+  forcedRegimeSwitch?: boolean
 }
 
 // ─────────────────────────────────────────────────────────────────────

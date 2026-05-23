@@ -14,6 +14,7 @@
 import { describe, it, expect } from 'vitest'
 import { runSimulation } from '..'
 import { buildIncentiveReductionPerYear } from '../fiscal/incentives/reduction-schedule'
+import { GLOBAL_TAX_NICHE_CAP } from '../fiscal/incentives/pinel'
 import type { SimulationInput } from '../types'
 
 const CURRENT_YEAR = new Date().getUTCFullYear()
@@ -166,5 +167,174 @@ describe('Propagation des réductions fiscales — runSimulation + reduction-sch
       { monthlyRent: 800, vacancyMonths: 0, rentalIndexPct: 0 },
       30, 5,
     )).toEqual([])
+  })
+})
+
+describe('V8.1 — BUG-004 : Pinel/Denormandie plafonnés à 10 000 €/an (niches CGI art. 200-0 A)', () => {
+  /**
+   * Sur un bien dont la réduction théorique annuelle dépasse 10 000 €,
+   * `buildIncentiveReductionPerYear` doit livrer 10 000 € (cap), pas le
+   * brut. Avant V8.1 le brut passait → projection trop favorable.
+   */
+  it('Pinel+ 12 ans, base 600 000 € (cap 300k), taux 21 % : brut 5 250 €/an ⇒ OK sans cap', () => {
+    // Sanity check : un Pinel+ sous le cap reste inchangé
+    // base = min(600k, 300k) = 300k ; total 300k × 21 % = 63k ; annuel = 5 250
+    const reduction = buildIncentiveReductionPerYear(
+      {
+        kind: 'pinel_plus', duration_years: 12, zone: 'A',
+        start_year: CURRENT_YEAR,
+        works_amount: null, is_pinel_plus: true,
+      },
+      { purchasePrice: 600_000, notaryFees: 0, worksAmount: 0, propertyIndexPct: 0 },
+      { monthlyRent: 0, vacancyMonths: 0, rentalIndexPct: 0 },
+      30, 1,
+    )
+    expect(reduction[0]).toBeCloseTo(5_250, 1)
+    expect(reduction[0]!).toBeLessThanOrEqual(10_000)
+  })
+
+  it('Denormandie 6 ans (taux 12 %), base 300k + 100k travaux : brut 8 000 € ⇒ OK sans cap', () => {
+    // base = 400k clampée à 300k ; 300k × 12 % / 6 ans = 6 000 €/an
+    const reduction = buildIncentiveReductionPerYear(
+      {
+        kind: 'denormandie', duration_years: 6, zone: 'A',
+        start_year: CURRENT_YEAR,
+        works_amount: 100_000, is_pinel_plus: false,
+      },
+      { purchasePrice: 300_000, notaryFees: 0, worksAmount: 100_000, propertyIndexPct: 0 },
+      { monthlyRent: 0, vacancyMonths: 0, rentalIndexPct: 0 },
+      30, 1,
+    )
+    expect(reduction[0]).toBeCloseTo(6_000, 1)
+  })
+
+  it('Pinel+ 6 ans (taux 12 %), prix 250k : 5 000 € < 10k OK', () => {
+    // 250k × 12 % / 6 ans = 5 000 €/an
+    const reduction = buildIncentiveReductionPerYear(
+      {
+        kind: 'pinel_plus', duration_years: 6, zone: 'A',
+        start_year: CURRENT_YEAR,
+        works_amount: null, is_pinel_plus: true,
+      },
+      { purchasePrice: 250_000, notaryFees: 0, worksAmount: 0, propertyIndexPct: 0 },
+      { monthlyRent: 0, vacancyMonths: 0, rentalIndexPct: 0 },
+      30, 1,
+    )
+    expect(reduction[0]).toBeCloseTo(5_000, 1)
+  })
+
+  /**
+   * INVARIANT GÉNÉRIQUE — quelle que soit la configuration Pinel/Denormandie,
+   * la réduction annuelle livrée par `buildIncentiveReductionPerYear` ne
+   * dépasse JAMAIS `GLOBAL_TAX_NICHE_CAP` (10 000 €/an, CGI art. 200-0 A).
+   *
+   * Note : en l'état actuel des plafonds Pinel (300 000 € de base + double
+   * plafonnement 5 500 €/m²) et des taux LF 2024 (max 21 % sur 12 ans),
+   * le maximum théorique PAR BIEN est ≈ 6 000 €/an, donc le cap est en
+   * pratique inopérant à l'échelle d'un seul bien. Le test ci-dessous
+   * verrouille néanmoins l'invariant pour protéger contre :
+   *   (a) une remontée des taux Pinel par une LF future ;
+   *   (b) un branchement de la vraie surface m² (BUG-005) qui ferait
+   *       sauter le BYPASS_SURFACE et donc remonter la base ;
+   *   (c) l'agrégation foyer multi-biens (amélioration future).
+   */
+  it('INVARIANT : aucune sortie Pinel/Denormandie ne dépasse 10 000 €/an, même en stressant les paramètres', () => {
+    const scenarios = [
+      { kind: 'pinel' as const,        purchasePrice: 1_000_000, duration_years: 6,  is_pinel_plus: false },
+      { kind: 'pinel' as const,        purchasePrice: 5_000_000, duration_years: 9,  is_pinel_plus: false },
+      { kind: 'pinel_plus' as const,   purchasePrice: 1_000_000, duration_years: 6,  is_pinel_plus: true  },
+      { kind: 'pinel_plus' as const,   purchasePrice: 5_000_000, duration_years: 12, is_pinel_plus: true  },
+      { kind: 'denormandie' as const,  purchasePrice: 1_000_000, duration_years: 6,  is_pinel_plus: false },
+    ]
+    for (const s of scenarios) {
+      const reduction = buildIncentiveReductionPerYear(
+        {
+          kind: s.kind, duration_years: s.duration_years, zone: 'A',
+          start_year: CURRENT_YEAR,
+          works_amount: 200_000, is_pinel_plus: s.is_pinel_plus,
+        },
+        { purchasePrice: s.purchasePrice, notaryFees: 0, worksAmount: 200_000, propertyIndexPct: 0 },
+        { monthlyRent: 0, vacancyMonths: 0, rentalIndexPct: 0 },
+        30, 1,
+      )
+      expect(reduction[0]!).toBeLessThanOrEqual(GLOBAL_TAX_NICHE_CAP)
+    }
+  })
+})
+
+describe('V8.1 — BUG-006 : Loc\'Avantages calculé sur loyer effectivement perçu', () => {
+  /**
+   * Invariant : `vacancyMonths > 0` doit réduire la base de réduction
+   * proportionnellement (CGI art. 199 tricies = "loyers perçus dans l'année").
+   */
+  it('vacancyMonths = 0 : réduction = 12 × monthlyRent × taux (référence)', () => {
+    const reduction = buildIncentiveReductionPerYear(
+      {
+        kind: 'loc_avantages',
+        duration_years: null, zone: null, start_year: null,
+        works_amount: null, is_pinel_plus: null,
+        convention_type:  'loc2',
+        convention_start: `${CURRENT_YEAR}-01-01`,
+        convention_end:   `${CURRENT_YEAR + 5}-12-31`,
+      },
+      { purchasePrice: 0, notaryFees: 0, worksAmount: 0, propertyIndexPct: 0 },
+      { monthlyRent: 800, vacancyMonths: 0, rentalIndexPct: 0 },
+      30, 1,
+    )
+    // 800 × 12 × 0,35 = 3 360 €
+    expect(reduction[0]).toBeCloseTo(3_360, 1)
+  })
+
+  it('vacancyMonths = 1 (Loc2) : base perçue = 11 × monthlyRent', () => {
+    const reduction = buildIncentiveReductionPerYear(
+      {
+        kind: 'loc_avantages',
+        duration_years: null, zone: null, start_year: null,
+        works_amount: null, is_pinel_plus: null,
+        convention_type:  'loc2',
+        convention_start: `${CURRENT_YEAR}-01-01`,
+        convention_end:   `${CURRENT_YEAR + 5}-12-31`,
+      },
+      { purchasePrice: 0, notaryFees: 0, worksAmount: 0, propertyIndexPct: 0 },
+      { monthlyRent: 800, vacancyMonths: 1, rentalIndexPct: 0 },
+      30, 1,
+    )
+    // 800 × 11 × 0,35 = 3 080 € (vs 3 360 € sans vacance → -280 €)
+    expect(reduction[0]).toBeCloseTo(3_080, 1)
+  })
+
+  it('vacancyMonths = 3 (Loc3 65 %) : base perçue = 9 × monthlyRent', () => {
+    const reduction = buildIncentiveReductionPerYear(
+      {
+        kind: 'loc_avantages',
+        duration_years: null, zone: null, start_year: null,
+        works_amount: null, is_pinel_plus: null,
+        convention_type:  'loc3',
+        convention_start: `${CURRENT_YEAR}-01-01`,
+        convention_end:   `${CURRENT_YEAR + 5}-12-31`,
+      },
+      { purchasePrice: 0, notaryFees: 0, worksAmount: 0, propertyIndexPct: 0 },
+      { monthlyRent: 600, vacancyMonths: 3, rentalIndexPct: 0 },
+      30, 1,
+    )
+    // 600 × 9 × 0,65 = 3 510 € (vs 600 × 12 × 0,65 = 4 680 € sans vacance)
+    expect(reduction[0]).toBeCloseTo(3_510, 1)
+  })
+
+  it('vacancyMonths excessive (15) clampée à 0 : pas de réduction négative', () => {
+    const reduction = buildIncentiveReductionPerYear(
+      {
+        kind: 'loc_avantages',
+        duration_years: null, zone: null, start_year: null,
+        works_amount: null, is_pinel_plus: null,
+        convention_type:  'loc1',
+        convention_start: `${CURRENT_YEAR}-01-01`,
+        convention_end:   `${CURRENT_YEAR + 5}-12-31`,
+      },
+      { purchasePrice: 0, notaryFees: 0, worksAmount: 0, propertyIndexPct: 0 },
+      { monthlyRent: 800, vacancyMonths: 15, rentalIndexPct: 0 },
+      30, 1,
+    )
+    expect(reduction[0]).toBe(0)
   })
 })

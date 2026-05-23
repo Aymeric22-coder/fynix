@@ -67,6 +67,46 @@ describe('Foncier micro (abattement 30 %)', () => {
   })
 })
 
+describe('V8.1 — Foncier micro : plafond 15 000 € CGI art. 32', () => {
+  /**
+   * Invariant : au-delà de 15 000 €/an de loyers nets, `forcedRegimeSwitch`
+   * remonte dans `ProjectionYear` pour que l'UI alerte l'utilisateur du
+   * basculement obligatoire vers le foncier réel.
+   */
+  it('loyers ≤ 15 000 € : forcedRegimeSwitch absent', () => {
+    // 1 200 €/mois × 12 = 14 400 € ; avec vacancy 0,5 mois → netRent 13 800
+    const r = runSimulation({
+      ...BASE_INPUT({ kind: 'foncier_micro', tmiPct: 30 }),
+      rent: { monthlyRent: 1_200, vacancyMonths: 0.5, rentalIndexPct: 0 },
+      horizonYears: 1,
+    })
+    expect(r.projection[0]!.forcedRegimeSwitch).toBeUndefined()
+  })
+
+  it('loyers > 15 000 € : forcedRegimeSwitch = true (bascule micro→réel)', () => {
+    // 1 500 €/mois × 12 = 18 000 € ; vacancy 0 → netRent 18 000 > 15 000
+    const r = runSimulation({
+      ...BASE_INPUT({ kind: 'foncier_micro', tmiPct: 30 }),
+      rent: { monthlyRent: 1_500, vacancyMonths: 0, rentalIndexPct: 0 },
+      horizonYears: 1,
+    })
+    expect(r.projection[0]!.forcedRegimeSwitch).toBe(true)
+  })
+
+  it('indexation : forcedRegimeSwitch se déclenche dès que netRent franchit 15 000 €', () => {
+    // Démarrage 14 800 €/an, indexation 2 %/an → franchissement de 15 000 € entre Y2 et Y3
+    const r = runSimulation({
+      ...BASE_INPUT({ kind: 'foncier_micro', tmiPct: 30 }),
+      rent: { monthlyRent: 14_800 / 12, vacancyMonths: 0, rentalIndexPct: 2 },
+      horizonYears: 5,
+    })
+    // Y1 (14 800), Y2 (15 096) : Y2 franchit le seuil
+    expect(r.projection[0]!.forcedRegimeSwitch).toBeUndefined()
+    expect(r.projection[1]!.forcedRegimeSwitch).toBe(true)
+    expect(r.projection[2]!.forcedRegimeSwitch).toBe(true)
+  })
+})
+
 describe('LMNP réel (amortissement plafonné au bénéfice)', () => {
   const input = BASE_INPUT({
     kind: 'lmnp_reel',

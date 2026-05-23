@@ -13,7 +13,7 @@
  *   global, pas réduction d'IR) — retourne un tableau de zéros, traité ailleurs.
  */
 
-import { computePinel, type PinelDuration, type PinelZone } from './pinel'
+import { computePinel, GLOBAL_TAX_NICHE_CAP, type PinelDuration, type PinelZone } from './pinel'
 import { computeDenormandie } from './denormandie'
 import { LOC_AVANTAGES_RATES, type LocAvantagesConvention } from './loc-avantages'
 import type { PropertyInput, RentInput } from '../../types'
@@ -42,15 +42,21 @@ export function buildIncentiveReductionPerYear(
   if (!incentive) return []
 
   const calendarYear1 = new Date().getUTCFullYear()
-  const annualRentHC  = rent.monthlyRent * 12
 
   // ── Loc'Avantages — CGI art. 199 tricies ─────────────────────────────
-  // Réduction = loyers HC × taux convention (15 / 35 / 65 %).
-  // Fenêtre = [convention_start.year, convention_end.year], par défaut 6 ans.
+  // Réduction = loyers HC EFFECTIVEMENT PERÇUS × taux convention
+  // (15 / 35 / 65 %). Fenêtre = [convention_start.year, convention_end.year],
+  // par défaut 6 ans.
+  //
+  // V8.1 — BUG-006 : on prend les loyers réellement perçus (nets de vacance)
+  // et non le loyer théorique (12 × monthlyRent). CGI art. 199 tricies parle
+  // explicitement de "loyers perçus dans l'année".
   if (incentive.kind === 'loc_avantages') {
     const conventionType = (incentive.convention_type ?? 'loc1') as LocAvantagesConvention
     const rate = LOC_AVANTAGES_RATES[conventionType] ?? 0
-    const annualReduction = annualRentHC * rate
+    const perceivedMonths = Math.max(0, 12 - (rent.vacancyMonths ?? 0))
+    const annualRentPerceived = rent.monthlyRent * perceivedMonths
+    const annualReduction = annualRentPerceived * rate
 
     const startYear = incentive.convention_start
       ? new Date(incentive.convention_start).getUTCFullYear()
@@ -118,6 +124,13 @@ export function buildIncentiveReductionPerYear(
     annualReduction = r.taxReductionPerYear
   }
 
+  // V8.1 — BUG-004 : plafond global niches fiscales (CGI art. 200-0 A) =
+  // 10 000 €/an. `computePinel` plafonne déjà dans `yearByYear[i].reductionIR`,
+  // mais on consomme `taxReductionPerYear` (brut) → on ré-applique le cap ici
+  // pour garantir la cohérence du plafond par bien (l'agrégation au niveau
+  // FOYER est une amélioration séparée, future V8.x).
+  const cappedAnnualReduction = Math.min(annualReduction, GLOBAL_TAX_NICHE_CAP)
+
   // Construit le tableau année par année avec la fenêtre temporelle.
   // Année 1 simulée = année calendaire courante (calendarYear1 défini en haut).
   const incentiveStart  = incentive.start_year
@@ -126,7 +139,7 @@ export function buildIncentiveReductionPerYear(
   return Array.from({ length: horizonYears }, (_, i) => {
     const calYear = calendarYear1 + i
     if (calYear >= incentiveStart && calYear <= incentiveEnd) {
-      return annualReduction
+      return cappedAnnualReduction
     }
     return 0
   })

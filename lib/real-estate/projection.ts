@@ -230,6 +230,10 @@ export function computeProjection(input: SimulationInput): {
       remainingCapital,
       estimatedValue,
       netPropertyValue,
+      // V8.1 — Propagation du basculement obligatoire micro→réel détecté par
+      // le calculateur (foncier_micro > 15 000 € ; lmnp_micro > plafond LF
+      // 2025 selon catégorie). Réutilisable pour tous les régimes micro.
+      ...(tax.forcedRegimeSwitch ? { forcedRegimeSwitch: true } : {}),
     })
   }
 
