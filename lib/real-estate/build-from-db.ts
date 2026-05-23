@@ -246,9 +246,25 @@ export function buildSimulationInputFromDb(
   // (fourre-tout déductible dans toutes les calculatrices fiscales).
   // La GLI et les frais d'agence sont résolus via resolveCharges() —
   // si saisis en % ils sont convertis à partir des loyers annuels.
+  //
+  // V6 — BUG-001 : pour un bien avec AU MOINS un lot short_term/mixed,
+  // `computeMonthlyRentForLot` retourne déjà le `netOwnerRevenueTotal/12`
+  // (revenu net des commissions plateformes + frais opérationnels du lot).
+  // Donc `monthlyRent` ici est DÉJÀ net pour ces lots → on doit ignorer
+  // `management_airbnb_pct`/`management_booking_pct`/`management_cleaning`/
+  // `management_concierge` dans `resolveCharges` pour éviter une 2ᵉ
+  // déduction. La détection est binaire au niveau du bien (on/off) :
+  // sémantiquement, un bien est "à dominante courte durée" ou pas.
   const num = (v: number | null | undefined) => Math.max(0, v ?? 0)
   const annualRent = monthlyRent * 12
-  const resolved = resolveCharges(charges ?? undefined, annualRent)
+  const hasShortTermLot = lots.some(
+    l => l.rental_type === 'short_term' || l.rental_type === 'mixed',
+  )
+  const resolved = resolveCharges(
+    charges ?? undefined,
+    annualRent,
+    { excludeShortTermPlatformFees: hasShortTermLot },
+  )
 
   // Le calcul existant utilise déjà charges.insurance pour la PNO,
   // donc on ne double-compte pas. On déduit les charges explicites de

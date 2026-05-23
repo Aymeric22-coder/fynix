@@ -275,3 +275,118 @@ describe('buildSimulationInputFromDb — utilise current_value de l\'asset comme
     expect(input.property.currentEstimatedValue).toBeUndefined()
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────
+// V6 — BUG-001 : double comptage commissions courte durée
+//
+// Pour un lot short_term/mixed, `computeMonthlyRentForLot` retourne déjà
+// `netOwnerRevenueTotal / 12` (revenu net des commissions Airbnb/Booking
+// + ménage + conciergerie). Si l'utilisateur saisit aussi ces 4 postes
+// dans `property_charges`, on les déduirait une 2ᵉ fois → bug majeur,
+// ~12 k€/an d'écart sur un Airbnb à 50 k€.
+//
+// `buildSimulationInputFromDb` doit détecter `hasShortTermLot` et passer
+// `excludeShortTermPlatformFees=true` à `resolveCharges` pour casser le
+// doublon. Les tests ci-dessous valident l'invariant :
+//   - bien short-term + commissions saisies en property_charges
+//     == bien short-term sans ces colonnes en charges (zéro doublon)
+//   - bien long-term + commissions saisies en property_charges
+//     ≠  bien long-term sans (les commissions COMPTENT pour un long-term)
+// ─────────────────────────────────────────────────────────────────────
+describe('V6 BUG-001 — pas de double comptage commissions short-term', () => {
+
+  // Revenu déjà NET des commissions (= ce que retourne computeMonthlyRentForLot
+  // pour un lot short_term via netOwnerRevenueTotal). On bypasse le calcul
+  // lot via `assumed_total_rent` pour rendre le test déterministe sans
+  // dépendre des taux Airbnb/Booking du lot.
+  const PROPERTY_ST_NET: DbProperty = {
+    ...PROPERTY_BASE,
+    fiscal_regime:      'lmnp_micro',  // BIC est typique courte durée
+    assumed_total_rent: 2_500,         // 30 000 €/an net plateformes
+  }
+
+  // 1 lot SHORT_TERM minimal — sert SEULEMENT à déclencher
+  // `hasShortTermLot=true` côté buildSimulationInputFromDb (rental_type
+  // détecté). Le loyer effectif vient de `assumed_total_rent`.
+  const LOT_SHORT_TERM: DbLot = {
+    rent_amount:  null,
+    rental_type: 'short_term',
+  }
+
+  // 1 lot LONG_TERM équivalent — sert au cas de contrôle long-term.
+  const LOT_LONG_TERM: DbLot = {
+    rent_amount:  null,
+    rental_type: 'long_term',
+  }
+
+  // Charges A : base seule (pas les 4 postes plateformes courte durée).
+  const CHARGES_A_BASE: DbCharges = {
+    ...CHARGES_BASE,
+  }
+
+  // Charges B : base + les 4 postes plateformes (déjà nettés au lot).
+  const CHARGES_B_WITH_ST_FEES: DbCharges = {
+    ...CHARGES_BASE,
+    management_airbnb_pct:  15,    // → 30 000 × 15 % = 4 500 €/an
+    management_booking_pct: 0,
+    management_cleaning:    2_400, // 200 €/mois
+    management_concierge:   1_800, // 150 €/mois
+  }
+
+  function runYear1CashFlow(
+    property: DbProperty,
+    lots:     DbLot[],
+    charges:  DbCharges,
+  ): number {
+    const input = buildSimulationInputFromDb(
+      property, ASSET_BASE, lots, charges, [DEBT_COMPLETE], PROFILE_BASE,
+      { downPayment: 30_000 },
+    )
+    const r = runSimulation(input)
+    return r.kpis.annualCashFlowYear1
+  }
+
+  it('short_term : charges A ≡ charges B (commissions ignorées, 0 doublon)', () => {
+    const cfA = runYear1CashFlow(PROPERTY_ST_NET, [LOT_SHORT_TERM], CHARGES_A_BASE)
+    const cfB = runYear1CashFlow(PROPERTY_ST_NET, [LOT_SHORT_TERM], CHARGES_B_WITH_ST_FEES)
+    // Strictement identiques : les 4 postes B ont été zéroés via le strip.
+    expect(cfB).toBeCloseTo(cfA, 2)
+  })
+
+  it('long_term (contrôle) : charges A ≠ charges B (commissions COMPTENT)', () => {
+    const cfA = runYear1CashFlow(PROPERTY_ST_NET, [LOT_LONG_TERM], CHARGES_A_BASE)
+    const cfB = runYear1CashFlow(PROPERTY_ST_NET, [LOT_LONG_TERM], CHARGES_B_WITH_ST_FEES)
+    // Pour un long-term, les colonnes management_* sont des charges réelles
+    // (mandat agence, ménage en parties communes…) — ne PAS les ignorer.
+    // CF avec ces charges = CF sans − (commissions × (1 − impact fiscal))
+    expect(cfB).toBeLessThan(cfA)
+    // Magnitude : 4500 + 2400 + 1800 = 8700 €/an de charges en plus,
+    // dont environ 50 % récupéré en réduction d'impôt (LMNP micro 50 %).
+    // On vérifie au moins qu'il y a une vraie différence (> 3 000 €).
+    expect(cfA - cfB).toBeGreaterThan(3_000)
+  })
+
+  it('short_term : aucune charge plateforme dans projection[0].charges issues du moteur', () => {
+    // Vérification directe : on relit `projection[0].charges` (lu par la
+    // Synthèse V6) et on s'assure que le strip a bien zéroé les 4 postes
+    // côté charges agrégées du moteur.
+    const inputA = buildSimulationInputFromDb(
+      PROPERTY_ST_NET, ASSET_BASE, [LOT_SHORT_TERM], CHARGES_A_BASE,
+      [DEBT_COMPLETE], PROFILE_BASE, { downPayment: 30_000 },
+    )
+    const inputB = buildSimulationInputFromDb(
+      PROPERTY_ST_NET, ASSET_BASE, [LOT_SHORT_TERM], CHARGES_B_WITH_ST_FEES,
+      [DEBT_COMPLETE], PROFILE_BASE, { downPayment: 30_000 },
+    )
+    const chargesY1A = runSimulation(inputA).projection[0]?.charges ?? 0
+    const chargesY1B = runSimulation(inputB).projection[0]?.charges ?? 0
+    expect(chargesY1B).toBeCloseTo(chargesY1A, 2)
+  })
+
+  it('mixed : déclenche aussi le strip (rental_type=mixed)', () => {
+    const lotMixed: DbLot = { rent_amount: null, rental_type: 'mixed' }
+    const cfA = runYear1CashFlow(PROPERTY_ST_NET, [lotMixed], CHARGES_A_BASE)
+    const cfB = runYear1CashFlow(PROPERTY_ST_NET, [lotMixed], CHARGES_B_WITH_ST_FEES)
+    expect(cfB).toBeCloseTo(cfA, 2)
+  })
+})

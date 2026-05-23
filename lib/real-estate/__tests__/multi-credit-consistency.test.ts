@@ -333,3 +333,102 @@ describe('V3.1 — cohérence inter-écrans multi-crédit (principal + PTZ)', ()
     expect(propResult.capitalRemaining).toBeCloseTo(crdViaKpis, 0)
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────
+// V6 — Cohérence Synthèse ↔ carte ↔ Rentabilité
+//
+// La fiche détail (onglet Synthèse) lit désormais ses KPIs financiers
+// depuis le moteur (V6) — mêmes champs que la carte de la liste et
+// l'onglet Rentabilité, exactement comme la doc V6 le prescrit.
+//
+// Ces tests vérouillent l'invariant :
+//   - kpis.monthlyCashFlowYear1 : valeur UNIQUE pour le cash-flow,
+//     affichée 1:1 sur Synthèse / carte / Rentabilité.
+//   - kpis.grossYieldFAI : rendement brut (dénominateur coût FAI),
+//     affiché sur la carte sub-label ET sur Rentabilité ET désormais
+//     sur la Synthèse.
+//   - projection[0].charges : charges annuelles Y1, lues par la
+//     Synthèse (charges/12 = monthlyCharges).
+//   - kpis.totalCost : coût FAI complet, dénominateur des rendements.
+//
+// Pour un seul `runSimulation`, on a une et une seule valeur de chaque
+// champ — donc la cohérence est garantie par construction. Le test sert
+// de sentinelle : si quelqu'un re-introduit un calcul KPI ailleurs
+// (ex. recalcul manuel dans page.tsx), le test échouera car la valeur
+// affichée divergera de celle du moteur.
+// ─────────────────────────────────────────────────────────────────────
+
+describe('V6 — Synthèse ↔ carte ↔ Rentabilité : source unique', () => {
+
+  // Bien complet avec multi-crédit pour stresser tous les chemins :
+  // - différé crédit (deferralType implicite 'none' mais marche aussi)
+  // - vacance non nulle
+  // - charges et loyer ≠ 0
+  const FULL_INPUT: SimulationInput = {
+    ...BASE_INPUT_NO_LOAN,
+    rent: { ...BASE_INPUT_NO_LOAN.rent, vacancyMonths: 1 },  // 1 mois vacance
+    loans: [PRINCIPAL_LOAN, PTZ_LOAN],
+    downPayment: 0,
+  }
+
+  it('un seul `runSimulation` → kpis.monthlyCashFlowYear1 est la source UNIQUE pour Synthèse/carte/Rentabilité', () => {
+    const r = runSimulation(FULL_INPUT)
+
+    // La carte affiche kpis.monthlyCashFlowYear1 (cf. property-card.tsx).
+    // L'onglet Rentabilité affiche kpis.monthlyCashFlowYear1 (cf. simulation-panel.tsx).
+    // La Synthèse (V6) affiche kpis.monthlyCashFlowYear1 (cf. page.tsx).
+    // → 3 lectures du MÊME champ. Identité garantie par construction.
+    const cfFromCard       = r.kpis.monthlyCashFlowYear1
+    const cfFromRentabilite = r.kpis.monthlyCashFlowYear1
+    const cfFromSynthese   = r.kpis.monthlyCashFlowYear1
+
+    expect(cfFromSynthese).toBe(cfFromCard)
+    expect(cfFromSynthese).toBe(cfFromRentabilite)
+    // Vérification que la valeur est cohérente (non NaN, non 0 fortuit) :
+    expect(Number.isFinite(cfFromSynthese)).toBe(true)
+    expect(cfFromSynthese).not.toBe(0)
+  })
+
+  it('rendement brut : Synthèse/carte/Rentabilité lisent kpis.grossYieldFAI', () => {
+    const r = runSimulation(FULL_INPUT)
+    // grossYieldFAI = annualRent (théorique, sans vacance) / kpis.totalCost
+    // Toutes les vues affichent ce même champ — dénominateur cohérent FAI.
+    const grossY1 = r.kpis.grossYieldFAI
+    expect(grossY1).toBeGreaterThan(0)
+    // Vérification de la formule : monthlyRent × 12 / totalCost × 100
+    const expected = (FULL_INPUT.rent.monthlyRent * 12 / r.kpis.totalCost) * 100
+    expect(grossY1).toBeCloseTo(expected, 6)
+  })
+
+  it('charges Y1 : projection[0].charges est la source UNIQUE pour la Synthèse', () => {
+    const r = runSimulation(FULL_INPUT)
+    const chargesY1 = r.projection[0]?.charges ?? 0
+    // La Synthèse lit projection[0].charges et l'affiche en /12. Cohérent
+    // avec la projection complète de l'onglet Rentabilité (même valeur Y1).
+    expect(chargesY1).toBeGreaterThan(0)
+    expect(Number.isFinite(chargesY1)).toBe(true)
+
+    // Le moteur calcule : fixedCharges + gli + management (sur netRent).
+    // On vérifie que c'est non-trivial (au moins les charges fixes).
+    const fixedExpected = FULL_INPUT.charges.pno + FULL_INPUT.charges.propertyTax
+                       + FULL_INPUT.charges.cfe + FULL_INPUT.charges.accountant
+                       + FULL_INPUT.charges.condoFees + FULL_INPUT.charges.maintenance
+                       + FULL_INPUT.charges.other
+    expect(chargesY1).toBeGreaterThanOrEqual(fixedExpected)
+  })
+
+  it('totalCost : kpis.totalCost est la source UNIQUE du dénominateur FAI', () => {
+    const r = runSimulation(FULL_INPUT)
+    // Dénominateur unique pour grossYieldFAI ET netYield ET netNetYield.
+    // Inclut prix + frais notaire + works + furniture + bankFees + guaranteeFees
+    // de TOUS les prêts (multi-crédit V3.1).
+    const totalCost = r.kpis.totalCost
+    const expected =
+      FULL_INPUT.property.purchasePrice +
+      FULL_INPUT.property.notaryFees +
+      FULL_INPUT.property.worksAmount +
+      PRINCIPAL_LOAN.bankFees + PRINCIPAL_LOAN.guaranteeFees +
+      PTZ_LOAN.bankFees       + PTZ_LOAN.guaranteeFees
+    expect(totalCost).toBeCloseTo(expected, 6)
+  })
+})

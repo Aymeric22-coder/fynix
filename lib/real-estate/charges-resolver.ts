@@ -67,30 +67,66 @@ export interface ResolvedCharges {
 
 const num = (v: number | null | undefined): number => Math.max(0, v ?? 0)
 
+/** V6 — Options de résolution des charges. */
+export interface ResolveChargesOptions {
+  /**
+   * Quand `true`, les 4 postes spécifiques à la location courte durée
+   * (`management_airbnb_pct`, `management_booking_pct`, `management_cleaning`,
+   * `management_concierge`) sont traités comme 0 dans `gestionTotal`.
+   *
+   * Pourquoi : pour un lot `short_term`/`mixed`, le revenu mensuel équivalent
+   * (`computeMonthlyRentForLot`) est déjà calculé NET des commissions
+   * plateformes + frais opérationnels (cf. `computeShortTermRevenue` →
+   * `netOwnerRevenueTotal`). Si l'utilisateur saisit aussi ces 4 colonnes
+   * dans `property_charges`, on les déduirait une 2ᵉ fois → double comptage
+   * (BUG-001 de l'audit, ~12 k€/an d'écart sur un Airbnb à 50 k€).
+   *
+   * Limite connue : si un lot short_term n'a PAS ses commissions saisies au
+   * niveau lot (`platform_*_pct = null/0`) mais que l'utilisateur saisit les
+   * commissions UNIQUEMENT dans `property_charges`, cette option les
+   * zéroterait → sous-estimation. Le formulaire UI court terme doit pousser
+   * la saisie au niveau lot (pratique correcte) ; ce cas est marginal.
+   *
+   * Default `false` (rétro-compat : tous les frais comptés).
+   */
+  excludeShortTermPlatformFees?: boolean
+}
+
 /**
  * @param charges      Ligne `property_charges` (peut être incomplète).
  * @param annualRentHC Loyer annuel HC réel — utilisé pour convertir les % en €.
+ * @param opts         Options (cf. {@link ResolveChargesOptions}).
  */
 export function resolveCharges(
   charges:      RawChargesRow | null | undefined,
   annualRentHC: number,
+  opts:         ResolveChargesOptions = {},
 ): ResolvedCharges {
   const c = charges ?? {}
   const annual = Math.max(0, annualRentHC)
+  const stripShortTermFees = opts.excludeShortTermPlatformFees === true
 
   // GLI : si pct > 0 → prévaut sur le montant fixe
   const gliResolvedEur = num(c.insurance_gli_pct) > 0
     ? annual * num(c.insurance_gli_pct) / 100
     : num(c.insurance_gli_eur)
 
-  // Frais agence : si pct > 0 → prévaut
+  // Frais agence : si pct > 0 → prévaut. NB : `management_agency_pct` est la
+  // gestion locative classique (long terme), pas une commission plateforme —
+  // on la conserve même en mode short-term (ex. un mandat de gestion local
+  // peut coexister avec Airbnb pour la sous-location courte durée).
   const agencyFeesResolvedEur = num(c.management_agency_pct) > 0
     ? annual * num(c.management_agency_pct) / 100
     : num(c.management_agency_eur)
 
-  // Plateformes courte durée (toujours en %)
-  const airbnbFees  = annual * num(c.management_airbnb_pct)  / 100
-  const bookingFees = annual * num(c.management_booking_pct) / 100
+  // Plateformes courte durée (toujours en %). En mode strip, zéroées
+  // pour éviter le double comptage (cf. ResolveChargesOptions).
+  const airbnbFees  = stripShortTermFees ? 0 : annual * num(c.management_airbnb_pct)  / 100
+  const bookingFees = stripShortTermFees ? 0 : annual * num(c.management_booking_pct) / 100
+  // Ménage + conciergerie : idem, déjà déduits dans netOwnerRevenueTotal au
+  // niveau lot pour les biens short_term.
+  const cleaningFee   = stripShortTermFees ? 0 : num(c.management_cleaning)
+  const conciergeFee  = stripShortTermFees ? 0 : num(c.management_concierge)
 
   const taxesLocalesTotal = num(c.taxe_fonciere) + num(c.taxe_habitation)
                           + num(c.taxe_logements_vacants) + num(c.teom)
@@ -100,7 +136,7 @@ export function resolveCharges(
   const coproTotal = num(c.condo_fees) + num(c.condo_fees_works) + num(c.condo_special_fund)
 
   const gestionTotal = agencyFeesResolvedEur + airbnbFees + bookingFees
-                     + num(c.management_cleaning) + num(c.management_concierge)
+                     + cleaningFee + conciergeFee
 
   const travauxTotal = num(c.maintenance) + num(c.maintenance_major) + num(c.repairs_provision)
 

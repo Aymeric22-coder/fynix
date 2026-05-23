@@ -142,18 +142,21 @@ export default async function ImmobilierDetailPage({ params, searchParams }: Pro
   const charges     = chargesAll.find((c: { year: number }) => c.year === currentYear) ?? null
 
   // ── Calculs affichage ────────────────────────────────────────────────────
+  // V6 — `monthlyRents` est conservé pour RealTrackingPanel (qui s'attend au
+  // loyer brut perçu basé sur les lots loués). Les KPIs financiers de la
+  // Synthèse (charges, rendements brut/net, cash-flow) sont désormais lus
+  // depuis `simResult` plus bas pour garantir la cohérence avec la carte
+  // de la liste et l'onglet Rentabilité (« le même chiffre partout »).
   const monthlyRents = lots
     .filter((l: { status: string }) => l.status === 'rented')
     .reduce((s: number, l: { rent_amount: number | null }) => s + (l.rent_amount ?? 0), 0)
-  const annualRents  = monthlyRents * 12
-  const annualCharges = charges
-    ? Object.entries(charges)
-        .filter(([k]) => ['taxe_fonciere','insurance','accountant','cfe','condo_fees','maintenance','other'].includes(k))
-        .reduce((s, [, v]) => s + (Number(v) ?? 0), 0)
-    : 0
-  // Prix de revient total = achat + frais notaire + travaux + mobilier
-  // (LMNP) + frais bancaires/garantie. Cohérent avec totalCost dans
-  // computeKPIs : tous les rendements doivent partager ce dénominateur.
+  // Conservé pour le dispositif fiscal (Pinel / Loc'Avantages) qui a
+  // besoin du loyer annuel HC pour vérifier l'éligibilité (plafond €/m²).
+  const annualRents = monthlyRents * 12
+  // Prix de revient total — utilisé pour la plus-value latente (acqCost
+  // complet incluant mobilier + frais bancaires/garantie). Note : pour les
+  // rendements, on lit désormais `kpis.grossYieldFAI` / `kpis.netYield` du
+  // moteur (dénominateur cohérent = kpis.totalCost).
   const acqCost =
     (prop.purchase_price ?? 0)
     + (prop.purchase_fees ?? 0)
@@ -162,11 +165,6 @@ export default async function ImmobilierDetailPage({ params, searchParams }: Pro
     + (debtRow?.bank_fees      ?? 0)
     + (debtRow?.guarantee_fees ?? 0)
   const currentVal  = prop.asset?.current_value ?? 0
-  // Rendement brut : loyer théorique × 12 sur prix de revient total
-  // (PAS de déduction de vacance dans le brut — c'est la convention FR).
-  const grossYield  = acqCost > 0 ? (annualRents / acqCost) * 100 : 0
-  // Rendement net de charges : pas de mensualité, pas d'impôt, pas de vacance.
-  const netYield    = acqCost > 0 ? ((annualRents - annualCharges) / acqCost) * 100 : 0
   const latentGain  = currentVal - acqCost
   const latentPct   = acqCost > 0 ? (latentGain / acqCost) * 100 : 0
 
@@ -359,22 +357,16 @@ export default async function ImmobilierDetailPage({ params, searchParams }: Pro
       )
     : []
 
-  // ── Synthèse : KPIs financiers globaux ──────────────────────────────────
-  // Mensualité totale = somme des mensualités de tous les crédits actifs
-  // (migration 034). Pour un bien avec un seul crédit, équivalent à l'ancien.
-  const monthlyLoanPayment = multiCredit.totalMonthly
-  const monthlyCharges     = annualCharges / 12
-  // Pour un bien locatif : cash-flow = loyers − charges − crédit.
-  // Pour une RP / résidence secondaire sans location : pas de loyers, le KPI
-  // équivalent est le « coût mensuel de possession » (charges + crédit), signe
-  // négatif puisqu'il s'agit d'une sortie de trésorerie.
-  const monthlyCashFlow    = isRental
-    ? monthlyRents - monthlyCharges - monthlyLoanPayment
-    : -(monthlyCharges + monthlyLoanPayment)
-  const annualCashFlow     = monthlyCashFlow * 12
-  const netPropertyValue   = currentVal - crdNow
-
-  // ── Phase 2 : suivi réel vs simulation ──────────────────────────────────
+  // ── Simulation moteur (source unique des KPIs financiers) ──────────────
+  // V6 — Le bloc simInput/simResult est désormais calculé AVANT les KPIs
+  // d'affichage de la Synthèse pour pouvoir lire les bonnes valeurs (kpis +
+  // projection[0]) depuis la même source que la carte de la liste et
+  // l'onglet Rentabilité. Avant V6, la Synthèse calculait ses propres
+  // charges/grossYield/netYield/cash-flow à la main avec :
+  //   - charges partielles (ignorait gli_pct, management_pct, mig 040)
+  //     → BUG-D1-M04
+  //   - cash-flow sans impôt, sans différé, sans vacance → divergent de
+  //     la carte (864 € pour Tandoori) et de la Rentabilité (idem).
   // V3.1 — Apport = coût acquisition - somme des capitaux empruntés (multi-crédit).
   const totalBorrowed = allDbDebts.reduce((s, d) => s + (d.initial_amount ?? 0), 0)
   const downPayment   = Math.max(0, acqCost - totalBorrowed)
@@ -396,6 +388,37 @@ export default async function ImmobilierDetailPage({ params, searchParams }: Pro
   )
   const simInputWithIncentive = { ...simInput, incentiveReductionPerYear }
   const simResult = runSimulation(simInputWithIncentive)
+
+  // ── Synthèse : KPIs financiers globaux (lus depuis le moteur — V6) ─────
+  // Tous les chiffres ci-dessous sont strictement identiques à ceux affichés
+  // par la carte de la liste et l'onglet Rentabilité, par construction.
+  //   - `annualCharges` = `projection[0].charges` (inclut PNO + taxe foncière
+  //     + cfe + accountant + condoFees + maintenance + other + GLI %
+  //     + management % + mig 040 résolues via charges-resolver).
+  //   - `grossYield`    = `kpis.grossYieldFAI` (= dénominateur coût FAI complet).
+  //     Même valeur que carte/Rentabilité.
+  //   - `netYield`      = `kpis.netYield` (= (loyer − charges) / coût FAI,
+  //     sans crédit ni impôt). Sémantique historique de la Synthèse
+  //     préservée (≠ net-net affiché sur la carte ; v7 unifiera).
+  //   - `monthlyCashFlow` (rental) = `kpis.monthlyCashFlowYear1`
+  //     (= après impôts, vacance comprise, différé crédit pris en compte,
+  //     multi-crédit agrégé). Cohérent carte + Rentabilité.
+  //   - Pour les non-rental (RP, secondaire) : pas de loyer donc pas de
+  //     fiscalité locative à appliquer. Le "coût mensuel de possession" =
+  //     `−(monthlyCharges + monthlyLoanPayment)` est la bonne sémantique.
+  //     `monthlyCharges` vient quand même du moteur (cohérent avec la
+  //     projection : `fixedCharges` est calculé même quand `netRent=0` —
+  //     taxe foncière, copro, etc. restent à payer).
+  const annualCharges      = simResult.projection[0]?.charges ?? 0
+  const grossYield         = simResult.kpis.grossYieldFAI
+  const netYield           = simResult.kpis.netYield
+  const monthlyLoanPayment = multiCredit.totalMonthly
+  const monthlyCharges     = annualCharges / 12
+  const monthlyCashFlow    = isRental
+    ? simResult.kpis.monthlyCashFlowYear1
+    : -(monthlyCharges + monthlyLoanPayment)
+  const annualCashFlow     = monthlyCashFlow * 12
+  const netPropertyValue   = currentVal - crdNow
 
   const actualData  = await loadActualData(
     supabase, user!.id, prop.asset_id, prop.id, debtRow?.id ?? null,
@@ -486,7 +509,7 @@ export default async function ImmobilierDetailPage({ params, searchParams }: Pro
                 {formatCurrency(monthlyCashFlow, 'EUR')}
               </p>
               <p className="text-xs text-secondary mt-1">
-                {isRental ? 'loyers − charges − crédit' : 'charges + crédit'}
+                {isRental ? 'après impôts /mois' : 'charges + crédit'}
               </p>
             </div>
             {isRental ? (
