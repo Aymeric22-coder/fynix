@@ -148,6 +148,94 @@ describe('LMNP micro-BIC (abattement 50 %)', () => {
   })
 })
 
+describe('V8.2 — BUG-D1-M06 : LMNP micro plafonds propagés (forcedRegimeSwitch)', () => {
+  /**
+   * Avant V8.2, `makeLmnpMicroCalculator` n'était jamais appelé avec son
+   * 3e paramètre `ceiling` ⇒ `forcedRegimeSwitch` toujours `undefined`,
+   * l'utilisateur n'était jamais alerté de la bascule micro→réel obligatoire.
+   *
+   * V8.2 dérive le plafond de l'abattement (50 → 77 700 €, 30 → 15 000 €) :
+   *  - les 2 catégories à 50 % partagent le même plafond, pas d'ambiguïté
+   *  - réutilise le slot `ProjectionYear.forcedRegimeSwitch` ajouté V8.1
+   */
+
+  it('abattement 50 % (classique/tourisme classé) — loyers ≤ 77 700 € : pas de forced', () => {
+    // 6 000 €/mois × 12 = 72 000 €/an < 77 700 €
+    const r = runSimulation({
+      ...BASE_INPUT({ kind: 'lmnp_micro', tmiPct: 30, abattementPct: 50 }),
+      rent: { monthlyRent: 6_000, vacancyMonths: 0, rentalIndexPct: 0 },
+      horizonYears: 1,
+    })
+    expect(r.projection[0]!.forcedRegimeSwitch).toBeUndefined()
+  })
+
+  it('abattement 50 % — loyers > 77 700 € : forcedRegimeSwitch = true', () => {
+    // 7 000 €/mois × 12 = 84 000 €/an > 77 700 €
+    const r = runSimulation({
+      ...BASE_INPUT({ kind: 'lmnp_micro', tmiPct: 30, abattementPct: 50 }),
+      rent: { monthlyRent: 7_000, vacancyMonths: 0, rentalIndexPct: 0 },
+      horizonYears: 1,
+    })
+    expect(r.projection[0]!.forcedRegimeSwitch).toBe(true)
+  })
+
+  it('abattement 30 % (tourisme non classé) — loyers ≤ 15 000 € : pas de forced', () => {
+    // 1 200 €/mois × 12 = 14 400 €/an < 15 000 €
+    const r = runSimulation({
+      ...BASE_INPUT({ kind: 'lmnp_micro', tmiPct: 30, abattementPct: 30 }),
+      rent: { monthlyRent: 1_200, vacancyMonths: 0, rentalIndexPct: 0 },
+      horizonYears: 1,
+    })
+    expect(r.projection[0]!.forcedRegimeSwitch).toBeUndefined()
+  })
+
+  it('abattement 30 % — loyers > 15 000 € : forcedRegimeSwitch = true (plafond bas tourisme non classé)', () => {
+    // 1 600 €/mois × 12 = 19 200 €/an > 15 000 €
+    const r = runSimulation({
+      ...BASE_INPUT({ kind: 'lmnp_micro', tmiPct: 30, abattementPct: 30 }),
+      rent: { monthlyRent: 1_600, vacancyMonths: 0, rentalIndexPct: 0 },
+      horizonYears: 1,
+    })
+    expect(r.projection[0]!.forcedRegimeSwitch).toBe(true)
+  })
+
+  it('indexation : franchissement progressif du plafond 77 700 € (abattement 50 %)', () => {
+    // Y1 = 77 000 €/an < 77 700 ; indexation 2 % → Y2 = 78 540 € > 77 700
+    const r = runSimulation({
+      ...BASE_INPUT({ kind: 'lmnp_micro', tmiPct: 30, abattementPct: 50 }),
+      rent: { monthlyRent: 77_000 / 12, vacancyMonths: 0, rentalIndexPct: 2 },
+      horizonYears: 5,
+    })
+    expect(r.projection[0]!.forcedRegimeSwitch).toBeUndefined()
+    expect(r.projection[1]!.forcedRegimeSwitch).toBe(true)
+    expect(r.projection[2]!.forcedRegimeSwitch).toBe(true)
+  })
+
+  it('indexation : franchissement progressif du plafond 15 000 € (abattement 30 %)', () => {
+    // Y1 = 14 800 €/an < 15 000 ; indexation 2 % → Y2 = 15 096 €
+    const r = runSimulation({
+      ...BASE_INPUT({ kind: 'lmnp_micro', tmiPct: 30, abattementPct: 30 }),
+      rent: { monthlyRent: 14_800 / 12, vacancyMonths: 0, rentalIndexPct: 2 },
+      horizonYears: 5,
+    })
+    expect(r.projection[0]!.forcedRegimeSwitch).toBeUndefined()
+    expect(r.projection[1]!.forcedRegimeSwitch).toBe(true)
+    expect(r.projection[2]!.forcedRegimeSwitch).toBe(true)
+  })
+
+  it('abattement saisi à 71 % (historique non standard) : fallback plafond longue durée 77 700 €', () => {
+    // L'utilisateur peut encore saisir 71 % (ancien tourisme classé pré-LF2025).
+    // V8.2 fallback : plafond longue durée = 77 700 €.
+    const r = runSimulation({
+      ...BASE_INPUT({ kind: 'lmnp_micro', tmiPct: 30, abattementPct: 71 }),
+      rent: { monthlyRent: 6_000, vacancyMonths: 0, rentalIndexPct: 0 },
+      horizonYears: 1,
+    })
+    // 72 000 €/an < 77 700 € → pas de forced
+    expect(r.projection[0]!.forcedRegimeSwitch).toBeUndefined()
+  })
+})
+
 describe('LMNP micro-BIC meublé tourisme classé (abattement 71 %)', () => {
   // Conservé pour rétro-compatibilité : un utilisateur peut encore saisir 71 %
   // manuellement (cas zones non tendues éligibles à l'ancien régime).

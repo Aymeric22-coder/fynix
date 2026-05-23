@@ -1,6 +1,6 @@
 # AUDIT ÉTAT ACTUEL — Section immobilière FIRECORE
 
-Date initiale : 2026-05-21 · Dernière mise à jour : 2026-05-23 (V8.1)
+Date initiale : 2026-05-21 · Dernière mise à jour : 2026-05-23 (V8.2)
 Périmètre : Sprints 1 à 5 + correctifs Sprint 3.5
 Méthode : audit lecture seule, 6 domaines parallélisés sur 6 agents, consolidation.
 
@@ -23,9 +23,10 @@ Le travail de correction est sérialisé en vagues (1 vague = 1 branche = 1 PR, 
 | **V6** | Synthèse fiche détail converge sur le moteur (BUG-001 commissions short-term + BUG-D1-M04 charges Synthèse + cash-flow Synthèse aligné `kpis.monthlyCashFlowYear1`). `resolveCharges` accepte `opts.excludeShortTermPlatformFees` pour casser le double comptage | ✅ Mergé direct master | `3e29edf` |
 | **V7** | Refonte `netNetYield` "sans crédit" (tous régimes) + BUG-D1-M05 SciDistribution. `netNetYield = netYield − (taxPaid / totalCost × 100)` — la seule différence entre nette et net-net est désormais l'impôt réellement payé. Invariant verrouillé : `taxPaid = 0 ⇒ netNetYield === netYield`. `SciDistribution.netProfitAfterIS` consomme `max(0, fiscalResult − taxPaid)` au lieu du proxy cash inflated | ✅ Mergé direct master | — |
 | **V8.1** | Trois fixes mécaniques fiscaux (audit niches). (a) Micro-foncier : plafond CGI art. 32 (15 000 €/an) — `FONCIER_MICRO_CEILING` + `forcedRegimeSwitch` propagé dans `ProjectionYear` (réutilisable lmnp-micro). (b) **BUG-004** Pinel/Denormandie : réduction plafonnée à 10 000 €/an (`GLOBAL_TAX_NICHE_CAP`, CGI art. 200-0 A) dans `reduction-schedule.ts`. (c) **BUG-006** Loc'Avantages : base = loyer effectivement perçu (`monthlyRent × max(0, 12 − vacancyMonths)`) au lieu du loyer théorique. 11 tests d'invariant ajoutés | ✅ Mergé direct master | — |
-| **V8.2+** | Cf. plan section 8 — non démarrées (BUG-005 Pinel éligibilité, BUG-D1-M06 LMNP micro ceiling, décisions produit foncier MaPrimeRénov / LMP déficit amort / agrégation foyer / MH / Pinel clos 2025) | ⏳ À venir | — |
+| **V8.2** | **BUG-D1-M06** LMNP micro ceiling. `resolveLmnpMicroCeiling(abattementPct)` branché dans `getFiscalCalculator` : abattement 50 % → 77 700 € (classique OU tourisme classé, même plafond donc pas de catégorie à stocker), abattement 30 % → 15 000 € (tourisme non classé). Constantes nommées `LMNP_MICRO_CEILING_LONG_TERM` / `LMNP_MICRO_CEILING_TOURISM_UNCLASSIFIED` (réévaluation triennale IRL). `forcedRegimeSwitch` réutilise le slot V8.1. 7 tests d'invariant | ✅ Mergé direct master | — |
+| **V8.3+** | Cf. plan section 8 — non démarrées (BUG-005 Pinel éligibilité [bloqué P7 surface en DB], décisions produit foncier MaPrimeRénov / LMP déficit amort / agrégation foyer / MH / Pinel clos 2025) | ⏳ À venir | — |
 
-**Total items traités à ce jour** : **20/41** (P1: 9/11 — ROB-001/002/003 + BUG-002/003 + INTEG-001/002 + BUG-007/008 + BUG-001 + **BUG-004 + BUG-006** ; P2: 9/19 — régen types + BUG-009 + INTEG-005/006 + BUG-D1-M01 + BUG-D1-M02 + BUG-D1-M08 + BUG-D1-M03 + BUG-D1-M04 + BUG-D1-M05) · **≥60 nouveaux tests** ajoutés (V1–V7 + 11 invariants V8.1 : foncier-micro forcedRegimeSwitch ≤/> 15 000 €, indexation déclenche bascule, cap Pinel/Denormandie ≤ 10 000 €/an générique, Loc'Avantages 0/1/3/15 mois de vacance).
+**Total items traités à ce jour** : **21/41** (P1: 9/11 — ROB-001/002/003 + BUG-002/003 + INTEG-001/002 + BUG-007/008 + BUG-001 + BUG-004 + BUG-006 ; P2: 10/19 — régen types + BUG-009 + INTEG-005/006 + BUG-D1-M01 + BUG-D1-M02 + BUG-D1-M08 + BUG-D1-M03 + BUG-D1-M04 + BUG-D1-M05 + **BUG-D1-M06**) · **≥67 nouveaux tests** ajoutés (V1–V8.1 + 7 invariants V8.2 : LMNP micro forced ≤/> 77 700 € à 50 %, ≤/> 15 000 € à 30 %, indexation IRL franchit les 2 seuils, fallback 71 % saisi libre).
 
 ---
 
@@ -181,9 +182,10 @@ Voir BUG-003.
 - **Fichier** : [app/(app)/immobilier/[id]/page.tsx:705-712](app/(app)/immobilier/[id]/page.tsx)
 - Passe `cashFlowAfterTax + principalRepaid` comme « résultat distribuable ». Bug d'interprétation comptable.
 
-### BUG-D1-M06 — LMNP micro : plafond LF 2025 jamais déclenché
-- **Fichier** : [lib/real-estate/fiscal/index.ts:20](lib/real-estate/fiscal/index.ts)
-- `makeLmnpMicroCalculator` appelé sans le paramètre `ceiling` → bascule auto micro→réel jamais déclenchée.
+### BUG-D1-M06 — LMNP micro : plafond LF 2025 jamais déclenché ✅ _(V8.2)_
+- **Fichier** : [lib/real-estate/fiscal/index.ts](lib/real-estate/fiscal/index.ts) + [lib/real-estate/fiscal/lmnp-micro.ts](lib/real-estate/fiscal/lmnp-micro.ts)
+- **Description** : `makeLmnpMicroCalculator` était appelé sans le 3ᵉ paramètre `ceiling` → bascule auto micro→réel jamais déclenchée.
+- **Résolu V8.2** : `resolveLmnpMicroCeiling(abattementPct)` dérive le plafond de l'abattement déjà stocké en DB. Mapping mécanique : 50 % → 77 700 € (classique OU tourisme classé, mêmes plafond), 30 % → 15 000 € (tourisme non classé), autre → fallback 77 700 €. Constantes nommées `LMNP_MICRO_CEILING_LONG_TERM` / `LMNP_MICRO_CEILING_TOURISM_UNCLASSIFIED` faciles à mettre à jour à chaque LF (réévaluation triennale IRL CGI art. 50-0). `forcedRegimeSwitch` propagé via le slot V8.1.
 
 ### BUG-D1-M07 — Foncier-micro : abattement sur `netRent` au lieu de `grossRent`
 - **Fichier** : [lib/real-estate/fiscal/foncier-micro.ts:27](lib/real-estate/fiscal/foncier-micro.ts)
@@ -421,7 +423,7 @@ Effort : **S** = < 1h, **M** = 2-6h, **L** = > 1 jour.
 | 21 | ✅ **BUG-D1-M01** — `monthly` par ligne MultiCreditList = `buildAmortizationSchedule(loan).totalMonthly` (assurance incluse), pré-calculé côté serveur. Somme garantie = `aggregateLoans.totalMonthly` _(V3.2 → `d84bfd9`)_ | S |
 | 22 | ✅ **BUG-D1-M02** — PropertyCard : `latentGain` via `kpis.totalCost` (cohérent fiche détail), fallback `acqCost` si kpis null _(V3.2 → `d84bfd9`)_ | S |
 | 23 | **BUG-D1-M05** — SCI distribution : exposer le vrai `netProfitAfterIS` comptable | S |
-| 24 | **BUG-D1-M06** — Passer le `ceiling` à `makeLmnpMicroCalculator` | S |
+| 24 | ✅ **BUG-D1-M06** — `resolveLmnpMicroCeiling(abattementPct)` branché dans `getFiscalCalculator` ; mapping 50 % → 77 700 € (classique/tourisme classé), 30 % → 15 000 € (tourisme non classé). Réutilise le slot `forcedRegimeSwitch` propagé V8.1 _(V8.2)_ | S |
 | 25 | ✅ **BUG-D1-M08** — Filtre `status='active'` ajouté sur le SELECT debts de `loadImmo` (et le calcul est désormais délégué au moteur portfolio qui filtrait déjà depuis V3.1) _(V4 → `3ec90eb`)_ | S |
 | 26 | **ROB-101 / 102 / 103** — Validations dates crédit, cap taux, période événement | S |
 | 27 | **ROB-104** — Remplacer `alert()` natif par toast | S |
