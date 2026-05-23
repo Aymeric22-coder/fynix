@@ -94,13 +94,37 @@ export function computeKPIs(
     ? ((grossYearRent - totalChargesY1) / totalCost) * 100
     : 0
 
-  // netNetYield : cash-flow réel après TOUT (vacance, charges,
-  // crédit complet, impôts) + capital remboursé (qui est de la
-  // capitalisation patrimoniale, pas une perte).
-  //   = (CF après impôt + capital remboursé année 1) / coût total
+  // netNetYield (V7) : rendement nette − impôt effectivement payé.
+  //   = (grossYearRent − totalChargesY1 − taxPaidY1) / totalCost × 100
+  //   ≡ netYield − (taxPaidY1 / totalCost × 100)
+  //
+  // Refonte V7 : on RETIRE complètement le financement du calcul.
+  // Avant V7, netNetYield soustrayait la mensualité de crédit complète
+  // (intérêts + assurance) et rajoutait le capital remboursé — ce qui
+  // mélangeait deux choses :
+  //  (a) le coût du financement (intérêts + assurance) ;
+  //  (b) la fiscalité réellement payée.
+  // Conséquence : un bien dont l'impôt = 0 (ex. SCI à l'IS dont
+  // l'amortissement annule l'IS les premières années) affichait quand
+  // même un écart net→net-net de plusieurs points, simplement parce
+  // que le coût du crédit n'était pas amorti par la fiscalité.
+  //
+  // V7 — principe directeur : la SEULE différence entre `netYield` et
+  // `netNetYield` doit être l'impôt RÉELLEMENT payé (`taxPaid` du
+  // moteur, qui tient déjà compte de l'amortissement, des intérêts
+  // déductibles, du déficit reporté, etc. — ne pas recalculer un impôt
+  // "sans prêt"). La vacance et les charges restent identiques entre
+  // les deux (assiette `grossYearRent` + `totalChargesY1`, comme net).
+  //
+  // Invariant verrouillé par test (multi-credit-consistency) :
+  //   taxPaidY1 === 0  ⇒  netNetYield === netYield (strict).
+  //
+  // Effet observable côté UI : la net-net REMONTE (ex. Tandoori SCI IS
+  // 2,64 % → ~6 %), c'est voulu.
   const y1 = projection[0]
-  const netNetYield = totalCost > 0 && y1
-    ? ((y1.cashFlowAfterTax + y1.principalRepaid) / totalCost) * 100
+  const taxPaidY1 = y1?.taxPaid ?? 0
+  const netNetYield = totalCost > 0
+    ? ((grossYearRent - totalChargesY1 - taxPaidY1) / totalCost) * 100
     : 0
 
   const annualCashFlowY1  = y1?.cashFlowAfterTax ?? 0

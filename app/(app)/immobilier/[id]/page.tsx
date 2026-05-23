@@ -770,8 +770,22 @@ export default async function ImmobilierDetailPage({ params, searchParams }: Pro
           {propTyped.fiscal_regime === 'sci_is' && simResult.projection[0] && (
             <SciDistribution
               netProfitAfterIS={
-                // Cash après IS pour Y1 (basé sur la projection)
-                simResult.projection[0].cashFlowAfterTax + simResult.projection[0].principalRepaid
+                // V7 — BUG-D1-M05 : on passe le VRAI bénéfice comptable
+                // distribuable, plancher à 0.
+                //   netProfitAfterIS = max(0, fiscalResult − taxPaid)
+                // Avant V7, on passait `cashFlowAfterTax + principalRepaid`,
+                // qui mélangeait :
+                //   - de la trésorerie (cashFlowAfterTax)
+                //   - du capital remboursé (qui rembourse une DETTE, pas
+                //     un bénéfice distribuable).
+                // Ce proxy gonflait artificiellement le distribuable. La
+                // bonne sémantique comptable : bénéfice après IS = résultat
+                // fiscal − IS payé (plancher 0 — on ne distribue pas un
+                // déficit, qui est reporté indéfiniment par calculateSciIs).
+                Math.max(
+                  0,
+                  simResult.projection[0].fiscalResult - simResult.projection[0].taxPaid,
+                )
               }
               ccaAmount={propTyped.cca_amount ?? 0}
               tmiPct={dbProfile?.tmi_rate ?? 30}

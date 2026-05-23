@@ -432,3 +432,202 @@ describe('V6 — Synthèse ↔ carte ↔ Rentabilité : source unique', () => {
     expect(totalCost).toBeCloseTo(expected, 6)
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────
+// V7 — Refonte `netNetYield` : sans crédit, juste l'impôt.
+//
+// Principe directeur V7 :
+//   netNetYield = netYield − (taxPaidY1 / totalCost × 100)
+//
+// Avant V7, netNetYield soustrayait la mensualité complète du crédit
+// (intérêts + assurance) ET rajoutait le capital remboursé. Conséquence :
+// même avec un impôt = 0 (SCI IS dont l'amortissement annule l'IS), la
+// net-net affichait un écart de plusieurs points avec la nette, juste
+// à cause du coût du crédit.
+//
+// V7 retire complètement le financement de la net-net : seule la
+// FISCALITÉ effectivement payée la distingue de la nette. L'impôt est
+// celui calculé par le moteur (`projection[0].taxPaid`), qui tient déjà
+// compte de l'amortissement, des intérêts déductibles, du déficit
+// reporté, etc. — on ne recalcule pas un impôt « sans prêt ».
+//
+// Invariant clé : impôt = 0 ⇒ net-net === nette (strict).
+// ─────────────────────────────────────────────────────────────────────
+
+describe('V7 — netNetYield = nette − impôt (sans crédit)', () => {
+
+  it('invariant : taxPaidY1 = 0 ⇒ netNetYield === netYield (strict)', () => {
+    // Cas : SCI à l'IS où l'amortissement bâti + frais d'acquisition
+    // (treatment expense_y1) annulent le résultat fiscal Y1 → IS = 0.
+    // Volume loyer modeste + amort élevé (purchasePrice 500 k€) garantit
+    // que fiscalResult Y1 < 0.
+    const input: SimulationInput = {
+      property: {
+        purchasePrice:    500_000,
+        notaryFees:       35_000,
+        worksAmount:      0,
+        propertyIndexPct: 1.0,
+      },
+      loans: [PRINCIPAL_LOAN],
+      rent: { monthlyRent: 1_200, vacancyMonths: 0, rentalIndexPct: 2.0 },
+      charges: {
+        pno: 350, gliPct: 0, propertyTax: 1_500, cfe: 0, accountant: 0,
+        condoFees: 600, managementPct: 0, maintenance: 400, other: 0,
+        chargesIndexPct: 2.0,
+      },
+      regime: {
+        kind:                     'sci_is',
+        landSharePct:             15,
+        amortBuildingYears:       30,
+        amortWorksYears:          15,
+        amortFurnitureYears:      7,
+        furnitureAmount:          0,
+        acquisitionFeesTreatment: 'expense_y1',  // boost Y1 : frais notaire en charges
+      },
+      downPayment: 100_000,
+    }
+    const r = runSimulation(input)
+
+    // Sanity : l'impôt doit bien être 0 pour Y1, sinon le test n'est
+    // pas pertinent (l'invariant porte sur le cas tax=0).
+    expect(r.projection[0]?.taxPaid).toBe(0)
+
+    // INVARIANT V7 : net-net === nette strict (différence devrait être
+    // EXACTEMENT 0 en arithmétique flottante car la formule est
+    // netNetYield = netYield − taxPaid×100/totalCost = netYield − 0).
+    expect(r.kpis.netNetYield).toBe(r.kpis.netYield)
+  })
+
+  it('formule algébrique : netNetYield = netYield − (taxPaid × 100 / totalCost)', () => {
+    // Cas où l'impôt est positif : foncier réel sur un bien avec
+    // bénéfice après charges + intérêts (pas d'amortissement → tax > 0).
+    const input: SimulationInput = {
+      property: {
+        purchasePrice:    200_000,
+        notaryFees:       15_000,
+        worksAmount:      0,
+        propertyIndexPct: 1.0,
+      },
+      loans: [PRINCIPAL_LOAN],
+      rent: { monthlyRent: 1_500, vacancyMonths: 0, rentalIndexPct: 2.0 },
+      charges: {
+        pno: 350, gliPct: 0, propertyTax: 1_500, cfe: 0, accountant: 0,
+        condoFees: 600, managementPct: 0, maintenance: 400, other: 0,
+        chargesIndexPct: 2.0,
+      },
+      regime: { kind: 'foncier_nu', tmiPct: 41 },   // TMI 41 % + PS 17,2 %
+      downPayment: 50_000,
+    }
+    const r = runSimulation(input)
+    const taxY1 = r.projection[0]?.taxPaid ?? 0
+
+    // Pré-requis du test : l'impôt doit être > 0, sinon on retombe sur
+    // l'invariant tax=0 testé ci-dessus.
+    expect(taxY1).toBeGreaterThan(0)
+
+    // Formule V7 vérifiée à l'euro près (1e-6) :
+    const expected = r.kpis.netYield - (taxY1 / r.kpis.totalCost) * 100
+    expect(r.kpis.netNetYield).toBeCloseTo(expected, 10)
+
+    // Vérification corollaire : net-net < nette (l'impôt grignote).
+    expect(r.kpis.netNetYield).toBeLessThan(r.kpis.netYield)
+  })
+
+  it('le coût du crédit (intérêts + assurance) n\'apparaît PLUS dans netNetYield', () => {
+    // Bien CASH vs avec crédit, en micro-foncier. Les intérêts ne sont pas
+    // déductibles (abattement forfaitaire 30 %) → tax identique cash/loan.
+    // Pour isoler la variable testée (le COÛT du crédit dans la formule
+    // netNetYield), on prend un loan sans frais bancaires/garantie afin
+    // que `totalCost` soit identique entre les 2 cas (sinon la nette
+    // varie aussi à cause du dénominateur).
+    const LOAN_NO_FEES: LoanInput = {
+      principal:        200_000,
+      annualRatePct:    3.5,
+      durationYears:    20,
+      insuranceRatePct: 0.25,
+      bankFees:         0,
+      guaranteeFees:    0,
+      startDate:        new Date('2024-01-01'),
+    }
+    const baseInput: SimulationInput = {
+      property: {
+        purchasePrice:    200_000,
+        notaryFees:       15_000,
+        worksAmount:      0,
+        propertyIndexPct: 1.0,
+      },
+      rent: { monthlyRent: 1_000, vacancyMonths: 0, rentalIndexPct: 2.0 },
+      charges: {
+        pno: 0, gliPct: 0, propertyTax: 0, cfe: 0, accountant: 0,
+        condoFees: 0, managementPct: 0, maintenance: 0, other: 0,
+        chargesIndexPct: 2.0,
+      },
+      regime: { kind: 'foncier_micro', tmiPct: 30 },
+      downPayment: 215_000,
+    }
+    const rCash = runSimulation(baseInput)
+    const rWithLoan = runSimulation({
+      ...baseInput,
+      loans: [LOAN_NO_FEES],
+      downPayment: 15_000,
+    })
+
+    // Sanity : totalCost identique (pas de frais bancaires sur le loan
+    // pour isoler le test du coût du crédit lui-même).
+    expect(rWithLoan.kpis.totalCost).toBe(rCash.kpis.totalCost)
+
+    // En micro-foncier les intérêts ne sont pas déductibles → tax identique.
+    expect(rWithLoan.projection[0]?.taxPaid).toBeCloseTo(
+      rCash.projection[0]?.taxPaid ?? 0, 6,
+    )
+
+    // Côté nette : déjà indépendante du crédit (par définition).
+    expect(rWithLoan.kpis.netYield).toBeCloseTo(rCash.kpis.netYield, 6)
+
+    // Côté net-net (V7) : doit aussi être indépendante du crédit puisque
+    // la SEULE différence net→net-net est la fiscalité (identique ici).
+    // Avant V7, rWithLoan aurait été plus bas de plusieurs points
+    // (soustraction de la mensualité de crédit). La refonte V7 verrouille
+    // l'indépendance au financement.
+    expect(rWithLoan.kpis.netNetYield).toBeCloseTo(rCash.kpis.netNetYield, 6)
+  })
+
+  it('SCI IS avec déficit fiscal Y1 → netNetYield === netYield (pas d\'IS payé)', () => {
+    // Variante de l'invariant : même si le résultat fiscal est négatif
+    // (déficit reportable indéfiniment), taxPaid = 0 et donc net-net ===
+    // nette. Vérifie que le moteur ne « facture » pas un IS minimum.
+    const input: SimulationInput = {
+      property: {
+        purchasePrice:    400_000,
+        notaryFees:       28_000,
+        worksAmount:      50_000,
+        propertyIndexPct: 1.0,
+      },
+      loans: [PRINCIPAL_LOAN],
+      rent: { monthlyRent: 900, vacancyMonths: 0, rentalIndexPct: 2.0 },
+      charges: {
+        pno: 400, gliPct: 0, propertyTax: 2_000, cfe: 0, accountant: 0,
+        condoFees: 800, managementPct: 0, maintenance: 500, other: 0,
+        chargesIndexPct: 2.0,
+      },
+      regime: {
+        kind:                     'sci_is',
+        landSharePct:             15,
+        amortBuildingYears:       30,
+        amortWorksYears:          15,
+        amortFurnitureYears:      7,
+        furnitureAmount:          0,
+        acquisitionFeesTreatment: 'expense_y1',
+      },
+      downPayment: 100_000,
+    }
+    const r = runSimulation(input)
+
+    // Sanity : déficit fiscal Y1 (résultat négatif), IS = 0.
+    expect(r.projection[0]?.fiscalResult).toBeLessThan(0)
+    expect(r.projection[0]?.taxPaid).toBe(0)
+
+    // Invariant V7
+    expect(r.kpis.netNetYield).toBe(r.kpis.netYield)
+  })
+})

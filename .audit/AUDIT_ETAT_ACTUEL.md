@@ -1,6 +1,6 @@
 # AUDIT ÉTAT ACTUEL — Section immobilière FIRECORE
 
-Date initiale : 2026-05-21 · Dernière mise à jour : 2026-05-23 (V6)
+Date initiale : 2026-05-21 · Dernière mise à jour : 2026-05-23 (V7)
 Périmètre : Sprints 1 à 5 + correctifs Sprint 3.5
 Méthode : audit lecture seule, 6 domaines parallélisés sur 6 agents, consolidation.
 
@@ -21,9 +21,10 @@ Le travail de correction est sérialisé en vagues (1 vague = 1 branche = 1 PR, 
 | **V4** | Dashboard `/analyse` converge sur le moteur `lib/real-estate/` (BUG-007/008 + BUG-D1-M08 + INCOH-002/003/004). `loadImmo` délègue à `computeRealEstatePortfolio` au lieu de calculer via un moteur fiscal séparé | ✅ Mergé direct master | `3ec90eb` |
 | **V5** | Bandeau `/immobilier` converge sur le moteur (BUG-D1-M03 + cohérence cartes ↔ bandeau). `buildPropertySummariesFromPortfolio` remplace le calcul parallèle | ✅ Mergé direct master | `d1476be` |
 | **V6** | Synthèse fiche détail converge sur le moteur (BUG-001 commissions short-term + BUG-D1-M04 charges Synthèse + cash-flow Synthèse aligné `kpis.monthlyCashFlowYear1`). `resolveCharges` accepte `opts.excludeShortTermPlatformFees` pour casser le double comptage | ✅ Mergé direct master | `3e29edf` |
-| **V7+** | Cf. plan section 8 — non démarrées (fiscal SCI IS / amortissement bâti en cours d'enquête) | ⏳ À venir | — |
+| **V7** | Refonte `netNetYield` "sans crédit" (tous régimes) + BUG-D1-M05 SciDistribution. `netNetYield = netYield − (taxPaid / totalCost × 100)` — la seule différence entre nette et net-net est désormais l'impôt réellement payé. Invariant verrouillé : `taxPaid = 0 ⇒ netNetYield === netYield`. `SciDistribution.netProfitAfterIS` consomme `max(0, fiscalResult − taxPaid)` au lieu du proxy cash inflated | ✅ Mergé direct master | — |
+| **V8+** | Cf. plan section 8 — non démarrées (fiscal SCI IS / amortissement bâti à creuser, niches Pinel/Loc'Avantages/micro-foncier/LMNP) | ⏳ À venir | — |
 
-**Total items traités à ce jour** : **16/41** (P1: 7/11 — ROB-001/002/003 + BUG-002/003 + INTEG-001/002 + BUG-007/008 + BUG-001 ; P2: 8/19 — régen types + BUG-009 + INTEG-005/006 + BUG-D1-M01 + BUG-D1-M02 + BUG-D1-M08 + BUG-D1-M03 + BUG-D1-M04) · **≥45 nouveaux tests** ajoutés (non-régression mono-crédit + cohérence multi-écrans + DELETE ciblé + somme mensualités cohérente + convergence /analyse vs moteur + cohérence bandeau ↔ cartes + double comptage short-term + Synthèse ↔ carte ↔ Rentabilité).
+**Total items traités à ce jour** : **17/41** (P1: 7/11 — ROB-001/002/003 + BUG-002/003 + INTEG-001/002 + BUG-007/008 + BUG-001 ; P2: 9/19 — régen types + BUG-009 + INTEG-005/006 + BUG-D1-M01 + BUG-D1-M02 + BUG-D1-M08 + BUG-D1-M03 + BUG-D1-M04 + BUG-D1-M05) · **≥49 nouveaux tests** ajoutés (non-régression mono-crédit + cohérence multi-écrans + DELETE ciblé + somme mensualités cohérente + convergence /analyse vs moteur + cohérence bandeau ↔ cartes + double comptage short-term + Synthèse ↔ carte ↔ Rentabilité + invariant net-net = nette quand impôt = 0).
 
 ---
 
