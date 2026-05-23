@@ -1,6 +1,6 @@
 # AUDIT ÉTAT ACTUEL — Section immobilière FIRECORE
 
-Date initiale : 2026-05-21 · Dernière mise à jour : 2026-05-22 (V4)
+Date initiale : 2026-05-21 · Dernière mise à jour : 2026-05-23 (V6)
 Périmètre : Sprints 1 à 5 + correctifs Sprint 3.5
 Méthode : audit lecture seule, 6 domaines parallélisés sur 6 agents, consolidation.
 
@@ -19,9 +19,11 @@ Le travail de correction est sérialisé en vagues (1 vague = 1 branche = 1 PR, 
 | **V3.1** | Multi-crédit moteur + portfolio (`loans[]`, `aggregateLoans` partout) | ✅ Mergé direct master | `3b568f4` |
 | **V3.2** | Boutons + tableaux multi-crédit (DELETE strict + bouton corbeille + tableau d'amortissement à onglets + mensualité par ligne + latentGain cohérent + RegimeComparator multi) | ✅ Mergé direct master | `d84bfd9` |
 | **V4** | Dashboard `/analyse` converge sur le moteur `lib/real-estate/` (BUG-007/008 + BUG-D1-M08 + INCOH-002/003/004). `loadImmo` délègue à `computeRealEstatePortfolio` au lieu de calculer via un moteur fiscal séparé | ✅ Mergé direct master | `3ec90eb` |
-| **V5-V6** | Cf. plan section 8 — non démarrées | ⏳ À venir | — |
+| **V5** | Bandeau `/immobilier` converge sur le moteur (BUG-D1-M03 + cohérence cartes ↔ bandeau). `buildPropertySummariesFromPortfolio` remplace le calcul parallèle | ✅ Mergé direct master | `d1476be` |
+| **V6** | Synthèse fiche détail converge sur le moteur (BUG-001 commissions short-term + BUG-D1-M04 charges Synthèse + cash-flow Synthèse aligné `kpis.monthlyCashFlowYear1`). `resolveCharges` accepte `opts.excludeShortTermPlatformFees` pour casser le double comptage | ✅ Mergé direct master | `3e29edf` |
+| **V7+** | Cf. plan section 8 — non démarrées (fiscal SCI IS / amortissement bâti en cours d'enquête) | ⏳ À venir | — |
 
-**Total items traités à ce jour** : **13/41** (P1: 6/11 — ROB-001/002/003 + BUG-002/003 + INTEG-001/002 + BUG-007/008 ; P2: 6/19 — régen types + BUG-009 + INTEG-005/006 + BUG-D1-M01 + BUG-D1-M02 + BUG-D1-M08) · **29 nouveaux tests** ajoutés (non-régression mono + cohérence multi-écrans + DELETE ciblé + somme mensualités cohérente + convergence /analyse vs moteur).
+**Total items traités à ce jour** : **16/41** (P1: 7/11 — ROB-001/002/003 + BUG-002/003 + INTEG-001/002 + BUG-007/008 + BUG-001 ; P2: 8/19 — régen types + BUG-009 + INTEG-005/006 + BUG-D1-M01 + BUG-D1-M02 + BUG-D1-M08 + BUG-D1-M03 + BUG-D1-M04) · **≥45 nouveaux tests** ajoutés (non-régression mono-crédit + cohérence multi-écrans + DELETE ciblé + somme mensualités cohérente + convergence /analyse vs moteur + cohérence bandeau ↔ cartes + double comptage short-term + Synthèse ↔ carte ↔ Rentabilité).
 
 ---
 
@@ -54,12 +56,12 @@ Le travail de correction est sérialisé en vagues (1 vague = 1 branche = 1 PR, 
 
 ## 1. BUGS CRITIQUES
 
-### BUG-001 — Double comptage commissions short-term dans les charges
+### BUG-001 — Double comptage commissions short-term dans les charges ✅ _(V6 → `3e29edf`)_
 - **Fichier** : [lib/real-estate/build-from-db.ts:255-308](lib/real-estate/build-from-db.ts) + [lib/real-estate/charges-resolver.ts:91-103](lib/real-estate/charges-resolver.ts)
 - **Description** : Pour un lot `short_term` ou `mixed`, `computeMonthlyRentForLot` renvoie `netOwnerRevenueTotal/12` (déjà net des commissions Airbnb/Booking + ménage + conciergerie). Mais `resolveCharges` recalcule `management_airbnb_pct × annualRent`, `management_concierge`, etc. et les empile dans `charges.other` via `extraChargesFrom040`.
 - **Impact** : pour un Airbnb à 50 000 €/an avec 13,5 % commission + 8 000 € ménage, sur-déduction ~15 000 €/an → résultat fiscal, taxPaid et cashFlowAfterTax tous faux.
 - **Reproduction** : un bien short_term avec `nightly_rate_low` saisi + une ligne `property_charges` avec `management_airbnb_pct > 0` ou `management_concierge > 0`.
-- **Correction** : exclure ces 4 colonnes de `extraChargesFrom040` quand un lot est short_term/mixed (ou bloquer leur saisie côté UI).
+- **Résolu V6** : `resolveCharges` accepte `opts.excludeShortTermPlatformFees`. `build-from-db.ts` détecte `hasShortTermLot = lots.some(rental_type ∈ {short_term, mixed})` et passe l'option. Les 4 postes plateformes/ménage/conciergerie sont zéroés ; `management_agency_pct` (mandat agence classique, distinct des plateformes) reste préservé.
 
 ### BUG-002 — Projection Rentabilité ignore les crédits secondaires
 - **Fichier** : [app/(app)/immobilier/[id]/page.tsx:649-653](app/(app)/immobilier/[id]/page.tsx) + [components/real-estate/simulation-panel.tsx:49,182](components/real-estate/simulation-panel.tsx)
@@ -165,13 +167,15 @@ Voir BUG-003.
 - **Fichier** : [components/real-estate/portfolio/property-card.tsx:48](components/real-estate/portfolio/property-card.tsx)
 - `acqCost` sans furniture/bank_fees/guarantee_fees → latentGain carte ≠ fiche détail.
 
-### BUG-D1-M03 — Portfolio summary : `monthlyCharges` toujours 0
+### BUG-D1-M03 — Portfolio summary : `monthlyCharges` toujours 0 ✅ _(V5 → `d1476be`)_
 - **Fichier** : [app/(app)/immobilier/page.tsx:101](app/(app)/immobilier/page.tsx) + [lib/real-estate/portfolio-summary.ts:230,284](lib/real-estate/portfolio-summary.ts)
 - `rawProps[i].monthlyCharges = 0` hardcodé → `totalMonthlyCharges` dashboard toujours 0.
+- **Résolu V5** : `buildPropertySummariesFromPortfolio` lit `projection[0].charges / 12` du moteur. Le bandeau /immobilier affiche désormais la vraie valeur. Test bonus : `summary.totalLatentGain ≡ sum(PropertyCard.latentGain)` verrouille la cohérence cartes ↔ bandeau.
 
-### BUG-D1-M04 — Synthèse : `monthlyCharges` sans GLI ni gestion %
+### BUG-D1-M04 — Synthèse : `monthlyCharges` sans GLI ni gestion % ✅ _(V6 → `3e29edf`)_
 - **Fichier** : [app/(app)/immobilier/[id]/page.tsx:135-139,348-350](app/(app)/immobilier/[id]/page.tsx)
 - Calcul manuel ignore les 7 colonnes explicites mais aussi `gli_pct`, `management_pct` et toutes les charges enrichies migration 040.
+- **Résolu V6** : la Synthèse lit `simResult.projection[0].charges` (= `fixedCharges + gli + management`, incluant mig 040 résolues). Le cash-flow Synthèse passe aussi sur `kpis.monthlyCashFlowYear1` → "même chiffre partout" verrouillé par tests sentinelles dans `multi-credit-consistency.test.ts`.
 
 ### BUG-D1-M05 — SCI distribution : `netProfitAfterIS` confondu avec cash
 - **Fichier** : [app/(app)/immobilier/[id]/page.tsx:705-712](app/(app)/immobilier/[id]/page.tsx)
@@ -396,7 +400,7 @@ Effort : **S** = < 1h, **M** = 2-6h, **L** = > 1 jour.
 | 5 | **BUG-006** — Loc'Avantages sur loyer réel (− vacance) | S | Bug fiscal |
 | 6 | **CAS-DASH-001 / INTEG-003** — Brancher `property_events` au dashboard + remplir `alertCount` | M | Intégration majeure manquante |
 | 7 | ✅ **BUG-003 / INTEG-001** — `portfolio.ts` agréger via `aggregateLoans` au lieu d'écraser _(V3.1 → `3b568f4`)_ | M | Multi-crédit visible dans liste |
-| 8 | **BUG-001** — Exclure `management_*` de `extraChargesFrom040` pour lots short_term | M | Double comptage commissions |
+| 8 | ✅ **BUG-001** — `resolveCharges` accepte `opts.excludeShortTermPlatformFees`. `build-from-db.ts` détecte `hasShortTermLot` et passe l'option. 4 postes zéroés (airbnb/booking/cleaning/concierge), `management_agency_pct` préservé _(V6 → `3e29edf`)_ | M | Double comptage commissions |
 | 9 | **BUG-004** — Plafonner Pinel à `r.yearByYear[i].reductionIR` | M | Niches fiscales |
 | 10 | ✅ **BUG-002 / INTEG-002** — Refondre `build-from-db.ts` pour `DbDebt[]` + propager à SimulationPanel / WhatIf / RealTracking _(V3.1 → `3b568f4`)_ | L | Cause racine des incohérences multi-crédit |
 | 11 | ✅ **BUG-007 / BUG-008** — Dashboard `/analyse` : `loadImmo` délègue à `computeRealEstatePortfolio` (moteur unique multi-crédit V3.1) via le helper pur `buildBienImmoFromSimulation`. Plus de moteur fiscal séparé, plus de snapshot DB du CRD _(V4 → `3ec90eb`)_ | L | Convergence moteurs de calcul |
@@ -410,8 +414,8 @@ Effort : **S** = < 1h, **M** = 2-6h, **L** = > 1 jour.
 | 14 | **D6 — créer `039_cascade_delete.sql`** formel (ou supprimer la référence du planning) | S |
 | 15 | **CAS-RP-001** — Filtrer les onglets de la fiche selon `usage_type` | S |
 | 16 | **CAS-WIZ-LOT-001** — Skip étape 5 wizard pour RP | S |
-| 17 | **BUG-D1-M03** — Brancher les vraies charges sur `portfolio-summary.totalMonthlyCharges` | S |
-| 18 | **BUG-D1-M04** — Réutiliser `resolveCharges` dans la Synthèse au lieu du recalcul manuel | M |
+| 17 | ✅ **BUG-D1-M03** — `buildPropertySummariesFromPortfolio` lit `projection[0].charges / 12` du moteur au lieu de `0` hardcodé. Charges mensuelles totales du bandeau /immobilier passent de 0 à la vraie valeur _(V5 → `d1476be`)_ | S |
+| 18 | ✅ **BUG-D1-M04** — La Synthèse lit désormais `simResult.projection[0].charges` + `kpis.grossYieldFAI` + `kpis.netYield` + `kpis.monthlyCashFlowYear1` (au lieu de calculs manuels qui ignoraient GLI/gestion %/mig 040). Cash-flow Synthèse strictement aligné carte ET Rentabilité _(V6 → `3e29edf`)_ | M |
 | 19 | ✅ **BUG-009** — Tableau d'amortissement : onglets « Tous / Principal / PTZ / … » via prop `schedules?` sur AmortizationTable, rétrocompat mono inchangée _(V3.2 → `d84bfd9`)_ | M |
 | 20 | ✅ **INTEG-005 + INTEG-006** — DELETE strict (`?loan_kind=` requis, validation enum, 400 sans) + bouton corbeille par ligne dans MultiCreditList (Modal pattern DeletePropertyButton). Caller credit-form mis à jour _(V3.2 → `d84bfd9`)_ | M |
 | 21 | ✅ **BUG-D1-M01** — `monthly` par ligne MultiCreditList = `buildAmortizationSchedule(loan).totalMonthly` (assurance incluse), pré-calculé côté serveur. Somme garantie = `aggregateLoans.totalMonthly` _(V3.2 → `d84bfd9`)_ | S |
