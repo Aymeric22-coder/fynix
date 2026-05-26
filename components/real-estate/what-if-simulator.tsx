@@ -136,10 +136,23 @@ export function WhatIfSimulator({
   }
 
   // ─── Plages des sliders ─────────────────────────────────────────────
+  //
+  // V10.1 — ROB-105 : fallback de plage minimal quand la base est à 0
+  // (bien vacant ou non valorisé). Sans fallback, min = max = 0 → slider
+  // gelé. On laisse l'utilisateur explorer un scénario d'occupation
+  // future ou de valorisation post-travaux sans devoir d'abord ressaisir
+  // une base réaliste.
+  //
+  // Choix des bornes "à zéro" :
+  //  - monthlyRent : 1 500 € = ordre de grandeur d'un T1/T2 standard ;
+  //  - currentValue : max(prix d'achat + travaux, 100 000 €) — au pire
+  //    le bien doit valoir ce qui a déjà été engagé dessus.
+  const baseAcqCost =
+    (property.purchase_price ?? 0) + (property.works_amount ?? 0)
   const ranges = {
     monthlyRent: {
       min:  Math.max(0, Math.round(baseValues.monthlyRent * 0.7)),
-      max:  Math.round(baseValues.monthlyRent * 1.3),
+      max:  Math.max(Math.round(baseValues.monthlyRent * 1.3), 1_500),
       step: 10,
     },
     annualRatePct: {
@@ -155,7 +168,10 @@ export function WhatIfSimulator({
     },
     currentValue: {
       min:  Math.round(baseValues.currentValue * 0.7),
-      max:  Math.round(baseValues.currentValue * 1.4),
+      max:  Math.max(
+        Math.round(baseValues.currentValue * 1.4),
+        Math.max(baseAcqCost, 100_000),
+      ),
       step: 1000,
     },
   } as const

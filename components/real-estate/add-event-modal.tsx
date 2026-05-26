@@ -86,8 +86,14 @@ export function AddEventModal({ open, onClose, propertyId, lots, existing, isSho
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
-    setSaving(true)
     setError(null)
+    // V10.1 — ROB-103 (client) : interdire période inversée avant l'appel API.
+    // Le serveur valide aussi (défense en profondeur) — cf. events/route.ts POST.
+    if (periodStart && periodEnd && periodEnd < periodStart) {
+      setError('La date de fin doit être ≥ date de début.')
+      return
+    }
+    setSaving(true)
     try {
       const payload: Record<string, unknown> = {
         kind, event_date: eventDate, lot_id: lotId,

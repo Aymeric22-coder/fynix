@@ -9,6 +9,10 @@ import { Field, Input, Select, Textarea, FormGrid } from '@/components/ui/field'
 import { Stepper } from '@/components/ui/stepper'
 import { formatCurrency } from '@/lib/utils/format'
 import { computeMonthlyPayment } from '@/lib/real-estate/amortization'
+import {
+  validateLoanRates,
+  validateLoanStartVsAcquisition,
+} from '@/lib/real-estate/validate-loan-form'
 
 // ─────────────────────────────────────────────────────────────────
 //  Types & état initial
@@ -221,9 +225,14 @@ export default function NouveauBienPage() {
     }
     if (s === 3 && draft.hasLoan) {
       if (!draft.loan_principal || draft.loan_principal <= 0) return 'Le montant emprunté est requis'
-      if (draft.loan_rate == null || draft.loan_rate < 0) return 'Le taux nominal est requis'
+      // V10.1 — ROB-102 : bornes taux (helper partagé avec credit-form)
+      const ratesErr = validateLoanRates(draft.loan_rate, draft.insurance_rate)
+      if (ratesErr) return ratesErr
       if (!draft.loan_duration || draft.loan_duration <= 0) return 'La durée du prêt est requise'
       if (!draft.loan_start_date) return 'La date de début du prêt est requise'
+      // V10.1 — ROB-101 : loan_start ≥ acquisition (égalité OK)
+      const datesErr = validateLoanStartVsAcquisition(draft.loan_start_date, draft.acquisition_date)
+      if (datesErr) return datesErr
     }
     if (s === 4) {
       if (!draft.fiscal_regime) return 'Le régime fiscal est requis'
@@ -615,7 +624,7 @@ export default function NouveauBienPage() {
                 </FormGrid>
                 <FormGrid cols={3}>
                   <Field label="Taux nominal (%)" required>
-                    <Input type="number" step={0.01} min={0}
+                    <Input type="number" step={0.01} min={0} max={20}
                       value={draft.loan_rate ?? ''}
                       onChange={(e) => setNum('loan_rate', e.target.value)}
                       placeholder="3.50" required />
@@ -627,7 +636,7 @@ export default function NouveauBienPage() {
                       placeholder="240" required />
                   </Field>
                   <Field label="Assurance (%)">
-                    <Input type="number" step={0.01} min={0}
+                    <Input type="number" step={0.01} min={0} max={3}
                       value={draft.insurance_rate ?? ''}
                       onChange={(e) => setNum('insurance_rate', e.target.value)}
                       placeholder="0.30" />

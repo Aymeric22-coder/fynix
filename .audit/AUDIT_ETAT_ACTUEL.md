@@ -1,6 +1,6 @@
 # AUDIT ÉTAT ACTUEL — Section immobilière FIRECORE
 
-Date initiale : 2026-05-21 · Dernière mise à jour : 2026-05-26 (V9.1)
+Date initiale : 2026-05-21 · Dernière mise à jour : 2026-05-26 (V10.1)
 Périmètre : Sprints 1 à 5 + correctifs Sprint 3.5
 Méthode : audit lecture seule, 6 domaines parallélisés sur 6 agents, consolidation.
 
@@ -25,9 +25,10 @@ Le travail de correction est sérialisé en vagues (1 vague = 1 branche = 1 PR, 
 | **V8.1** | Trois fixes mécaniques fiscaux (audit niches). (a) Micro-foncier : plafond CGI art. 32 (15 000 €/an) — `FONCIER_MICRO_CEILING` + `forcedRegimeSwitch` propagé dans `ProjectionYear` (réutilisable lmnp-micro). (b) **BUG-004** Pinel/Denormandie : réduction plafonnée à 10 000 €/an (`GLOBAL_TAX_NICHE_CAP`, CGI art. 200-0 A) dans `reduction-schedule.ts`. (c) **BUG-006** Loc'Avantages : base = loyer effectivement perçu (`monthlyRent × max(0, 12 − vacancyMonths)`) au lieu du loyer théorique. 11 tests d'invariant ajoutés | ✅ Mergé direct master | — |
 | **V8.2** | **BUG-D1-M06** LMNP micro ceiling. `resolveLmnpMicroCeiling(abattementPct)` branché dans `getFiscalCalculator` : abattement 50 % → 77 700 € (classique OU tourisme classé, même plafond donc pas de catégorie à stocker), abattement 30 % → 15 000 € (tourisme non classé). Constantes nommées `LMNP_MICRO_CEILING_LONG_TERM` / `LMNP_MICRO_CEILING_TOURISM_UNCLASSIFIED` (réévaluation triennale IRL). `forcedRegimeSwitch` réutilise le slot V8.1. 7 tests d'invariant | ✅ Mergé direct master | — |
 | **V9.1** | **FRICTION-001** Lexique des indicateurs financiers. Source unique `lib/real-estate/lexique.ts` (9 définitions courtes + helper `getLexiqueDefinition(key, fiscalRegime?)` avec variante SCI IS sur net-net). Nouveau composant `components/ui/info-tip.tsx` (pure CSS hover + focus + tap, design tokens FIRECORE, accessible clavier). Branché sur 8 surfaces UI : bandeau /immobilier, cards bien, Synthèse fiche détail, onglet Crédit, formulaire crédit (Différé, TAEG preview), simulation-panel (Vacance + KPIs Rentabilité), what-if-simulator (Cash-flow + Rdt brut/net-net), simulateur sandbox. `FormSection.title` et `Field.label` widenés à `ReactNode` pour permettre l'inline. 7 tests sur le lexique | ✅ Mergé direct master | — |
-| **V9.2+** | Cf. plan section 8 — non démarrées (BUG-005 Pinel éligibilité [bloqué P7 surface en DB], décisions produit foncier MaPrimeRénov / LMP déficit amort / agrégation foyer / MH / Pinel clos 2025, autres FRICTION UX) | ⏳ À venir | — |
+| **V10.1** | **ROB-101→107** garde-fous saisie. Helper pur `lib/real-estate/validate-loan-form.ts` partagé wizard + credit-form (`MAX_LOAN_RATE_PCT=20`, `MAX_INSURANCE_RATE_PCT=3`, `validateLoanStartVsAcquisition` avec égalité OK). HTML `max={20}` / `max={3}` sur tous les inputs taux (wizard + credit-form + sandbox). `max={100}` ajouté sur commissions Airbnb/Booking (avant : Money sans max). Period_end/period_start vérifiés client + serveur (events POST → 400). `alert()` natif du DELETE credit remplacé par `setDeleteError` + même style inline que l'erreur du form (pattern réutilisé, pas de toast). What-if range fallbacks (rent=0 → max 1500€, value=0 → max(acqCost, 100k)). PUT vide → 400 (« Aucun champ valide à mettre à jour »). `loading: boolean` → `loadingTab: Tab\|null` sur quick-actuals-entry (les 3 boutons indépendants). 28 nouveaux tests | ✅ Mergé direct master | — |
+| **V11+** | Cf. plan section 8 — non démarrées (BUG-005 Pinel éligibilité [bloqué P7 surface en DB], INTEG-007 réversibilité révision loyer [décision produit], décisions produit foncier MaPrimeRénov / LMP déficit amort / agrégation foyer / MH / Pinel clos 2025) | ⏳ À venir | — |
 
-**Total items traités à ce jour** : **22/41** (P1: 9/11 — ROB-001/002/003 + BUG-002/003 + INTEG-001/002 + BUG-007/008 + BUG-001 + BUG-004 + BUG-006 ; P2: 10/19 — régen types + BUG-009 + INTEG-005/006 + BUG-D1-M01 + BUG-D1-M02 + BUG-D1-M08 + BUG-D1-M03 + BUG-D1-M04 + BUG-D1-M05 + BUG-D1-M06 ; FRICTION: 1/10 — FRICTION-001) · **≥74 nouveaux tests** ajoutés (V1–V8.2 + 7 tests lexique V9.1 : variante SCI IS sur net-net uniquement, fallback régimes non SCI IS, complétude des 9 définitions, cohérence sémantique net-net V7 sans coût crédit).
+**Total items traités à ce jour** : **29/41** (P1: 9/11 — ROB-001/002/003 + BUG-002/003 + INTEG-001/002 + BUG-007/008 + BUG-001 + BUG-004 + BUG-006 ; P2: 17/19 — régen types + BUG-009 + INTEG-005/006 + BUG-D1-M01 + BUG-D1-M02 + BUG-D1-M08 + BUG-D1-M03 + BUG-D1-M04 + BUG-D1-M05 + BUG-D1-M06 + **ROB-101/102/103/104/105/106/107** ; FRICTION: 1/10 — FRICTION-001) · **≥102 nouveaux tests** ajoutés (V1–V9.1 + 28 V10.1 : 22 helper validate-loan-form bornes taux + égalité acquisition, 5 ROB-103 server events period inversée / identique / orphelines, 1 ROB-106 PUT body vide → 400).
 
 ---
 
@@ -426,10 +427,10 @@ Effort : **S** = < 1h, **M** = 2-6h, **L** = > 1 jour.
 | 23 | **BUG-D1-M05** — SCI distribution : exposer le vrai `netProfitAfterIS` comptable | S |
 | 24 | ✅ **BUG-D1-M06** — `resolveLmnpMicroCeiling(abattementPct)` branché dans `getFiscalCalculator` ; mapping 50 % → 77 700 € (classique/tourisme classé), 30 % → 15 000 € (tourisme non classé). Réutilise le slot `forcedRegimeSwitch` propagé V8.1 _(V8.2)_ | S |
 | 25 | ✅ **BUG-D1-M08** — Filtre `status='active'` ajouté sur le SELECT debts de `loadImmo` (et le calcul est désormais délégué au moteur portfolio qui filtrait déjà depuis V3.1) _(V4 → `3ec90eb`)_ | S |
-| 26 | **ROB-101 / 102 / 103** — Validations dates crédit, cap taux, période événement | S |
-| 27 | **ROB-104** — Remplacer `alert()` natif par toast | S |
-| 28 | **ROB-105** — Range minimum dans what-if quand `rent=0` | S |
-| 29 | **ROB-106 / 107** — PATCH body vide + loading partagé quick-actuals | S |
+| 26 | ✅ **ROB-101 / 102 / 103** — Helper pur `validate-loan-form.ts` (taux 0-20 / assurance 0-3 / loan_start ≥ acquisition) ; client + serveur period_end ≥ period_start sur events POST _(V10.1)_ | S |
+| 27 | ✅ **ROB-104** — `alert()` remplacé par `setDeleteError` + display inline `text-danger bg-danger-muted` (même pattern que l'erreur du form, pas de toast) _(V10.1)_ | S |
+| 28 | ✅ **ROB-105** — Fallback ranges what-if : `monthlyRent.max ≥ 1500€` et `currentValue.max ≥ max(acqCost, 100k€)` quand base = 0 _(V10.1)_ | S |
+| 29 | ✅ **ROB-106 / 107** — PUT vide → 400 `Aucun champ valide à mettre à jour` ; `loadingTab: Tab\|null` sur quick-actuals (boutons des autres onglets restent actifs) _(V10.1)_ | S |
 | 30 | **INTEG-007** — Choix produit : restaurer ancien loyer au DELETE révision (avec `previous_value`) | M |
 
 ### Priorité 3 — Améliorations UX

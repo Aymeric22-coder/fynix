@@ -96,6 +96,12 @@ export const PUT = withAuth(async (req: Request, user: User, ctx: Ctx) => {
 
   if (!prop) return err('Property not found', 404)
 
+  // V10.1 — ROB-106 : refuser un PATCH/PUT sans aucun champ à jour
+  // (avant : `Promise.all([])` → 200 silencieux trompeur).
+  if (Object.keys(assetFields).length === 0 && Object.keys(propertyFields).length === 0) {
+    return err('Aucun champ valide à mettre à jour.', 400)
+  }
+
   const updates: PromiseLike<unknown>[] = []
 
   if (Object.keys(assetFields).length > 0) {

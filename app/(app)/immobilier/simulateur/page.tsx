@@ -251,7 +251,7 @@ export default function SimulateurPage() {
                       onChange={(e) => setNum('loan_principal', e.target.value)} placeholder="180 000" />
                   </Field>
                   <Field label="Taux nominal (%)">
-                    <Input type="number" step={0.01} min={0} value={draft.loan_rate ?? ''}
+                    <Input type="number" step={0.01} min={0} max={20} value={draft.loan_rate ?? ''}
                       onChange={(e) => setNum('loan_rate', e.target.value)} placeholder="3.50" />
                   </Field>
                 </FormGrid>
@@ -261,7 +261,7 @@ export default function SimulateurPage() {
                       onChange={(e) => setNum('loan_duration', e.target.value)} placeholder="240" />
                   </Field>
                   <Field label="Assurance (%)">
-                    <Input type="number" step={0.01} min={0} value={draft.insurance_rate ?? ''}
+                    <Input type="number" step={0.01} min={0} max={3} value={draft.insurance_rate ?? ''}
                       onChange={(e) => setNum('insurance_rate', e.target.value)} placeholder="0.30" />
                   </Field>
                   <Field label="Frais (€)">

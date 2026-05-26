@@ -234,10 +234,23 @@ export function ChargesForm({
 
         {showPlatformFees && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
-            <Money k="management_airbnb_pct" label="Commission Airbnb (%)"
-              hint="~15 % par défaut" placeholder="15" />
-            <Money k="management_booking_pct" label="Commission Booking (%)"
-              hint="~17 % par défaut" placeholder="17" />
+            {/* V10.1 — caps 0-100 sur % commissions plateformes (avant : Money sans max). */}
+            <Field label="Commission Airbnb (%)" hint="~15 % par défaut">
+              <Input
+                type="number" min={0} max={100} step={0.1}
+                value={values.management_airbnb_pct == null ? '' : String(values.management_airbnb_pct)}
+                onChange={(e) => setNum('management_airbnb_pct', e.target.value)}
+                placeholder="15"
+              />
+            </Field>
+            <Field label="Commission Booking (%)" hint="~17 % par défaut">
+              <Input
+                type="number" min={0} max={100} step={0.1}
+                value={values.management_booking_pct == null ? '' : String(values.management_booking_pct)}
+                onChange={(e) => setNum('management_booking_pct', e.target.value)}
+                placeholder="17"
+              />
+            </Field>
             <Money k="management_cleaning" label="Ménage (€/an)" />
             <Money k="management_concierge" label="Conciergerie (€/an)" />
           </div>

@@ -22,6 +22,7 @@ import { InfoTip } from '@/components/ui/info-tip'
 import { useForm } from '@/hooks/use-form'
 import { buildAmortizationSchedule } from '@/lib/real-estate/amortization'
 import { LEXIQUE } from '@/lib/real-estate/lexique'
+import { validateLoanRates } from '@/lib/real-estate/validate-loan-form'
 import type { LoanInput } from '@/lib/real-estate/types'
 import { formatCurrency, formatPercent } from '@/lib/utils/format'
 
@@ -90,6 +91,9 @@ export function CreditForm({ open, onClose, propertyId, existing, propertyName }
   const router = useRouter()
   const [deleting, setDeleting] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  // V10.1 — ROB-104 : remplace `alert(json.error)` du DELETE par un message
+  // inline (même style que l'erreur du form, cf. ligne plus bas).
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   const initialValues = existing
     ? {
@@ -116,9 +120,10 @@ export function CreditForm({ open, onClose, propertyId, existing, propertyName }
   const { values, set, setNumber, loading, error, handleSubmit, reset } = useForm({
     initialValues,
     async onSubmit(v) {
-      // Validation minimale
+      // Validation minimale + bornes ROB-102 (V10.1 — helper partagé wizard)
       if (!v.initial_amount || v.initial_amount <= 0) return { error: 'Montant emprunté requis' }
-      if (v.interest_rate == null || v.interest_rate < 0) return { error: 'Taux nominal requis' }
+      const ratesErr = validateLoanRates(v.interest_rate, v.insurance_rate)
+      if (ratesErr) return { error: ratesErr }
       if (!v.duration_months || v.duration_months <= 0) return { error: 'Durée requise' }
       if (v.deferral_type !== 'none' && v.deferral_months >= v.duration_months) {
         return { error: 'Durée différé doit être < durée totale' }
@@ -189,6 +194,7 @@ export function CreditForm({ open, onClose, propertyId, existing, propertyName }
     if (!existing?.id) return
     const kind = existing.loan_kind ?? 'principal'
     setDeleting(true)
+    setDeleteError(null)
     const res = await fetch(
       `/api/real-estate/${propertyId}/credit?loan_kind=${encodeURIComponent(kind)}`,
       { method: 'DELETE' },
@@ -196,7 +202,9 @@ export function CreditForm({ open, onClose, propertyId, existing, propertyName }
     setDeleting(false)
     const json = await res.json()
     if (json.error) {
-      alert(json.error)
+      // V10.1 — ROB-104 : `alert()` natif remplacé par message inline
+      // (même pattern visuel que l'erreur du form, cf. plus bas dans le JSX).
+      setDeleteError(typeof json.error === 'string' ? json.error : 'Erreur lors de la suppression du crédit.')
       return
     }
     onClose()
@@ -262,7 +270,7 @@ export function CreditForm({ open, onClose, propertyId, existing, propertyName }
           <FormGrid cols={3}>
             <Field label="Taux nominal (%)" required hint="Taux annuel hors assurance">
               <Input
-                type="number" step={0.01} min={0}
+                type="number" step={0.01} min={0} max={20}
                 value={values.interest_rate ?? ''}
                 onChange={(e) => setNumber('interest_rate', e.target.value)}
                 placeholder="3.50" required
@@ -291,7 +299,7 @@ export function CreditForm({ open, onClose, propertyId, existing, propertyName }
           <FormGrid cols={3}>
             <Field label="Taux annuel (%)" hint="0 si pas d'assurance">
               <Input
-                type="number" step={0.01} min={0}
+                type="number" step={0.01} min={0} max={3}
                 value={values.insurance_rate ?? ''}
                 onChange={(e) => setNumber('insurance_rate', e.target.value)}
                 placeholder="0.30"
@@ -406,6 +414,10 @@ export function CreditForm({ open, onClose, propertyId, existing, propertyName }
         )}
 
         {error && <p className="text-sm text-danger bg-danger-muted px-3 py-2 rounded-lg">{error}</p>}
+        {deleteError && (
+          /* V10.1 — ROB-104 : remplace alert() natif. Même style que `error`. */
+          <p className="text-sm text-danger bg-danger-muted px-3 py-2 rounded-lg">{deleteError}</p>
+        )}
 
         <div className="flex justify-between items-center gap-3 pt-2 border-t border-border">
           <div>

@@ -139,4 +139,13 @@ describe('PATCH/PUT /api/real-estate/[id]', () => {
     const res = await PATCH(badReq, makeCtx('prop-1'))
     expect(res.status).toBe(400)
   })
+
+  it('V10.1 — ROB-106 : body vide {} => 400, aucun update (avant : 200 silencieux)', async () => {
+    state.propLookup = { data: { asset_id: 'asset-1' } }
+    const res = await PATCH(makeReq({}), makeCtx('prop-1'))
+    expect(res.status).toBe(400)
+    const json = await res.json()
+    expect(json.error).toMatch(/aucun champ valide/i)
+    expect(state.updateCalls).toHaveLength(0)
+  })
 })

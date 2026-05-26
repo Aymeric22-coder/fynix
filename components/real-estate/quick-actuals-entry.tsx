@@ -66,7 +66,10 @@ export function QuickActualsEntry({
   const [tab, setTab] = useState<Tab>('rent')
   const [success, setSuccess] = useState<string | null>(null)
   const [error, setError]     = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
+  // V10.1 — ROB-107 : un seul `loading: boolean` gelait les boutons de tous
+  // les onglets pendant qu'un autre submit était en cours. On track désormais
+  // l'onglet actif dans le submit pour ne désactiver QUE le bouton concerné.
+  const [loadingTab, setLoadingTab] = useState<Tab | null>(null)
 
   // ── État loyers ──
   const now = new Date()
@@ -113,7 +116,7 @@ export function QuickActualsEntry({
 
   async function submitRent() {
     if (!rentAmount || rentAmount <= 0) return setError('Montant de loyer invalide')
-    setLoading(true); setError(null); setSuccess(null)
+    setLoadingTab('rent'); setError(null); setSuccess(null)
     try {
       const executedAt = endOfMonth(rentYear, rentMonth)
       const res = await fetch('/api/transactions', {
@@ -137,14 +140,14 @@ export function QuickActualsEntry({
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erreur')
     } finally {
-      setLoading(false)
+      setLoadingTab(null)
     }
   }
 
   async function submitLoan() {
     if (!debtId) return setError('Aucun crédit associé à ce bien')
     if (!loanAmount || loanAmount <= 0) return setError('Montant invalide')
-    setLoading(true); setError(null); setSuccess(null)
+    setLoadingTab('loan'); setError(null); setSuccess(null)
     try {
       const executedAt = endOfMonth(loanYear, loanMonth)
       const res = await fetch('/api/transactions', {
@@ -168,12 +171,12 @@ export function QuickActualsEntry({
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erreur')
     } finally {
-      setLoading(false)
+      setLoadingTab(null)
     }
   }
 
   async function submitCharges() {
-    setLoading(true); setError(null); setSuccess(null)
+    setLoadingTab('charges'); setError(null); setSuccess(null)
     try {
       const res = await fetch(`/api/real-estate/${propertyId}/charges`, {
         method: 'POST',
@@ -197,7 +200,7 @@ export function QuickActualsEntry({
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erreur')
     } finally {
-      setLoading(false)
+      setLoadingTab(null)
     }
   }
 
@@ -263,7 +266,7 @@ export function QuickActualsEntry({
           </Field>
           <div className="flex justify-end gap-3 pt-2 border-t border-border">
             <Button variant="secondary" type="button" onClick={onClose}>Fermer</Button>
-            <Button type="button" loading={loading} onClick={submitRent}>Encaisser</Button>
+            <Button type="button" loading={loadingTab === 'rent'} onClick={submitRent}>Encaisser</Button>
           </div>
         </div>
       )}
@@ -305,7 +308,7 @@ export function QuickActualsEntry({
               </Field>
               <div className="flex justify-end gap-3 pt-2 border-t border-border">
                 <Button variant="secondary" type="button" onClick={onClose}>Fermer</Button>
-                <Button type="button" loading={loading} onClick={submitLoan}>Enregistrer</Button>
+                <Button type="button" loading={loadingTab === 'loan'} onClick={submitLoan}>Enregistrer</Button>
               </div>
             </>
           )}
@@ -356,7 +359,7 @@ export function QuickActualsEntry({
           </div>
           <div className="flex justify-end gap-3 pt-2 border-t border-border">
             <Button variant="secondary" type="button" onClick={onClose}>Fermer</Button>
-            <Button type="button" loading={loading} onClick={submitCharges}>
+            <Button type="button" loading={loadingTab === 'charges'} onClick={submitCharges}>
               {existing ? 'Mettre à jour' : 'Enregistrer'}
             </Button>
           </div>

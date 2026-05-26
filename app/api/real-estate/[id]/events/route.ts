@@ -88,6 +88,11 @@ export const POST = withAuth(async (req: Request, user: User, ctx: Ctx) => {
   }
   if (!body.event_date) return err('event_date is required')
 
+  // V10.1 — ROB-103 (serveur) : période inversée refusée.
+  if (body.period_start && body.period_end && body.period_end < body.period_start) {
+    return err('La date de fin doit être ≥ date de début.')
+  }
+
   const supabase = await createServerClient()
   if (!await assertOwner(supabase, user.id, propertyId)) {
     return err('Property not found', 404)
