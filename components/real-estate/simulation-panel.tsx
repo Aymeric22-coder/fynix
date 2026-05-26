@@ -618,8 +618,8 @@ export function SimulationPanel({ propertyId, property, asset, lots, charges, de
                             <td className="px-3 py-2 text-secondary">{y.year}</td>
                             <td className="px-3 py-2 text-right financial-value">{formatCurrency(y.grossRent, 'EUR', { compact: true })}</td>
                             <td className="px-3 py-2 text-right text-danger financial-value">{y.vacancy > 0 ? `-${formatCurrency(y.vacancy, 'EUR', { compact: true })}` : '—'}</td>
-                            <td className="px-3 py-2 text-right text-danger financial-value">{formatCurrency(y.charges, 'EUR', { compact: true })}</td>
-                            <td className="px-3 py-2 text-right text-danger financial-value">{y.interest > 0 ? formatCurrency(y.interest + y.principalRepaid + y.insurance, 'EUR', { compact: true }) : '—'}</td>
+                            <td className="px-3 py-2 text-right text-danger financial-value">{y.charges > 0 ? `-${formatCurrency(y.charges, 'EUR', { compact: true })}` : '—'}</td>
+                            <td className="px-3 py-2 text-right text-danger financial-value">{y.interest > 0 ? `-${formatCurrency(y.interest + y.principalRepaid + y.insurance, 'EUR', { compact: true })}` : '—'}</td>
                             <td className="px-3 py-2 text-right financial-value">{y.taxPaid !== 0 ? formatCurrency(y.taxPaid, 'EUR', { compact: true }) : '—'}</td>
                             <td className={`px-3 py-2 text-right font-medium financial-value ${y.cashFlowAfterTax >= 0 ? 'text-accent' : 'text-danger'}`}>
                               {formatCurrency(y.cashFlowAfterTax, 'EUR', { compact: true })}

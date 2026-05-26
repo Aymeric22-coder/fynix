@@ -89,7 +89,7 @@ export function PropertyCard(p: Props) {
       </div>
 
       {/* Ligne 1 : valeur / CRD / valeur nette */}
-      <div className="grid grid-cols-3 gap-3 mb-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3">
         <div>
           <p className="text-xs text-secondary">Valeur</p>
           <p className="text-sm font-medium financial-value text-primary mt-0.5">
@@ -115,7 +115,7 @@ export function PropertyCard(p: Props) {
 
       {/* Ligne 2 : cash-flow / rentabilite / plus-value */}
       {!p.incompleteData && p.kpis && (
-        <div className="grid grid-cols-3 gap-3 mb-3 pt-3 border-t border-border">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3 pt-3 border-t border-border">
           <div>
             <p className="text-xs text-secondary flex items-center gap-1">
               <Banknote size={10} /> Cash-flow

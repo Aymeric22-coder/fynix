@@ -872,6 +872,7 @@ export default async function ImmobilierDetailPage({ params, searchParams }: Pro
           {chargesAll.length > 1 && (
             <div className="card p-6">
               <h2 className="text-sm font-medium text-primary mb-4">Historique des charges</h2>
+              <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <thead className="bg-surface-2">
                   <tr className="text-muted uppercase tracking-wider">
@@ -902,6 +903,7 @@ export default async function ImmobilierDetailPage({ params, searchParams }: Pro
                   })}
                 </tbody>
               </table>
+              </div>
             </div>
           )}
         </div>
