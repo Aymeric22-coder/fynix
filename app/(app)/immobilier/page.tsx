@@ -7,6 +7,7 @@ import { ChargesWarningBanner }          from '@/components/ui/charges-warning-b
 import { ImmobilierActions }             from '@/components/pages/immobilier-actions'
 import { computeRealEstatePortfolio }    from '@/lib/real-estate/portfolio'
 import { detectLmpStatus, sumMeubleeRevenues } from '@/lib/real-estate/fiscal/lmp-detector'
+import { computeUnpaidRentAlerts }       from '@/lib/real-estate/property-alerts'
 import {
   buildPropertySummariesFromPortfolio,
   computePortfolioSummary,
@@ -76,6 +77,23 @@ export default async function ImmobilierPage() {
   }
   const estimatedCount = (properties ?? []).filter((p) => !propsWithChargesSet.has(p.id)).length
 
+  // ── V11 — Impayés non résolus (CAS-DASH-001 / INTEG-003) ───────────────
+  // Query batchée des events `rent_unpaid` non résolus pour tous les biens
+  // de l'utilisateur. La RLS filtre déjà par user_id, mais on borne quand
+  // même au sous-ensemble des biens chargés ci-dessus (limite la charge).
+  const unpaidByProp = new Map<string, ReturnType<typeof computeUnpaidRentAlerts>[number]>()
+  if (propIds.length > 0) {
+    const { data: unpaidEvents } = await supabase
+      .from('property_events')
+      .select('property_id, kind, is_resolved, event_date, amount_eur')
+      .eq('user_id', user!.id)
+      .eq('kind', 'rent_unpaid')
+      .eq('is_resolved', false)
+      .in('property_id', propIds)
+    const summaries = computeUnpaidRentAlerts(unpaidEvents ?? [], new Date())
+    for (const s of summaries) unpaidByProp.set(s.propertyId, s)
+  }
+
   // ── Helpers ──────────────────────────────────────────────────────────────
   type AssetJoin = { name: string; current_value: number | null; acquisition_price: number | null; acquisition_date: string | null; status: string }
   const getAsset = (raw: unknown): AssetJoin | null =>
@@ -87,10 +105,12 @@ export default async function ImmobilierPage() {
   // directement depuis `sim.simulation` (kpis + projection Y1), garantissant
   // que le bandeau du haut affiche les MÊMES chiffres que les cartes.
   //
-  // `alertCount` reste à 0 ici — branchement `property_events` = CAS-DASH-001,
-  // vague séparée (décision produit sur le seuil d'alerte impayé pending).
+  // V11 — `alertCount` et `unpaidRent` alimentés depuis `unpaidByProp`
+  // (CAS-DASH-001 / INTEG-003). Seuil 1 event = alerte info immédiate ;
+  // sévérité progressive sur ancienneté / nombre.
   const metas: PropertyMetaForPortfolio[] = (properties ?? []).map((p) => {
-    const asset = getAsset(p.asset)
+    const asset  = getAsset(p.asset)
+    const unpaid = unpaidByProp.get(p.id as string)
     return {
       id:           p.id as string,
       name:         asset?.name ?? 'Bien immobilier',
@@ -99,7 +119,15 @@ export default async function ImmobilierPage() {
       fiscalRegime: (p.fiscal_regime ?? null) as FiscalRegimeKind | null,
       currentValue: asset?.current_value ?? null,
       isShortTerm:  p.usage_type === 'short_term_rental',
-      alertCount:   0,
+      alertCount:   unpaid?.count ?? 0,
+      ...(unpaid ? {
+        unpaidRent: {
+          count:           unpaid.count,
+          totalEur:        unpaid.totalUnpaidEur,
+          daysSinceOldest: unpaid.daysSinceOldest,
+          severity:        unpaid.severity,
+        },
+      } : {}),
     }
   })
 

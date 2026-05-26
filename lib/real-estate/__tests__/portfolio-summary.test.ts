@@ -28,6 +28,8 @@ function mk(p: Partial<PropertySummary> & { id: string; name: string }): Propert
     hasAlerts:           p.hasAlerts           ?? false,
     alertCount:          p.alertCount          ?? 0,
     isShortTerm:         p.isShortTerm         ?? false,
+    // V11 — propagation du résumé impayés (optionnel).
+    ...(p.unpaidRent ? { unpaidRent: p.unpaidRent } : {}),
   }
 }
 
@@ -191,7 +193,12 @@ describe('computePortfolioSummary', () => {
     const props = [
       mk({ id: 'a', name: 'A',
         fiscalRegime: null, usageType: 'long_term_rental' }), // warning
-      mk({ id: 'b', name: 'B', hasAlerts: true, alertCount: 1 }), // info
+      // V11 — Le source d'alerte info est désormais `unpaidRent` (≥ 1 event
+      // < 30 j). Le bloc `under_rent` historique sur `alertCount` a été
+      // désactivé (faux émetteur, à rebrancher avec vrai signal marché).
+      mk({ id: 'b', name: 'B', unpaidRent: {
+        count: 1, totalEur: 650, daysSinceOldest: 5, severity: 'info',
+      } }),
       mk({ id: 'c', name: 'C',
         currentValue: 100_000, remainingCapital: 50_000,
         monthlyRent: 500, monthlyLoanPayment: 700 }), // critical DSCR
@@ -208,5 +215,90 @@ describe('computePortfolioSummary', () => {
     if (firstWarning >= 0 && firstInfo >= 0) {
       expect(firstWarning).toBeLessThan(firstInfo)
     }
+  })
+
+  // ─── V11 — kind 'unpaid_rent' propagé jusqu'au bandeau ───────────────────
+
+  describe('V11 — PortfolioAlert kind:unpaid_rent', () => {
+    it('bien sans unpaidRent : aucune alerte unpaid_rent générée', () => {
+      const p = mk({ id: 'p1', name: 'Bien sans impayé' })
+      const s = computePortfolioSummary([p])
+      expect(s.alerts.find(a => a.kind === 'unpaid_rent')).toBeUndefined()
+    })
+
+    it('bien avec unpaidRent severity=info : push 1 alerte info', () => {
+      const p = mk({ id: 'p1', name: 'Tandoori', unpaidRent: {
+        count: 1, totalEur: 650, daysSinceOldest: 12, severity: 'info',
+      } })
+      const s = computePortfolioSummary([p])
+      const a = s.alerts.find(x => x.kind === 'unpaid_rent')
+      expect(a).toBeDefined()
+      expect(a!.severity).toBe('info')
+      expect(a!.propertyId).toBe('p1')
+      expect(a!.propertyName).toBe('Tandoori')
+      expect(a!.amount).toBe(650)
+      expect(a!.actionUrl).toBe('/immobilier/p1')
+    })
+
+    it('message contient le total positif formaté + nb events + ancienneté', () => {
+      const p = mk({ id: 'p1', name: 'Bien', unpaidRent: {
+        count: 2, totalEur: 1300, daysSinceOldest: 45, severity: 'warning',
+      } })
+      const s = computePortfolioSummary([p])
+      const a = s.alerts.find(x => x.kind === 'unpaid_rent')!
+      expect(a.message).toContain('2 loyers impayés')
+      expect(a.message).toContain('1 300')   // formatage FR : espace insécable narrow
+      expect(a.message).toContain('45 jours')
+    })
+
+    it('singulier vs pluriel : "1 loyer impayé" puis "2 loyers impayés"', () => {
+      const p1 = mk({ id: 'p1', name: 'A', unpaidRent: {
+        count: 1, totalEur: 650, daysSinceOldest: 5, severity: 'info',
+      } })
+      const p2 = mk({ id: 'p2', name: 'B', unpaidRent: {
+        count: 3, totalEur: 1950, daysSinceOldest: 90, severity: 'critical',
+      } })
+      const s = computePortfolioSummary([p1, p2])
+      const aP1 = s.alerts.find(a => a.kind === 'unpaid_rent' && a.propertyId === 'p1')!
+      const aP2 = s.alerts.find(a => a.kind === 'unpaid_rent' && a.propertyId === 'p2')!
+      expect(aP1.message).toContain('1 loyer impayé')
+      expect(aP1.message).not.toContain('loyers')
+      expect(aP2.message).toContain('3 loyers impayés')
+    })
+
+    it('label ancienneté : aujourd\'hui / hier / "il y a N jours"', () => {
+      const today = mk({ id: 'p1', name: 'A', unpaidRent: {
+        count: 1, totalEur: 650, daysSinceOldest: 0, severity: 'info',
+      } })
+      const yest = mk({ id: 'p2', name: 'B', unpaidRent: {
+        count: 1, totalEur: 650, daysSinceOldest: 1, severity: 'info',
+      } })
+      const older = mk({ id: 'p3', name: 'C', unpaidRent: {
+        count: 1, totalEur: 650, daysSinceOldest: 15, severity: 'info',
+      } })
+      const s = computePortfolioSummary([today, yest, older])
+      const find = (id: string) => s.alerts.find(a => a.kind === 'unpaid_rent' && a.propertyId === id)!
+      expect(find('p1').message).toContain('aujourd\'hui')
+      expect(find('p2').message).toContain('hier')
+      expect(find('p3').message).toContain('il y a 15 jours')
+    })
+
+    it('critical unpaid_rent + warning fiscal : critical en tête après tri', () => {
+      const a = mk({ id: 'a', name: 'A', fiscalRegime: null }) // warning
+      const b = mk({ id: 'b', name: 'B', unpaidRent: {
+        count: 3, totalEur: 1950, daysSinceOldest: 90, severity: 'critical',
+      } })
+      const s = computePortfolioSummary([a, b])
+      expect(s.alerts[0]!.severity).toBe('critical')
+      expect(s.alerts[0]!.kind).toBe('unpaid_rent')
+    })
+
+    it('V11 — bloc under_rent désactivé : alertCount > 0 sans unpaidRent ne pousse rien', () => {
+      // Avant V11, `hasAlerts:true, alertCount:1` poussait un kind 'under_rent'
+      // — désactivé désormais (faux émetteur). On vérifie l'absence.
+      const p = mk({ id: 'p1', name: 'A', hasAlerts: true, alertCount: 2 })
+      const s = computePortfolioSummary([p])
+      expect(s.alerts.find(a => a.kind === 'under_rent')).toBeUndefined()
+    })
   })
 })

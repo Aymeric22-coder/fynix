@@ -16,6 +16,7 @@
 import type { PropertySimResult } from './portfolio'
 import type { FiscalRegimeKind } from './types'
 import type { PropertyUsageType } from '@/types/database.types'
+import type { UnpaidRentSeverity } from './property-alerts'
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -48,6 +49,18 @@ export interface PropertySummary {
   alertCount:           number
   isShortTerm:          boolean
   occupancyRatePct?:    number
+  /**
+   * V11 — Synthèse d'impayés non résolus (CAS-DASH-001).
+   * Présent uniquement si le bien a ≥ 1 `property_events.kind = 'rent_unpaid'`
+   * non résolu. Consommé par `generatePortfolioAlerts` pour produire un
+   * `PortfolioAlert{ kind: 'unpaid_rent' }`.
+   */
+  unpaidRent?: {
+    count:           number
+    totalEur:        number  // toujours positif
+    daysSinceOldest: number
+    severity:        UnpaidRentSeverity
+  }
 }
 
 export interface PortfolioAlert {
@@ -189,17 +202,38 @@ function generatePortfolioAlerts(
     })
   }
 
-  // Alertes derivees des insights existants
-  properties.filter(p => p.hasAlerts && p.alertCount > 0).forEach(p => {
+  // V11 — CAS-DASH-001 : impayés non résolus, alerte cross-bien.
+  // Message : « X € impayés non résolus (N events, plus ancien : D jours) »
+  // — `totalEur` est déjà positif (cf. computeUnpaidRentAlerts).
+  properties.filter(p => p.unpaidRent).forEach(p => {
+    const ur = p.unpaidRent!
+    const eur = Math.round(ur.totalEur).toLocaleString('fr-FR')
+    const oldest = ur.daysSinceOldest
+    const oldestLabel =
+      oldest === 0 ? 'aujourd\'hui' :
+      oldest === 1 ? 'hier' :
+      `il y a ${oldest} jours`
+    const countLabel = ur.count > 1 ? `${ur.count} loyers impayés` : '1 loyer impayé'
     alerts.push({
-      severity:     'info',
-      kind:         'under_rent',
+      severity:     ur.severity,
+      kind:         'unpaid_rent',
       propertyId:   p.id,
       propertyName: p.name,
-      message:      `${p.alertCount} alerte${p.alertCount > 1 ? 's' : ''} sur ce bien`,
+      message:      `${countLabel} non résolu${ur.count > 1 ? 's' : ''} — ${eur} € (plus ancien ${oldestLabel})`,
+      amount:       ur.totalEur,
+      actionLabel:  'Voir le bien',
       actionUrl:    `/immobilier/${p.id}`,
     })
   })
+
+  // V11 — Désactivation du bloc `under_rent` historique :
+  // il poussait un `kind: 'under_rent'` dès que `alertCount > 0`, ce qui
+  // était sémantiquement faux (under_rent = sous-évaluation du loyer
+  // marché, pas un compteur générique). Maintenant qu'`alertCount` est
+  // alimenté par les impayés (V11), garder ce bloc créerait un doublon
+  // mal nommé pour chaque bien avec impayé. Le vrai émetteur `under_rent`
+  // sera rebranché dans une vague séparée (when un signal "loyer < marché"
+  // sera disponible). Mieux vaut pas d'alerte que fausse alerte.
 
   // Tri par severite : critical -> warning -> info
   return alerts.sort((a, b) => {
@@ -316,6 +350,16 @@ export interface PropertyMetaForPortfolio {
   isShortTerm:       boolean
   occupancyRatePct?: number
   alertCount:        number
+  /**
+   * V11 — Présent si le bien a des impayés non résolus.
+   * Construit côté caller via `computeUnpaidRentAlerts`.
+   */
+  unpaidRent?: {
+    count:           number
+    totalEur:        number  // toujours positif
+    daysSinceOldest: number
+    severity:        UnpaidRentSeverity
+  }
 }
 
 /**
@@ -388,6 +432,8 @@ export function buildPropertySummariesFromPortfolio(
       alertCount:          meta.alertCount,
       isShortTerm:         meta.isShortTerm,
       ...(meta.occupancyRatePct != null ? { occupancyRatePct: meta.occupancyRatePct } : {}),
+      // V11 — propagation du résumé impayés (optionnel).
+      ...(meta.unpaidRent ? { unpaidRent: meta.unpaidRent } : {}),
     }
   })
 }
