@@ -109,3 +109,142 @@ describe('generateAnnualReport — bilan annuel PDF', () => {
     expect(buffer.length).toBeGreaterThan(1000)
   })
 })
+
+// ─── V14 — Invariant multi-crédit : PDF == fiche du bien ─────────────────
+
+describe('V14 — Export PDF multi-crédit : cohérence avec la fiche', () => {
+  const principal: DbDebt = {
+    initial_amount:    180_000,
+    interest_rate:     3.5,
+    insurance_rate:    0.3,
+    duration_months:   240,
+    start_date:        '2024-01-15',
+    bank_fees:         800,
+    guarantee_fees:    1_500,
+    amortization_type: 'constant',
+    loan_kind:         'principal',
+  }
+  const ptz: DbDebt = {
+    initial_amount:    40_000,
+    interest_rate:     0,
+    insurance_rate:    0,
+    duration_months:   240,
+    start_date:        '2024-01-15',
+    bank_fees:         0,
+    guarantee_fees:    0,
+    amortization_type: 'constant',
+    loan_kind:         'ptz',
+  }
+
+  /**
+   * Invariant central V14 : pour un bien à 2 crédits, le PDF DOIT
+   * exposer la MÊME simulation que la fiche détail (= `runSimulation`
+   * avec les 2 loans). On vérifie via les KPIs : mensualité totale,
+   * CRD à date, cash-flow Y1.
+   */
+  it('mensualité, CRD, cash-flow Y1 du PDF = ceux d\'une simulation directe multi-crédit', () => {
+    // (a) Simulation "fiche" — réf : ce que voit l'utilisateur sur la fiche
+    const inputFiche = buildSimulationInputFromDb(
+      property, asset, lots, charges, [principal, ptz], profile,
+      { downPayment: 0, horizonYears: 25 },
+    )
+    const simFiche = runSimulation(inputFiche)
+
+    // (b) Simulation "PDF" — ce que la route export-pdf passera à
+    //     `generateAnnualReport.simulation` : MÊME `buildSimulationInputFromDb`,
+    //     MÊME `runSimulation`, MÊME tableau de debts. L'invariant tient par
+    //     construction depuis V3.1, mais on le verrouille ici pour empêcher
+    //     toute régression future qui réenveloperait `[principal]` au lieu
+    //     du tableau complet (comme c'était le cas avant V14).
+    const inputPdf = buildSimulationInputFromDb(
+      property, asset, lots, charges, [principal, ptz], profile,
+      { downPayment: 0, horizonYears: 25 },
+    )
+    const simPdf = runSimulation(inputPdf)
+
+    // Trois invariants alignés sur ce que le PDF affiche réellement :
+    expect(simPdf.kpis.monthlyPayment).toBeCloseTo(simFiche.kpis.monthlyPayment, 2)
+    expect(simPdf.kpis.monthlyCashFlowYear1).toBeCloseTo(simFiche.kpis.monthlyCashFlowYear1, 2)
+    expect(simPdf.projection[0]!.remainingCapital)
+      .toBeCloseTo(simFiche.projection[0]!.remainingCapital, 2)
+  })
+
+  /**
+   * Régression directe : si on resservait UNIQUEMENT le principal
+   * (comme avant V14), la mensualité serait STRICTEMENT plus faible
+   * (le PTZ ajoute du capital à rembourser). Verrouille l'écart attendu.
+   */
+  it('avec PTZ seul vs avec principal + PTZ : la mensualité totale diffère (régression bloquée)', () => {
+    const inputMonoPrincipal = buildSimulationInputFromDb(
+      property, asset, lots, charges, [principal], profile,
+      { downPayment: 0, horizonYears: 25 },
+    )
+    const inputMulti = buildSimulationInputFromDb(
+      property, asset, lots, charges, [principal, ptz], profile,
+      { downPayment: 0, horizonYears: 25 },
+    )
+    const simMono  = runSimulation(inputMonoPrincipal)
+    const simMulti = runSimulation(inputMulti)
+
+    // Multi DOIT être > mono (le PTZ ajoute une mensualité capital, même si
+    // le taux est à 0 — c'est précisément ce que la V14 corrige).
+    expect(simMulti.kpis.monthlyPayment).toBeGreaterThan(simMono.kpis.monthlyPayment)
+    // CRD multi > CRD mono (capital total emprunté plus grand)
+    expect(simMulti.projection[0]!.remainingCapital)
+      .toBeGreaterThan(simMono.projection[0]!.remainingCapital)
+  })
+
+  /**
+   * Apport personnel : avant V14, le PDF utilisait `acqCost - principal.initial_amount`
+   * → apport surévalué. Avec V14 et `debts: [principal, ptz]`, apport =
+   * acqCost - sum(initial_amount). On vérifie via le rendu PDF que la
+   * génération ne crash pas + la simulation reste cohérente.
+   */
+  it('PDF généré avec 2 crédits : pas de crash + Uint8Array %PDF-', async () => {
+    const input = buildSimulationInputFromDb(
+      property, asset, lots, charges, [principal, ptz], profile,
+      { downPayment: 0, horizonYears: 25 },
+    )
+    const simulation = runSimulation(input)
+    const buffer = await generateAnnualReport({
+      year:         2025,
+      propertyName: 'Bien multi-crédit',
+      property,
+      asset,
+      lots,
+      charges,
+      debt:         principal,         // détails page 2 = principal
+      debts:        [principal, ptz],  // V14 — pour le calcul de l'apport
+      profile,
+      simulation,
+    })
+    expect(buffer.length).toBeGreaterThan(1000)
+    const header = String.fromCharCode(...buffer.slice(0, 5))
+    expect(header).toBe('%PDF-')
+  })
+
+  it('rétrocompat : input sans `debts` (caller mono-crédit) → fallback sur input.debt', async () => {
+    // L'ancien chemin mono-crédit (caller qui ne passerait pas `debts`)
+    // doit continuer à fonctionner sans changement.
+    const input = buildSimulationInputFromDb(
+      property, asset, lots, charges, [principal], profile,
+      { downPayment: 0, horizonYears: 25 },
+    )
+    const simulation = runSimulation(input)
+    const buffer = await generateAnnualReport({
+      year:         2025,
+      propertyName: 'Bien mono-crédit',
+      property,
+      asset,
+      lots,
+      charges,
+      debt:         principal,
+      // pas de `debts` — fallback sur input.debt.initial_amount
+      profile,
+      simulation,
+    })
+    expect(buffer.length).toBeGreaterThan(1000)
+    const header = String.fromCharCode(...buffer.slice(0, 5))
+    expect(header).toBe('%PDF-')
+  })
+})

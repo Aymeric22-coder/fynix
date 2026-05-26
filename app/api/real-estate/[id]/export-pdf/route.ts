@@ -65,14 +65,28 @@ export const GET = withAuth(async (req: Request, user: User, ctx: Ctx) => {
   const prop = propRes.data
   const asset = Array.isArray(prop.asset) ? prop.asset[0] : prop.asset
 
-  // Credit actif sur l'asset
-  const { data: debtRow } = await supabase
+  // V14 — Credits actifs sur l'asset (multi-credit V3.1).
+  // Avant : `.maybeSingle()` ne ramenait que le crédit principal — un
+  // bien à 2 crédits (PTZ, prêt travaux) voyait son PDF afficher une
+  // mensualité et un CRD divergents de la fiche du bien. On récupère
+  // désormais TOUS les `debts` actifs et on les passe en tableau à
+  // `buildSimulationInputFromDb`, exactement comme la fiche détail.
+  const { data: debtRows } = await supabase
     .from('debts')
     .select('*')
     .eq('asset_id', prop.asset_id)
     .eq('user_id', user.id)
     .eq('status', 'active')
-    .maybeSingle()
+  // Tri : `principal` en tête, autres derrière. `dbDebts[0]` devient le
+  // crédit principal — c'est ce qui pilote les détails « Taux nominal /
+  // Capital initial / Durée » affichés en pied de page 2 du PDF (les
+  // mensualités du tableau, elles, viennent de l'agrégat multi-crédit
+  // calculé par `runSimulation` → `aggregateLoans`).
+  const sortedDebtRows = (debtRows ?? []).slice().sort((a, b) => {
+    const ap = (a.loan_kind ?? 'principal') === 'principal' ? 0 : 1
+    const bp = (b.loan_kind ?? 'principal') === 'principal' ? 0 : 1
+    return ap - bp
+  })
 
   // Mapping vers DbXxx
   const dbProperty: DbProperty = {
@@ -111,27 +125,32 @@ export const GET = withAuth(async (req: Request, user: User, ctx: Ctx) => {
         other:         chargesRes.data.other,
       }
     : null
-  const dbDebt: DbDebt | null = debtRow
-    ? {
-        initial_amount:    debtRow.initial_amount,
-        interest_rate:     debtRow.interest_rate,
-        insurance_rate:    debtRow.insurance_rate,
-        duration_months:   debtRow.duration_months,
-        start_date:        debtRow.start_date,
-        bank_fees:         debtRow.bank_fees ?? 0,
-        guarantee_fees:    debtRow.guarantee_fees ?? 0,
-        amortization_type: debtRow.amortization_type ?? 'constant',
-      }
-    : null
+  const dbDebts: DbDebt[] = sortedDebtRows.map(r => ({
+    initial_amount:    r.initial_amount,
+    interest_rate:     r.interest_rate,
+    insurance_rate:    r.insurance_rate,
+    duration_months:   r.duration_months,
+    start_date:        r.start_date,
+    bank_fees:         r.bank_fees ?? 0,
+    guarantee_fees:    r.guarantee_fees ?? 0,
+    amortization_type: r.amortization_type ?? 'constant',
+    loan_kind:         r.loan_kind ?? 'principal',
+  }))
+  // `dbDebt` (singulier) = crédit principal, pour les détails affichés en
+  // pied de page 2 du PDF (taux nominal, capital initial, durée). Reste
+  // utile à `AnnualReportInput.debt` qui n'a pas vocation à dérouler tous
+  // les crédits en texte (le tableau d'amortissement page 2 utilise lui
+  // l'agrégat via `input.simulation.amortization`).
+  const dbDebt: DbDebt | null = dbDebts[0] ?? null
   const dbProfile: DbProfile = { tmi_rate: profileRes.data?.tmi_rate ?? 30 }
 
-  // Apport personnel
-  // V3.1 — La route PDF lit pour l'instant un crédit unique (debtRow → dbDebt).
-  // On l'enveloppe dans un tableau pour la signature multi-crédit. Le PDF
-  // export complet multi-crédit fera l'objet d'une vague séparée.
+  // V14 — Apport personnel sur la SOMME des principals empruntés.
+  // Avant : `acqCost - dbDebt?.initial_amount` ignorait le PTZ et tout
+  // crédit secondaire ⇒ apport surévalué (et donc patrimoine net du PDF
+  // divergent de la fiche).
   const acqCost = (dbProperty.purchase_price ?? 0) + (dbProperty.purchase_fees ?? 0) + (dbProperty.works_amount ?? 0)
-  const downPayment = Math.max(0, acqCost - (dbDebt?.initial_amount ?? 0))
-  const dbDebts = dbDebt ? [dbDebt] : []
+  const totalPrincipalBorrowed = dbDebts.reduce((s, d) => s + (d.initial_amount ?? 0), 0)
+  const downPayment = Math.max(0, acqCost - totalPrincipalBorrowed)
 
   const input = buildSimulationInputFromDb(
     dbProperty, dbAsset, dbLots, dbCharges, dbDebts, dbProfile,
@@ -159,6 +178,9 @@ export const GET = withAuth(async (req: Request, user: User, ctx: Ctx) => {
     lots:         dbLots,
     charges:      dbCharges,
     debt:         dbDebt,
+    // V14 — tableau complet (multi-crédit) en plus du principal seul.
+    // Sert au calcul correct de l'apport (somme des principals).
+    debts:        dbDebts,
     profile:      dbProfile,
     simulation,
   })

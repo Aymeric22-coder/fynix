@@ -26,7 +26,20 @@ export interface AnnualReportInput {
   asset:        DbAsset | null
   lots:         DbLot[]
   charges:      DbCharges | null
+  /**
+   * Crédit PRINCIPAL — pilote les détails affichés en pied de page 2
+   * (« Capital emprunté initial / Taux nominal / Durée totale ») et la
+   * date de référence du tableau d'amortissement (filtre année).
+   * Conserve la signature historique pour les callers mono-crédit.
+   */
   debt:         DbDebt | null
+  /**
+   * V14 — Tableau COMPLET des crédits actifs du bien (multi-crédit).
+   * Si présent, l'apport personnel page 1 = `acqCost − sum(initial_amount)`
+   * (au lieu du seul principal). Optionnel pour rétrocompat des tests
+   * historiques qui ne fournissent que `debt`.
+   */
+  debts?:       DbDebt[]
   profile:      DbProfile | null
   simulation:   SimulationResult
   /** Optionnel : nom du dispositif fiscal actif. */
@@ -171,7 +184,13 @@ function renderPage1(doc: PDFKit.PDFDocument, input: AnnualReportInput) {
   // ACQUISITION
   sectionTitle(doc, 'ACQUISITION')
   const acqCost = (input.property.purchase_price ?? 0) + (input.property.purchase_fees ?? 0) + (input.property.works_amount ?? 0)
-  const apport = Math.max(0, acqCost - (input.debt?.initial_amount ?? 0))
+  // V14 — apport sur la SOMME des principals empruntés (multi-crédit).
+  // Fallback `input.debt?.initial_amount` quand le caller n'a pas fourni
+  // `debts` (rétrocompat tests historiques mono-crédit).
+  const totalBorrowed = input.debts
+    ? input.debts.reduce((s, d) => s + (d.initial_amount ?? 0), 0)
+    : (input.debt?.initial_amount ?? 0)
+  const apport = Math.max(0, acqCost - totalBorrowed)
   twoColLine(doc, 'Prix de revient total', eur(acqCost))
   twoColLine(doc, "Date d'acquisition", frenchDate((input.asset as unknown as { acquisition_date?: string | null })?.acquisition_date ?? null))
   twoColLine(doc, 'Apport personnel', eur(apport))
@@ -299,6 +318,22 @@ function renderPage2(doc: PDFKit.PDFDocument, input: AnnualReportInput) {
   twoColLine(doc, 'Capital emprunté initial', eur(input.debt.initial_amount ?? 0))
   twoColLine(doc, 'Taux nominal', pct(input.debt.interest_rate ?? null))
   twoColLine(doc, 'Durée totale', `${input.debt.duration_months ?? 0} mois`)
+  // V14 — Mention multi-crédit pour clarifier que les détails ci-dessus
+  // concernent le principal seul, alors que le tableau d'amortissement
+  // au-dessus est l'agrégat (mensualités cumulées tous crédits).
+  const otherDebtsCount = input.debts ? Math.max(0, input.debts.length - 1) : 0
+  if (otherDebtsCount > 0) {
+    doc.moveDown(0.4)
+    doc.fontSize(8).fillColor(COLORS.muted).font('Helvetica-Oblique')
+      .text(
+        `Bien à ${input.debts!.length} crédits actifs — les détails ci-dessus portent sur le crédit principal. ` +
+        `Les mensualités du tableau ci-dessus sont l'agrégat des ${input.debts!.length} crédits.`,
+        MARGINS.left,
+        doc.y,
+        { width: 500 },
+      )
+    doc.font('Helvetica')
+  }
 }
 
 // ─── PAGE 3 — Charges ──────────────────────────────────────────────────────
