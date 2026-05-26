@@ -7,13 +7,27 @@ import { Button } from '@/components/ui/button'
 import { Field, Input, Select, FormGrid } from '@/components/ui/field'
 import type { IncentiveRow } from './incentive-tab'
 
-const KIND_OPTIONS: Array<{ value: string; label: string }> = [
+/**
+ * V13 — Monuments Historiques et Malraux restent ÉLIGIBLES en droit
+ * (régimes ouverts), mais leur calcul de réduction n'est pas encore
+ * branché dans le moteur (`buildIncentiveReductionPerYear` n'a pas de
+ * case dédiée). Sélectionner l'une de ces options ne produirait aucun
+ * effet sur la projection — option fantôme.
+ *
+ * Donc on garde les options dans la liste (cohérence avec les biens
+ * existants déjà sauvegardés en MH/Malraux : l'affichage compact
+ * read-only et l'edit du record persistent), mais on les marque
+ * `disabled` avec un suffixe explicite pour empêcher toute nouvelle
+ * sélection. La forme « (non pris en charge pour l'instant) » dit ce
+ * que c'est : une fonctionnalité à venir, pas un dispositif fermé.
+ */
+const KIND_OPTIONS: Array<{ value: string; label: string; disabled?: boolean }> = [
   { value: 'pinel',                  label: 'Pinel (LF 2024)' },
   { value: 'pinel_plus',             label: 'Pinel+ (taux pleins)' },
   { value: 'denormandie',            label: 'Denormandie (ancien avec travaux)' },
   { value: 'loc_avantages',          label: "Loc'Avantages (convention ANAH)" },
-  { value: 'monuments_historiques',  label: 'Monuments Historiques' },
-  { value: 'malraux',                label: 'Malraux' },
+  { value: 'monuments_historiques',  label: 'Monuments Historiques (non pris en charge pour l\'instant)', disabled: true },
+  { value: 'malraux',                label: 'Malraux (non pris en charge pour l\'instant)',               disabled: true },
 ]
 
 interface Props {
@@ -146,7 +160,11 @@ export function IncentiveForm({ propertyId, existing, onDone }: Props) {
 
       <Field label="Type de dispositif" required>
         <Select value={kind} onChange={(e) => setKind(e.target.value)} required>
-          {KIND_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          {KIND_OPTIONS.map(o => (
+            <option key={o.value} value={o.value} disabled={o.disabled}>
+              {o.label}
+            </option>
+          ))}
         </Select>
       </Field>
 

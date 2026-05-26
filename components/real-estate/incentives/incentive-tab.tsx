@@ -1,10 +1,15 @@
 'use client'
 
+import { AlertTriangle } from 'lucide-react'
 import { PinelPanel } from './pinel-panel'
 import { DenormandiePanel } from './denormandie-panel'
 import { LocAvantagesPanel } from './loc-avantages-panel'
 import { MhPanel } from './mh-panel'
 import { IncentiveForm } from './incentive-form'
+import {
+  isPinelClosedForAcquisition,
+  PINEL_CLOSING_DATE,
+} from '@/lib/real-estate/fiscal/incentives/reduction-schedule'
 
 /**
  * Ligne `property_tax_incentives` (migration 038).
@@ -38,6 +43,12 @@ interface Props {
   purchasePrice: number
   surfaceM2:     number
   tmiPct:        number
+  /**
+   * V13 — Date d'acquisition du bien (ISO `YYYY-MM-DD`). Sert au
+   * garde-fou Pinel fermé (PINEL_CLOSING_DATE = 2024-12-31). Optionnel —
+   * si absent, aucune alerte.
+   */
+  acquisitionDate?: string | null
 }
 
 /**
@@ -47,6 +58,7 @@ interface Props {
  */
 export function IncentiveTabContent({
   propertyId, incentive, annualRentHC, purchasePrice, surfaceM2, tmiPct,
+  acquisitionDate,
 }: Props) {
   if (!incentive) {
     return (
@@ -56,8 +68,10 @@ export function IncentiveTabContent({
             Aucun dispositif de défiscalisation actif sur ce bien.
           </p>
           <p className="text-xs text-muted">
-            Dispositifs supportés : Pinel / Pinel+, Denormandie, Loc&apos;Avantages,
-            Monuments Historiques, Malraux.
+            {/* V13 — MH et Malraux retirés de la liste : présents dans le
+                sélecteur mais désactivés faute de calcul branché. */}
+            Dispositifs supportés : Pinel / Pinel+, Denormandie,
+            Loc&apos;Avantages.
           </p>
         </div>
         <IncentiveForm propertyId={propertyId} existing={null} />
@@ -65,11 +79,34 @@ export function IncentiveTabContent({
     )
   }
 
+  // V13 — garde-fou Pinel fermé : bandeau d'alerte critique si le bien
+  // a été acquis après le 31/12/2024 et qu'un Pinel/Pinel+ est saisi.
+  // La réduction est forcée à 0 côté moteur (cf. reduction-schedule.ts).
+  const pinelClosed = isPinelClosedForAcquisition(incentive.kind, acquisitionDate)
+
   // Encart d'édition + dispatcher de panel selon le type
   return (
     <div className="space-y-4">
       <IncentiveForm propertyId={propertyId} existing={incentive} />
-      {renderIncentivePanel(incentive, annualRentHC, purchasePrice, surfaceM2, tmiPct)}
+      {pinelClosed && (
+        <div
+          role="alert"
+          className="flex items-start gap-3 rounded-lg border border-danger/30 bg-danger-muted px-4 py-3"
+        >
+          <AlertTriangle size={16} className="text-danger flex-shrink-0 mt-0.5" />
+          <div className="flex-1 text-xs text-danger leading-relaxed">
+            <p className="font-medium mb-1">Dispositif non applicable</p>
+            <p>
+              Le Pinel est fermé aux nouveaux investissements depuis le {PINEL_CLOSING_DATE.split('-').reverse().join('/')}
+              {' '}— non applicable à un bien acquis après cette date. La réduction
+              d&apos;impôt n&apos;est pas calculée. Si l&apos;acquisition est en réalité
+              antérieure, corrigez la date dans la fiche du bien ; sinon, supprimez
+              le dispositif ou choisissez Denormandie (prolongé jusqu&apos;au 31/12/2027).
+            </p>
+          </div>
+        </div>
+      )}
+      {!pinelClosed && renderIncentivePanel(incentive, annualRentHC, purchasePrice, surfaceM2, tmiPct)}
     </div>
   )
 }

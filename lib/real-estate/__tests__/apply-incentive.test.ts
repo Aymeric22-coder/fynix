@@ -13,7 +13,11 @@
 
 import { describe, it, expect } from 'vitest'
 import { runSimulation } from '..'
-import { buildIncentiveReductionPerYear } from '../fiscal/incentives/reduction-schedule'
+import {
+  buildIncentiveReductionPerYear,
+  isPinelClosedForAcquisition,
+  PINEL_CLOSING_DATE,
+} from '../fiscal/incentives/reduction-schedule'
 import { GLOBAL_TAX_NICHE_CAP } from '../fiscal/incentives/pinel'
 import type { SimulationInput } from '../types'
 
@@ -336,5 +340,114 @@ describe('V8.1 — BUG-006 : Loc\'Avantages calculé sur loyer effectivement per
       30, 1,
     )
     expect(reduction[0]).toBe(0)
+  })
+})
+
+describe('V13 — isPinelClosedForAcquisition (garde-fou Pinel fermé 31/12/2024)', () => {
+  it('PINEL_CLOSING_DATE = "2024-12-31"', () => {
+    expect(PINEL_CLOSING_DATE).toBe('2024-12-31')
+  })
+
+  it('Pinel + acquisition 2025-01-01 : true (1 jour après la fermeture)', () => {
+    expect(isPinelClosedForAcquisition('pinel', '2025-01-01')).toBe(true)
+  })
+
+  it('Pinel+ + acquisition 2025-06-15 : true', () => {
+    expect(isPinelClosedForAcquisition('pinel_plus', '2025-06-15')).toBe(true)
+  })
+
+  it('Pinel + acquisition pile 2024-12-31 : false (engagement protégé, inclusif)', () => {
+    expect(isPinelClosedForAcquisition('pinel', '2024-12-31')).toBe(false)
+  })
+
+  it('Pinel + acquisition 2024-12-30 : false', () => {
+    expect(isPinelClosedForAcquisition('pinel', '2024-12-30')).toBe(false)
+  })
+
+  it('Pinel + acquisition très ancienne (2018) : false', () => {
+    expect(isPinelClosedForAcquisition('pinel', '2018-03-15')).toBe(false)
+  })
+
+  it('Denormandie + acquisition 2025-06-15 : false (prolongé jusqu\'au 31/12/2027)', () => {
+    expect(isPinelClosedForAcquisition('denormandie', '2025-06-15')).toBe(false)
+    expect(isPinelClosedForAcquisition('denormandie', '2026-11-30')).toBe(false)
+  })
+
+  it("Loc'Avantages + acquisition 2025 : false (non concerné)", () => {
+    expect(isPinelClosedForAcquisition('loc_avantages', '2025-06-15')).toBe(false)
+  })
+
+  it('Pinel + acquisitionDate null/undefined/vide : false (on ne bloque pas par défaut)', () => {
+    expect(isPinelClosedForAcquisition('pinel', null)).toBe(false)
+    expect(isPinelClosedForAcquisition('pinel', undefined)).toBe(false)
+    expect(isPinelClosedForAcquisition('pinel', '')).toBe(false)
+  })
+
+  it('kind null/inconnu : false', () => {
+    expect(isPinelClosedForAcquisition(null, '2025-06-15')).toBe(false)
+    expect(isPinelClosedForAcquisition('foo', '2025-06-15')).toBe(false)
+  })
+})
+
+describe('V13 — buildIncentiveReductionPerYear : garde-fou Pinel fermé', () => {
+  function makePinelRow(kind: 'pinel' | 'pinel_plus' | 'denormandie') {
+    return {
+      kind, duration_years: 9, zone: 'A',
+      start_year: CURRENT_YEAR,
+      works_amount: kind === 'denormandie' ? 50_000 : null,
+      is_pinel_plus: kind === 'pinel_plus',
+    }
+  }
+  const property = { purchasePrice: 250_000, notaryFees: 0, worksAmount: 0, propertyIndexPct: 0 }
+  const rent     = { monthlyRent: 800, vacancyMonths: 0, rentalIndexPct: 0 }
+
+  it('Pinel acquis 2025-01-01 : tableau de zéros (longueur horizon respectée)', () => {
+    const reduction = buildIncentiveReductionPerYear(
+      makePinelRow('pinel'), property, rent, 30, 5, '2025-01-01',
+    )
+    expect(reduction).toHaveLength(5)
+    expect(reduction.every(v => v === 0)).toBe(true)
+  })
+
+  it('Pinel+ acquis 2026 : tableau de zéros', () => {
+    const reduction = buildIncentiveReductionPerYear(
+      makePinelRow('pinel_plus'), property, rent, 30, 3, '2026-06-15',
+    )
+    expect(reduction.every(v => v === 0)).toBe(true)
+  })
+
+  it('Pinel acquis 2024-12-31 (pile) : réduction CALCULÉE (engagement protégé)', () => {
+    const reduction = buildIncentiveReductionPerYear(
+      makePinelRow('pinel'), property, rent, 30, 1, '2024-12-31',
+    )
+    expect(reduction[0]!).toBeGreaterThan(0)
+  })
+
+  it('Pinel acquis en 2020 : réduction inchangée (cas typique en cours)', () => {
+    const reduction = buildIncentiveReductionPerYear(
+      makePinelRow('pinel'), property, rent, 30, 1, '2020-06-01',
+    )
+    expect(reduction[0]!).toBeGreaterThan(0)
+  })
+
+  it('Denormandie acquis 2025-06-15 : réduction CALCULÉE (prolongation 2027)', () => {
+    const reduction = buildIncentiveReductionPerYear(
+      makePinelRow('denormandie'), property, rent, 30, 1, '2025-06-15',
+    )
+    expect(reduction[0]!).toBeGreaterThan(0)
+  })
+
+  it('Pinel sans acquisitionDate (param non passé) : comportement historique inchangé', () => {
+    const reduction = buildIncentiveReductionPerYear(
+      makePinelRow('pinel'), property, rent, 30, 1,
+    )
+    expect(reduction[0]!).toBeGreaterThan(0)
+  })
+
+  it('Pinel sans acquisitionDate explicite (null) : pas de blocage', () => {
+    const reduction = buildIncentiveReductionPerYear(
+      makePinelRow('pinel'), property, rent, 30, 1, null,
+    )
+    expect(reduction[0]!).toBeGreaterThan(0)
   })
 })

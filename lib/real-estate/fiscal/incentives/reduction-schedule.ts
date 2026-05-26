@@ -18,6 +18,39 @@ import { computeDenormandie } from './denormandie'
 import { LOC_AVANTAGES_RATES, type LocAvantagesConvention } from './loc-avantages'
 import type { PropertyInput, RentInput } from '../../types'
 
+/**
+ * V13 — Date de fermeture du dispositif Pinel / Pinel+ aux nouveaux
+ * investissements. Tout bien dont la date d'acquisition est STRICTEMENT
+ * postérieure à cette date n'est plus éligible (les engagements en
+ * cours, antérieurs, continuent normalement).
+ *
+ * Format ISO `YYYY-MM-DD` — comparable lexicographiquement à
+ * `acquisition_date` (qui est stocké en DATE Postgres = `YYYY-MM-DD`).
+ *
+ * ⚠️ Le Denormandie est PROLONGÉ jusqu'au 31/12/2027 → NON concerné.
+ */
+export const PINEL_CLOSING_DATE = '2024-12-31' as const
+
+/**
+ * V13 — `true` si le dispositif Pinel/Pinel+ n'est plus applicable à
+ * ce bien (acquisition strictement après PINEL_CLOSING_DATE).
+ *
+ * `false` si :
+ *  - le dispositif n'est pas un Pinel (Denormandie/Loc'Avantages OK) ;
+ *  - la date d'acquisition est absente (on ne bloque pas par défaut —
+ *    l'utilisateur saisira sa date après) ;
+ *  - l'acquisition est antérieure ou égale à PINEL_CLOSING_DATE
+ *    (engagement en cours protégé).
+ */
+export function isPinelClosedForAcquisition(
+  kind:            string | null | undefined,
+  acquisitionDate: string | null | undefined,
+): boolean {
+  if (kind !== 'pinel' && kind !== 'pinel_plus') return false
+  if (!acquisitionDate) return false
+  return acquisitionDate > PINEL_CLOSING_DATE
+}
+
 /** Sous-ensemble de la row property_tax_incentives utile pour cette fonction. */
 export interface IncentiveScheduleRow {
   kind:            string
@@ -33,13 +66,27 @@ export interface IncentiveScheduleRow {
 }
 
 export function buildIncentiveReductionPerYear(
-  incentive:    IncentiveScheduleRow | null | undefined,
-  property:     PropertyInput,
-  rent:         RentInput,
-  tmiPct:       number,
-  horizonYears: number,
+  incentive:        IncentiveScheduleRow | null | undefined,
+  property:         PropertyInput,
+  rent:             RentInput,
+  tmiPct:           number,
+  horizonYears:     number,
+  /**
+   * V13 — Date d'acquisition du bien (ISO `YYYY-MM-DD`). Si fournie
+   * et strictement postérieure à PINEL_CLOSING_DATE pour un Pinel /
+   * Pinel+, la réduction est forcée à 0 sur tout l'horizon. Optionnel
+   * pour la rétrocompatibilité — un appelant qui ne passe pas la date
+   * conserve le comportement historique.
+   */
+  acquisitionDate?: string | null,
 ): number[] {
   if (!incentive) return []
+
+  // V13 — garde-fou Pinel fermé : tableau de zéros (longueur respectée
+  // pour ne pas casser les consommateurs qui indexent `[i]`).
+  if (isPinelClosedForAcquisition(incentive.kind, acquisitionDate)) {
+    return new Array(horizonYears).fill(0)
+  }
 
   const calendarYear1 = new Date().getUTCFullYear()
 

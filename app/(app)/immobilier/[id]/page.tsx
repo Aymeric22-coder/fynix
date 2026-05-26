@@ -381,12 +381,16 @@ export default async function ImmobilierDetailPage({ params, searchParams }: Pro
   // On construit le tableau d'imputation année par année à partir du
   // dispositif fiscal actif (table property_tax_incentives).
   // Hors fenêtre [start_year, start_year + duration - 1] → 0.
+  // V13 — `acquisition_date` passé en paramètre pour le garde-fou Pinel
+  // fermé (PINEL_CLOSING_DATE = 2024-12-31). Sans effet sur les autres
+  // dispositifs (Denormandie reste actif jusqu'à fin 2027).
   const incentiveReductionPerYear = buildIncentiveReductionPerYear(
     incentiveRow,
     simInput.property,
     simInput.rent,
     dbProfile?.tmi_rate ?? 30,
     simInput.horizonYears ?? 25,
+    prop.asset?.acquisition_date ?? null,
   )
   const simInputWithIncentive = { ...simInput, incentiveReductionPerYear }
   const simResult = runSimulation(simInputWithIncentive)
@@ -950,6 +954,7 @@ export default async function ImmobilierDetailPage({ params, searchParams }: Pro
         purchasePrice={prop.purchase_price ?? 0}
         surfaceM2={prop.surface_m2 ?? 0}
         tmiPct={dbProfile?.tmi_rate ?? 30}
+        acquisitionDate={prop.asset?.acquisition_date ?? null}
       />,
     },
 
