@@ -46,7 +46,7 @@ import { formatCurrency, formatPercent, formatDate } from '@/lib/utils/format'
 import type { LoanInput } from '@/lib/real-estate/types'
 import type { DbProperty, DbAsset, DbLot, DbCharges, DbDebt, DbProfile } from '@/lib/real-estate/build-from-db'
 import type { RealEstateProperty, PropertyUsageType } from '@/types/database.types'
-import { USAGE_TYPE_LABELS, isRentalUsage } from '@/types/database.types'
+import { isRentalUsage } from '@/types/database.types'
 
 export const metadata: Metadata = { title: 'Détail bien' }
 
@@ -533,15 +533,36 @@ export default async function ImmobilierDetailPage({ params, searchParams }: Pro
                 </p>
               </div>
             ) : (
-              <div className="card p-5">
-                <p className="text-xs text-secondary uppercase tracking-widest">Type d&apos;usage</p>
-                <p className="text-sm font-medium text-primary mt-2">
-                  {USAGE_TYPE_LABELS[usageType]}
-                </p>
-                <p className="text-xs text-secondary mt-1">
-                  Pas de calcul de rentabilité pour ce type d&apos;usage.
-                </p>
-              </div>
+              // V12 — RP/RS : remplace "Type d'usage" (vide d'info) par le
+              // capital déjà remboursé = principal initial total − CRD courant.
+              // Mesure tangible de la progression patrimoniale ; renseigne
+              // aussi que le bien est sans crédit (« — ») quand applicable.
+              (() => {
+                const totalPrincipalInitial = enrichedLoans.reduce(
+                  (s, x) => s + x.loan.principal, 0,
+                )
+                const capitalRepaid = Math.max(0, totalPrincipalInitial - crdNow)
+                const repaidPct = totalPrincipalInitial > 0
+                  ? (capitalRepaid / totalPrincipalInitial) * 100
+                  : 0
+                return (
+                  <div className="card p-5">
+                    <p className="text-xs text-secondary uppercase tracking-widest">
+                      Capital remboursé
+                    </p>
+                    <p className="text-xl font-semibold financial-value text-accent mt-2">
+                      {totalPrincipalInitial > 0
+                        ? formatCurrency(capitalRepaid, 'EUR', { compact: true })
+                        : '—'}
+                    </p>
+                    <p className="text-xs text-secondary mt-1">
+                      {totalPrincipalInitial > 0
+                        ? `${formatPercent(repaidPct)} du principal initial`
+                        : 'Sans crédit — achat comptant'}
+                    </p>
+                  </div>
+                )
+              })()
             )}
             <div className="card p-5">
               <p className="text-xs text-secondary uppercase tracking-widest flex items-center gap-1.5">
@@ -940,6 +961,16 @@ export default async function ImmobilierDetailPage({ params, searchParams }: Pro
 
   const fiscalRegimeMissing = !prop.fiscal_regime
 
+  // V12 — CAS-RP-001 : pour un bien non-locatif (RP/RS), masquer les onglets
+  // qui n'ont pas de sens (Rentabilité, Suivi réel des loyers, Dispositif
+  // fiscal locatif). Le composant Tabs retombe automatiquement sur le 1er
+  // onglet si `?tab=…` pointe vers un onglet absent — pas besoin de fallback
+  // explicite ici, mais on documente l'invariant.
+  const RENTAL_ONLY_TAB_IDS = new Set(['rentabilite', 'suivi-reel', 'dispositif'])
+  const visibleTabs = isRental
+    ? tabs
+    : tabs.filter(t => !RENTAL_ONLY_TAB_IDS.has(t.id))
+
   return (
     <div className="space-y-6">
       <Link href="/immobilier" className="flex items-center gap-2 text-sm text-secondary hover:text-primary transition-colors w-fit">
@@ -993,7 +1024,7 @@ export default async function ImmobilierDetailPage({ params, searchParams }: Pro
         </div>
       )}
 
-      <Tabs tabs={tabs} urlParam="tab" />
+      <Tabs tabs={visibleTabs} urlParam="tab" />
     </div>
   )
 }

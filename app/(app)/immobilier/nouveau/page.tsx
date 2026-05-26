@@ -13,6 +13,11 @@ import {
   validateLoanRates,
   validateLoanStartVsAcquisition,
 } from '@/lib/real-estate/validate-loan-form'
+import {
+  isRentalWizardUsage,
+  wizardStepsFor,
+  requiresFiscalRegimeStep,
+} from '@/lib/real-estate/validate-wizard'
 
 // ─────────────────────────────────────────────────────────────────
 //  Types & état initial
@@ -124,13 +129,10 @@ const EMPTY_DRAFT: WizardDraft = {
   notes:             '',
 }
 
-const STEPS = [
-  { id: '1', label: 'Identification' },
-  { id: '2', label: 'Acquisition' },
-  { id: '3', label: 'Crédit', optional: true },
-  { id: '4', label: 'Régime fiscal' },
-  { id: '5', label: 'Lots & loyers', optional: true },
-]
+// V12 — STEPS calculé dynamiquement depuis `draft.usage_type` via
+// `wizardStepsFor` (cf. lib/real-estate/validate-wizard.ts). 5 étapes
+// pour locatif, 4 pour RP/RS (étape 5 « Lots » sautée, étape 4 devient
+// « Récapitulatif »).
 
 const FISCAL_REGIME_DESCRIPTIONS: Record<Exclude<FiscalRegime, ''>, { label: string; help: string }> = {
   foncier_micro: { label: 'Micro-foncier',
@@ -234,18 +236,29 @@ export default function NouveauBienPage() {
       const datesErr = validateLoanStartVsAcquisition(draft.loan_start_date, draft.acquisition_date)
       if (datesErr) return datesErr
     }
-    if (s === 4) {
+    // V12 — étape 4 : régime fiscal exigé UNIQUEMENT pour les biens locatifs.
+    // RP/RS sautent la validation (l'étape est rendue comme récap).
+    if (s === 4 && requiresFiscalRegimeStep(draft.usage_type)) {
       if (!draft.fiscal_regime) return 'Le régime fiscal est requis'
     }
     return null
   }
 
+  // V12 — STEPS dynamique (5 pour locatif, 4 pour RP/RS).
+  const STEPS       = wizardStepsFor(draft.usage_type)
+  const TOTAL_STEPS = STEPS.length
+
+  // V12 — Si l'utilisateur passe locatif → RP en mid-flow alors qu'il était
+  // à l'étape 5, on doit ramener à l'étape max disponible (4).
+  useEffect(() => {
+    if (step > TOTAL_STEPS) setStep(TOTAL_STEPS)
+  }, [step, TOTAL_STEPS])
+
   function goNext() {
     const err = validateStep(step)
     if (err) { setError(err); return }
     setError(null)
-    // Si on est sur l'étape 5 et que c'est une RP, on saute la saisie lot
-    setStep(s => Math.min(5, s + 1))
+    setStep(s => Math.min(TOTAL_STEPS, s + 1))
   }
 
   function goPrev() {
@@ -255,7 +268,8 @@ export default function NouveauBienPage() {
 
   // Soumission finale
   async function submit() {
-    // Re-valide les étapes obligatoires
+    // Re-valide les étapes obligatoires (l'étape 4 ne vaut que pour locatif —
+    // `validateStep` gère déjà la branche RP/RS via `requiresFiscalRegimeStep`).
     for (const s of [1, 2, 4]) {
       const err = validateStep(s)
       if (err) { setStep(s); setError(err); return }
@@ -285,7 +299,11 @@ export default function NouveauBienPage() {
           purchase_price:    draft.purchase_price ?? null,
           purchase_fees:     draft.purchase_fees  ?? 0,
           works_amount:      draft.works_amount   ?? 0,
-          fiscal_regime:     draft.fiscal_regime || null,
+          // V12 — RP/RS : pas de régime fiscal locatif (forcé à null même
+          // si un draft fantôme reste après changement d'usage_type).
+          fiscal_regime:     requiresFiscalRegimeStep(draft.usage_type)
+                               ? (draft.fiscal_regime || null)
+                               : null,
           is_multi_lot:      false,
           acquisition_date:  draft.acquisition_date || null,
           notes:             draft.notes || null,
@@ -331,8 +349,10 @@ export default function NouveauBienPage() {
       }
 
       // 3. Créer le lot par défaut si saisi
+      // V12 — Garde-fou : aucun POST /lots pour un bien non-locatif (RP/RS),
+      // même si `hasLot` est resté à true après un changement d'usage_type.
       const isShortTermWizard = draft.usage_type === 'short_term_rental'
-      const hasLotData = draft.hasLot && (
+      const hasLotData = isRentalWizardUsage(draft.usage_type) && draft.hasLot && (
         (isShortTermWizard && draft.lot_nightly_rate_low != null)
         || (!isShortTermWizard && draft.lot_rent != null)
       )
@@ -407,9 +427,8 @@ export default function NouveauBienPage() {
       ? computeMonthlyPayment(draft.loan_principal, draft.loan_rate, draft.loan_duration / 12)
       : null
 
-  const isRentalUsage = draft.usage_type === 'long_term_rental'
-                     || draft.usage_type === 'short_term_rental'
-                     || draft.usage_type === 'mixed_use'
+  // V12 — `isRentalUsage` consomme le helper partagé `isRentalWizardUsage`.
+  const isRentalUsage = isRentalWizardUsage(draft.usage_type)
 
   // ─── Render ─────────────────────────────────────────────────────
 
@@ -423,15 +442,15 @@ export default function NouveauBienPage() {
       <div>
         <h1 className="text-2xl font-semibold text-primary">Ajouter un bien immobilier</h1>
         <p className="text-sm text-secondary mt-1">
-          {step}/5 — vous pouvez revenir à n&apos;importe quelle étape précédente.
+          {step}/{TOTAL_STEPS} — vous pouvez revenir à n&apos;importe quelle étape précédente.
         </p>
       </div>
 
       <div className="card p-4">
-        <Stepper steps={STEPS} current={step} onJump={(i) => { if (i < step) setStep(i) }} />
+        <Stepper steps={[...STEPS]} current={step} onJump={(i) => { if (i < step) setStep(i) }} />
       </div>
 
-      <form onSubmit={(e) => { e.preventDefault(); if (step < 5) goNext(); else submit() }} className="space-y-6">
+      <form onSubmit={(e) => { e.preventDefault(); if (step < TOTAL_STEPS) goNext(); else submit() }} className="space-y-6">
 
         {/* ──────── Étape 1 — Identification ──────── */}
         {step === 1 && (
@@ -655,8 +674,8 @@ export default function NouveauBienPage() {
           </div>
         )}
 
-        {/* ──────── Étape 4 — Régime fiscal ──────── */}
-        {step === 4 && (
+        {/* ──────── Étape 4 — Régime fiscal (locatif uniquement) ──────── */}
+        {step === 4 && isRentalUsage && (
           <div className="card p-6 space-y-5">
             <h2 className="text-sm font-medium text-secondary uppercase tracking-widest">Régime fiscal</h2>
             <Field label="Quel est votre régime fiscal pour ce bien ?" required>
@@ -680,6 +699,44 @@ export default function NouveauBienPage() {
                 {FISCAL_REGIME_DESCRIPTIONS[draft.fiscal_regime].help}
               </div>
             )}
+          </div>
+        )}
+
+        {/* ──────── V12 — Étape 4 RP/RS : Récapitulatif (remplace Régime + Lots) ──────── */}
+        {step === 4 && !isRentalUsage && (
+          <div className="card p-6 space-y-5">
+            <h2 className="text-sm font-medium text-secondary uppercase tracking-widest">Récapitulatif</h2>
+            <p className="text-sm text-secondary">
+              {draft.usage_type === 'primary_residence'
+                ? 'Résidence principale — pas de régime fiscal locatif ni de lot à saisir. Vérifiez les informations puis enregistrez.'
+                : 'Résidence secondaire — pas de régime fiscal locatif ni de lot à saisir. Vérifiez les informations puis enregistrez.'}
+            </p>
+            <div className="border-t border-border pt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+              <div>
+                <p className="text-xs text-muted uppercase tracking-wider">Nom</p>
+                <p className="text-primary font-medium mt-0.5">{draft.name || '—'}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted uppercase tracking-wider">Adresse</p>
+                <p className="text-primary mt-0.5">
+                  {[draft.address_zip, draft.address_city].filter(Boolean).join(' ') || '—'}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted uppercase tracking-wider">Prix d&apos;acquisition</p>
+                <p className="text-primary financial-value mt-0.5">
+                  {draft.purchase_price ? formatCurrency(draft.purchase_price, 'EUR') : '—'}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted uppercase tracking-wider">Crédit</p>
+                <p className="text-primary mt-0.5">
+                  {draft.hasLoan && draft.loan_principal
+                    ? `${formatCurrency(draft.loan_principal, 'EUR')} sur ${draft.loan_duration ?? 0} mois`
+                    : 'Achat comptant'}
+                </p>
+              </div>
+            </div>
           </div>
         )}
 
@@ -809,7 +866,7 @@ export default function NouveauBienPage() {
                 Précédent
               </Button>
             )}
-            {step < 5 ? (
+            {step < TOTAL_STEPS ? (
               <Button type="submit">
                 Suivant
                 <ArrowRight size={14} />
