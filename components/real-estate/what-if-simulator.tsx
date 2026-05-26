@@ -18,6 +18,8 @@ import { buildSimulationInputFromDb, runSimulation } from '@/lib/real-estate'
 import type {
   DbProperty, DbAsset, DbLot, DbCharges, DbDebt, DbProfile,
 } from '@/lib/real-estate/build-from-db'
+import { InfoTip } from '@/components/ui/info-tip'
+import { LEXIQUE, getLexiqueDefinition } from '@/lib/real-estate/lexique'
 import { formatCurrency, formatPercent } from '@/lib/utils/format'
 
 interface Props {
@@ -270,9 +272,9 @@ export function WhatIfSimulator({
           Résultats du scénario
         </p>
         <div className="space-y-1.5 text-sm">
-          <Row label="Cash-flow mensuel net" base={baseKpis.monthlyCashFlow} value={whatIfKpis.monthlyCashFlow} format="eur" higherIsBetter />
-          <Row label="Rendement brut"        base={baseKpis.grossYield}      value={whatIfKpis.grossYield}      format="pct" higherIsBetter />
-          <Row label="Rendement net-net"     base={baseKpis.netNetYield}     value={whatIfKpis.netNetYield}     format="pct" higherIsBetter />
+          <Row label="Cash-flow mensuel net" tip={LEXIQUE.monthlyCashFlow} base={baseKpis.monthlyCashFlow} value={whatIfKpis.monthlyCashFlow} format="eur" higherIsBetter />
+          <Row label="Rendement brut"        tip={LEXIQUE.grossYield}      base={baseKpis.grossYield}      value={whatIfKpis.grossYield}      format="pct" higherIsBetter />
+          <Row label="Rendement net-net"     tip={getLexiqueDefinition('netNetYield', property.fiscal_regime)} base={baseKpis.netNetYield}     value={whatIfKpis.netNetYield}     format="pct" higherIsBetter />
           <Row label="Mensualité crédit"     base={baseKpis.monthlyPayment}  value={whatIfKpis.monthlyPayment}  format="eur" higherIsBetter={false} />
           <Row label="Année break-even"      base={baseKpis.paybackYear ?? null} value={whatIfKpis.paybackYear ?? null} format="year" higherIsBetter={false} />
           <Row label="Valeur nette"          base={baseKpis.netValue}        value={whatIfKpis.netValue}        format="eur" higherIsBetter />
@@ -431,8 +433,10 @@ function ScenarioBtn({ label, onClick, variant }: {
   )
 }
 
-function Row({ label, base, value, format, higherIsBetter }: {
+function Row({ label, tip, base, value, format, higherIsBetter }: {
   label: string
+  /** Définition pédagogique (V9.1). */
+  tip?: string
   base: number | null
   value: number | null
   format: 'eur' | 'pct' | 'year'
@@ -446,7 +450,10 @@ function Row({ label, base, value, format, higherIsBetter }: {
 
   return (
     <div className="grid grid-cols-12 items-center gap-2">
-      <span className="col-span-5 text-secondary text-xs">{label}</span>
+      <span className="col-span-5 text-secondary text-xs inline-flex items-center gap-1.5">
+        {label}
+        {tip && <InfoTip text={tip} iconSize={11} />}
+      </span>
       <span className="col-span-3 text-right financial-value text-xs text-muted">
         {fmt(base, format)}
       </span>

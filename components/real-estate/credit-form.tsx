@@ -18,8 +18,10 @@ import { Trash2 } from 'lucide-react'
 import { Modal }   from '@/components/ui/modal'
 import { Button }  from '@/components/ui/button'
 import { Field, Input, Select, Textarea, FormGrid, FormSection } from '@/components/ui/field'
+import { InfoTip } from '@/components/ui/info-tip'
 import { useForm } from '@/hooks/use-form'
 import { buildAmortizationSchedule } from '@/lib/real-estate/amortization'
+import { LEXIQUE } from '@/lib/real-estate/lexique'
 import type { LoanInput } from '@/lib/real-estate/types'
 import { formatCurrency, formatPercent } from '@/lib/utils/format'
 
@@ -312,7 +314,14 @@ export function CreditForm({ open, onClose, propertyId, existing, propertyName }
         </FormSection>
 
         {/* Différé */}
-        <FormSection title="Différé">
+        <FormSection
+          title={
+            <span className="inline-flex items-center gap-1.5">
+              Différé
+              <InfoTip text={LEXIQUE.deferral} />
+            </span>
+          }
+        >
           <FormGrid>
             <Field label="Type">
               <Select value={values.deferral_type} onChange={(e) => set('deferral_type', e.target.value as ExistingCredit['deferral_type'])}>
@@ -382,7 +391,10 @@ export function CreditForm({ open, onClose, propertyId, existing, propertyName }
                 <p className="text-xs text-muted">intérêts + assurance + frais</p>
               </div>
               <div>
-                <p className="text-xs text-muted">TAEG approx.</p>
+                <p className="text-xs text-muted flex items-center gap-1">
+                  TAEG approx.
+                  <InfoTip text={LEXIQUE.apr} iconSize={11} />
+                </p>
                 <p className="financial-value text-accent font-semibold">{formatPercent(preview.aprPct)}</p>
               </div>
               <div>

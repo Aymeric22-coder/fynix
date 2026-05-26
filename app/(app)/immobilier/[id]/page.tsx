@@ -40,6 +40,8 @@ import { buildAmortizationSchedule, computeRemainingCapitalAt } from '@/lib/real
 import { aggregateLoans } from '@/lib/real-estate/multi-credit'
 import { LOAN_KIND_LABELS, type LoanKind } from '@/types/database.types'
 import { buildSimulationInputFromDb, runSimulation } from '@/lib/real-estate'
+import { InfoTip } from '@/components/ui/info-tip'
+import { LEXIQUE } from '@/lib/real-estate/lexique'
 import { formatCurrency, formatPercent, formatDate } from '@/lib/utils/format'
 import type { LoanInput } from '@/lib/real-estate/types'
 import type { DbProperty, DbAsset, DbLot, DbCharges, DbDebt, DbProfile } from '@/lib/real-estate/build-from-db'
@@ -488,7 +490,10 @@ export default async function ImmobilierDetailPage({ params, searchParams }: Pro
               <p className="text-xs text-secondary mt-1">{formatDate(prop.asset?.last_valued_at, 'medium')}</p>
             </div>
             <div className="card p-5">
-              <p className="text-xs text-secondary uppercase tracking-widest">Capital restant dû</p>
+              <p className="text-xs text-secondary uppercase tracking-widest flex items-center gap-1.5">
+                Capital restant dû
+                <InfoTip text={LEXIQUE.remainingCapital} />
+              </p>
               <p className={`text-xl font-semibold financial-value mt-2 ${crdNow > 0 ? 'text-danger' : 'text-secondary'}`}>
                 {crdNow > 0 ? formatCurrency(crdNow, 'EUR', { compact: true }) : '—'}
               </p>
@@ -502,8 +507,9 @@ export default async function ImmobilierDetailPage({ params, searchParams }: Pro
               <p className="text-xs text-secondary mt-1">valeur − CRD</p>
             </div>
             <div className="card p-5">
-              <p className="text-xs text-secondary uppercase tracking-widest">
+              <p className="text-xs text-secondary uppercase tracking-widest flex items-center gap-1.5">
                 {isRental ? 'Cash-flow mensuel' : 'Coût mensuel de possession'}
+                {isRental && <InfoTip text={LEXIQUE.monthlyCashFlow} />}
               </p>
               <p className={`text-xl font-semibold financial-value mt-2 ${monthlyCashFlow >= 0 ? 'text-accent' : 'text-danger'}`}>
                 {formatCurrency(monthlyCashFlow, 'EUR')}
@@ -514,11 +520,17 @@ export default async function ImmobilierDetailPage({ params, searchParams }: Pro
             </div>
             {isRental ? (
               <div className="card p-5">
-                <p className="text-xs text-secondary uppercase tracking-widest">Rendement brut</p>
+                <p className="text-xs text-secondary uppercase tracking-widest flex items-center gap-1.5">
+                  Rendement brut
+                  <InfoTip text={LEXIQUE.grossYield} />
+                </p>
                 <p className="text-xl font-semibold financial-value text-primary mt-2">
                   {grossYield > 0 ? formatPercent(grossYield) : '—'}
                 </p>
-                <p className="text-xs text-secondary mt-1">Net : {netYield > 0 ? formatPercent(netYield) : '—'}</p>
+                <p className="text-xs text-secondary mt-1 flex items-center gap-1">
+                  Net : {netYield > 0 ? formatPercent(netYield) : '—'}
+                  <InfoTip text={LEXIQUE.netYield} iconSize={11} />
+                </p>
               </div>
             ) : (
               <div className="card p-5">
@@ -532,7 +544,10 @@ export default async function ImmobilierDetailPage({ params, searchParams }: Pro
               </div>
             )}
             <div className="card p-5">
-              <p className="text-xs text-secondary uppercase tracking-widest">Plus-value latente</p>
+              <p className="text-xs text-secondary uppercase tracking-widest flex items-center gap-1.5">
+                Plus-value latente
+                <InfoTip text={LEXIQUE.latentGain} />
+              </p>
               <p className={`text-xl font-semibold financial-value mt-2 ${latentGain >= 0 ? 'text-accent' : 'text-danger'}`}>
                 {formatCurrency(latentGain, 'EUR', { compact: true, sign: true })}
               </p>

@@ -1,6 +1,6 @@
 # AUDIT ÉTAT ACTUEL — Section immobilière FIRECORE
 
-Date initiale : 2026-05-21 · Dernière mise à jour : 2026-05-23 (V8.2)
+Date initiale : 2026-05-21 · Dernière mise à jour : 2026-05-26 (V9.1)
 Périmètre : Sprints 1 à 5 + correctifs Sprint 3.5
 Méthode : audit lecture seule, 6 domaines parallélisés sur 6 agents, consolidation.
 
@@ -24,9 +24,10 @@ Le travail de correction est sérialisé en vagues (1 vague = 1 branche = 1 PR, 
 | **V7** | Refonte `netNetYield` "sans crédit" (tous régimes) + BUG-D1-M05 SciDistribution. `netNetYield = netYield − (taxPaid / totalCost × 100)` — la seule différence entre nette et net-net est désormais l'impôt réellement payé. Invariant verrouillé : `taxPaid = 0 ⇒ netNetYield === netYield`. `SciDistribution.netProfitAfterIS` consomme `max(0, fiscalResult − taxPaid)` au lieu du proxy cash inflated | ✅ Mergé direct master | — |
 | **V8.1** | Trois fixes mécaniques fiscaux (audit niches). (a) Micro-foncier : plafond CGI art. 32 (15 000 €/an) — `FONCIER_MICRO_CEILING` + `forcedRegimeSwitch` propagé dans `ProjectionYear` (réutilisable lmnp-micro). (b) **BUG-004** Pinel/Denormandie : réduction plafonnée à 10 000 €/an (`GLOBAL_TAX_NICHE_CAP`, CGI art. 200-0 A) dans `reduction-schedule.ts`. (c) **BUG-006** Loc'Avantages : base = loyer effectivement perçu (`monthlyRent × max(0, 12 − vacancyMonths)`) au lieu du loyer théorique. 11 tests d'invariant ajoutés | ✅ Mergé direct master | — |
 | **V8.2** | **BUG-D1-M06** LMNP micro ceiling. `resolveLmnpMicroCeiling(abattementPct)` branché dans `getFiscalCalculator` : abattement 50 % → 77 700 € (classique OU tourisme classé, même plafond donc pas de catégorie à stocker), abattement 30 % → 15 000 € (tourisme non classé). Constantes nommées `LMNP_MICRO_CEILING_LONG_TERM` / `LMNP_MICRO_CEILING_TOURISM_UNCLASSIFIED` (réévaluation triennale IRL). `forcedRegimeSwitch` réutilise le slot V8.1. 7 tests d'invariant | ✅ Mergé direct master | — |
-| **V8.3+** | Cf. plan section 8 — non démarrées (BUG-005 Pinel éligibilité [bloqué P7 surface en DB], décisions produit foncier MaPrimeRénov / LMP déficit amort / agrégation foyer / MH / Pinel clos 2025) | ⏳ À venir | — |
+| **V9.1** | **FRICTION-001** Lexique des indicateurs financiers. Source unique `lib/real-estate/lexique.ts` (9 définitions courtes + helper `getLexiqueDefinition(key, fiscalRegime?)` avec variante SCI IS sur net-net). Nouveau composant `components/ui/info-tip.tsx` (pure CSS hover + focus + tap, design tokens FIRECORE, accessible clavier). Branché sur 8 surfaces UI : bandeau /immobilier, cards bien, Synthèse fiche détail, onglet Crédit, formulaire crédit (Différé, TAEG preview), simulation-panel (Vacance + KPIs Rentabilité), what-if-simulator (Cash-flow + Rdt brut/net-net), simulateur sandbox. `FormSection.title` et `Field.label` widenés à `ReactNode` pour permettre l'inline. 7 tests sur le lexique | ✅ Mergé direct master | — |
+| **V9.2+** | Cf. plan section 8 — non démarrées (BUG-005 Pinel éligibilité [bloqué P7 surface en DB], décisions produit foncier MaPrimeRénov / LMP déficit amort / agrégation foyer / MH / Pinel clos 2025, autres FRICTION UX) | ⏳ À venir | — |
 
-**Total items traités à ce jour** : **21/41** (P1: 9/11 — ROB-001/002/003 + BUG-002/003 + INTEG-001/002 + BUG-007/008 + BUG-001 + BUG-004 + BUG-006 ; P2: 10/19 — régen types + BUG-009 + INTEG-005/006 + BUG-D1-M01 + BUG-D1-M02 + BUG-D1-M08 + BUG-D1-M03 + BUG-D1-M04 + BUG-D1-M05 + **BUG-D1-M06**) · **≥67 nouveaux tests** ajoutés (V1–V8.1 + 7 invariants V8.2 : LMNP micro forced ≤/> 77 700 € à 50 %, ≤/> 15 000 € à 30 %, indexation IRL franchit les 2 seuils, fallback 71 % saisi libre).
+**Total items traités à ce jour** : **22/41** (P1: 9/11 — ROB-001/002/003 + BUG-002/003 + INTEG-001/002 + BUG-007/008 + BUG-001 + BUG-004 + BUG-006 ; P2: 10/19 — régen types + BUG-009 + INTEG-005/006 + BUG-D1-M01 + BUG-D1-M02 + BUG-D1-M08 + BUG-D1-M03 + BUG-D1-M04 + BUG-D1-M05 + BUG-D1-M06 ; FRICTION: 1/10 — FRICTION-001) · **≥74 nouveaux tests** ajoutés (V1–V8.2 + 7 tests lexique V9.1 : variante SCI IS sur net-net uniquement, fallback régimes non SCI IS, complétude des 9 définitions, cohérence sémantique net-net V7 sans coût crédit).
 
 ---
 

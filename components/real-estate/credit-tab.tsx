@@ -17,8 +17,10 @@ import {
   Tooltip, Legend,
 } from 'recharts'
 import { Button } from '@/components/ui/button'
+import { InfoTip } from '@/components/ui/info-tip'
 import { CreditForm, type ExistingCredit } from './credit-form'
 import { buildAmortizationSchedule, computeRemainingCapitalAt } from '@/lib/real-estate/amortization'
+import { LEXIQUE } from '@/lib/real-estate/lexique'
 import type { LoanInput } from '@/lib/real-estate/types'
 import { formatCurrency, formatPercent } from '@/lib/utils/format'
 
@@ -32,12 +34,14 @@ interface Props {
 // ─── Sous-composants ──────────────────────────────────────────────────────
 
 function KpiCard({
-  label, value, sub, accent,
+  label, value, sub, accent, tip,
 }: {
   label:  string
   value:  string
   sub?:   string
   accent?: 'primary' | 'success' | 'danger' | 'warning'
+  /** Définition pédagogique (V9.1). */
+  tip?:   string
 }) {
   const valColor =
     accent === 'success' ? 'text-accent'   :
@@ -46,7 +50,10 @@ function KpiCard({
                            'text-primary'
   return (
     <div className="card p-4">
-      <p className="text-xs text-muted uppercase tracking-wider">{label}</p>
+      <p className="text-xs text-muted uppercase tracking-wider flex items-center gap-1.5">
+        {label}
+        {tip && <InfoTip text={tip} iconSize={11} />}
+      </p>
       <p className={`text-lg font-semibold financial-value mt-2 ${valColor}`}>{value}</p>
       {sub && <p className="text-xs text-muted mt-1">{sub}</p>}
     </div>
@@ -181,6 +188,7 @@ export function CreditTab({ propertyId, propertyName, credit }: Props) {
         />
         <KpiCard
           label="Capital restant dû"
+          tip={LEXIQUE.remainingCapital}
           value={crdNow !== null ? formatCurrency(crdNow, 'EUR', { compact: true }) : '—'}
           sub="à aujourd'hui"
           accent="danger"
@@ -192,6 +200,7 @@ export function CreditTab({ propertyId, propertyName, credit }: Props) {
         />
         <KpiCard
           label="TAEG approx."
+          tip={LEXIQUE.apr}
           value={formatPercent(schedule.aprPct)}
           sub={`Nominal ${formatPercent(credit.interest_rate ?? 0)}`}
           accent="success"

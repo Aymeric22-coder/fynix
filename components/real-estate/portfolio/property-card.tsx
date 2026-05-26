@@ -14,6 +14,8 @@ import {
   type TypeUsageBien,
 } from '@/lib/real-estate/plusValue'
 import { formatCurrency, formatPercent, ASSET_TYPE_LABELS } from '@/lib/utils/format'
+import { InfoTip } from '@/components/ui/info-tip'
+import { LEXIQUE, getLexiqueDefinition } from '@/lib/real-estate/lexique'
 import type { PropertyKPIs } from '@/lib/real-estate/types'
 
 function inferTypeUsage(fiscalRegime: string | null): TypeUsageBien {
@@ -95,7 +97,10 @@ export function PropertyCard(p: Props) {
           </p>
         </div>
         <div>
-          <p className="text-xs text-secondary">CRD</p>
+          <p className="text-xs text-secondary flex items-center gap-1">
+            CRD
+            <InfoTip text={LEXIQUE.remainingCapital} iconSize={11} />
+          </p>
           <p className={`text-sm font-medium financial-value mt-0.5 ${p.capitalRemaining > 0 ? 'text-danger' : 'text-secondary'}`}>
             {p.capitalRemaining > 0 ? formatCurrency(p.capitalRemaining, 'EUR', { compact: true }) : '—'}
           </p>
@@ -112,21 +117,30 @@ export function PropertyCard(p: Props) {
       {!p.incompleteData && p.kpis && (
         <div className="grid grid-cols-3 gap-3 mb-3 pt-3 border-t border-border">
           <div>
-            <p className="text-xs text-secondary flex items-center gap-1"><Banknote size={10} /> Cash-flow</p>
+            <p className="text-xs text-secondary flex items-center gap-1">
+              <Banknote size={10} /> Cash-flow
+              <InfoTip text={LEXIQUE.monthlyCashFlow} iconSize={11} />
+            </p>
             <p className={`text-sm font-medium financial-value mt-0.5 ${p.kpis.monthlyCashFlowYear1 >= 0 ? 'text-accent' : 'text-danger'}`}>
               {formatCurrency(p.kpis.monthlyCashFlowYear1, 'EUR')}
             </p>
             <p className="text-xs text-muted">après impôts /mois</p>
           </div>
           <div>
-            <p className="text-xs text-secondary flex items-center gap-1"><TrendingUp size={10} /> Rdt net-net</p>
+            <p className="text-xs text-secondary flex items-center gap-1">
+              <TrendingUp size={10} /> Rdt net-net
+              <InfoTip text={getLexiqueDefinition('netNetYield', p.fiscalRegime)} iconSize={11} />
+            </p>
             <p className={`text-sm font-medium financial-value mt-0.5 ${p.kpis.netNetYield > 0 ? 'text-accent' : 'text-secondary'}`}>
               {p.kpis.netNetYield > 0 ? formatPercent(p.kpis.netNetYield) : '—'}
             </p>
             <p className="text-xs text-muted">brut {p.kpis.grossYieldFAI > 0 ? formatPercent(p.kpis.grossYieldFAI) : '—'}</p>
           </div>
           <div>
-            <p className="text-xs text-secondary">PV latente</p>
+            <p className="text-xs text-secondary flex items-center gap-1">
+              PV latente
+              <InfoTip text={LEXIQUE.latentGain} iconSize={11} />
+            </p>
             <p className={`text-sm font-medium financial-value mt-0.5 ${latentGain >= 0 ? 'text-accent' : 'text-danger'}`}>
               {formatCurrency(latentGain, 'EUR', { compact: true, sign: true })}
             </p>

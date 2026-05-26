@@ -4,7 +4,9 @@ import { cn } from '@/lib/utils/format'
 const BASE = 'w-full bg-surface-2 border border-border rounded-lg px-3 py-2.5 text-sm text-primary placeholder:text-muted focus:outline-none focus:border-accent transition-colors'
 
 interface FieldProps {
-  label:       string
+  // V9.1 — `label` accepte ReactNode pour permettre d'inclure un <InfoTip />
+  // à côté du libellé du champ (ex. Vacance, Différé).
+  label:       React.ReactNode
   error?:      string
   hint?:       string
   required?:   boolean
@@ -75,7 +77,9 @@ export function FormGrid({ children, cols = 2 }: { children: React.ReactNode; co
 }
 
 // Séparateur de section dans formulaire
-export function FormSection({ title, children }: { title?: string; children: React.ReactNode }) {
+// V9.1 — `title` accepte désormais un `ReactNode` pour permettre d'y intégrer
+// des annotations en ligne (ex. <InfoTip /> à côté du libellé).
+export function FormSection({ title, children }: { title?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="space-y-4">
       {title && (

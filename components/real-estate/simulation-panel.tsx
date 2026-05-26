@@ -9,6 +9,8 @@ import { buildSimulationInputFromDb, runSimulation } from '@/lib/real-estate'
 import type { DbProperty, DbAsset, DbLot, DbCharges, DbDebt, DbProfile } from '@/lib/real-estate/build-from-db'
 import type { SimulationResult } from '@/lib/real-estate'
 import { Field, Input, Select } from '@/components/ui/field'
+import { InfoTip } from '@/components/ui/info-tip'
+import { LEXIQUE, getLexiqueDefinition } from '@/lib/real-estate/lexique'
 import { formatCurrency, formatPercent } from '@/lib/utils/format'
 import {
   CapitalVsValueChart,
@@ -383,7 +385,14 @@ export function SimulationPanel({ propertyId, property, asset, lots, charges, de
               />
             </Field>
 
-            <Field label="Vacance (mois/an)">
+            <Field
+              label={
+                <span className="inline-flex items-center gap-1.5">
+                  Vacance (mois/an)
+                  <InfoTip text={LEXIQUE.vacancy} />
+                </span>
+              }
+            >
               <Input
                 type="number" min={0} max={12} step={0.5}
                 value={params.vacancyMonths}
@@ -506,6 +515,7 @@ export function SimulationPanel({ propertyId, property, asset, lots, charges, de
               {
                 icon: Banknote,
                 label: 'Cash-flow mensuel',
+                tip:   LEXIQUE.monthlyCashFlow,
                 value: incompleteData ? '—' : formatCurrency(kpis.monthlyCashFlowYear1, 'EUR'),
                 sub: 'Année 1 après impôts',
                 accent: !incompleteData && kpis.monthlyCashFlowYear1 >= 0,
@@ -513,6 +523,7 @@ export function SimulationPanel({ propertyId, property, asset, lots, charges, de
               {
                 icon: TrendingUp,
                 label: 'Rendement net-net',
+                tip:   getLexiqueDefinition('netNetYield', params.fiscalRegime),
                 value: incompleteData ? '—' : (kpis.netNetYield > 0 ? formatPercent(kpis.netNetYield) : '—'),
                 // Affiche le brut FAI (sur prix de revient total) plutôt
                 // que le brut sur prix d'achat seul — cohérent avec le
@@ -534,7 +545,10 @@ export function SimulationPanel({ propertyId, property, asset, lots, charges, de
             ].map((k) => (
               <div key={k.label} className={`card p-4 space-y-2 ${k.accent ? 'border-accent/30' : ''}`}>
                 <div className="flex items-center justify-between">
-                  <p className="text-xs text-secondary uppercase tracking-wider">{k.label}</p>
+                  <p className="text-xs text-secondary uppercase tracking-wider flex items-center gap-1.5">
+                    {k.label}
+                    {k.tip && <InfoTip text={k.tip} iconSize={11} />}
+                  </p>
                   <k.icon size={13} className="text-muted" />
                 </div>
                 <p className={`text-lg font-semibold financial-value ${k.accent ? 'text-accent' : 'text-primary'}`}>

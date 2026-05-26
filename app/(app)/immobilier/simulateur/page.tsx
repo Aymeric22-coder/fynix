@@ -6,7 +6,9 @@ import { ArrowLeft, RotateCcw, Save } from 'lucide-react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Field, Input, Select, FormGrid } from '@/components/ui/field'
+import { InfoTip } from '@/components/ui/info-tip'
 import { RegimeComparator } from '@/components/real-estate/regime-comparator'
+import { LEXIQUE, getLexiqueDefinition } from '@/lib/real-estate/lexique'
 import { formatCurrency, formatPercent } from '@/lib/utils/format'
 import { runSimulation } from '@/lib/real-estate'
 import type { RawSimulationInput, FiscalRegimeKind } from '@/lib/real-estate/types'
@@ -280,7 +282,15 @@ export default function SimulateurPage() {
                 <Input type="number" min={0} value={draft.monthly_rent ?? ''}
                   onChange={(e) => setNum('monthly_rent', e.target.value)} placeholder="900" />
               </Field>
-              <Field label="Vacance (mois/an)" hint="0.3 ≈ 9 jours">
+              <Field
+                label={
+                  <span className="inline-flex items-center gap-1.5">
+                    Vacance (mois/an)
+                    <InfoTip text={LEXIQUE.vacancy} />
+                  </span>
+                }
+                hint="0.3 ≈ 9 jours"
+              >
                 <Input type="number" step={0.1} min={0} max={12}
                   value={draft.vacancy_months ?? ''}
                   onChange={(e) => setNum('vacancy_months', e.target.value)} placeholder="0.3" />
@@ -359,10 +369,16 @@ export default function SimulateurPage() {
 
                 <div className="border-t border-border pt-4 space-y-3">
                   <Kv label="Rendement brut"
+                    tip={LEXIQUE.grossYield}
                     value={formatPercent(result.kpis.grossYieldFAI)} />
                   <Kv label="Rendement net"
+                    tip={LEXIQUE.netYield}
                     value={formatPercent(result.kpis.netYield)} />
+                  <Kv label="Rendement net-net"
+                    tip={getLexiqueDefinition('netNetYield', draft.fiscal_regime)}
+                    value={result.kpis.netNetYield > 0 ? formatPercent(result.kpis.netNetYield) : '—'} />
                   <Kv label="Cash-flow mensuel"
+                    tip={LEXIQUE.monthlyCashFlow}
                     value={formatCurrency(result.kpis.monthlyCashFlowYear1, 'EUR') + ' / mois'}
                     tone={result.kpis.monthlyCashFlowYear1 >= 0 ? 'positive' : 'negative'} />
                   {result.kpis.monthlyCashFlowYear1 < 0 && (
@@ -405,11 +421,20 @@ export default function SimulateurPage() {
 }
 
 // Helper KV
-function Kv({ label, value, tone }: { label: string; value: string; tone?: 'positive' | 'negative' }) {
+function Kv({ label, value, tone, tip }: {
+  label: string
+  value: string
+  tone?: 'positive' | 'negative'
+  /** Définition pédagogique (V9.1). */
+  tip?:  string
+}) {
   const colorClass = tone === 'positive' ? 'text-accent' : tone === 'negative' ? 'text-danger' : 'text-primary'
   return (
     <div className="flex items-baseline justify-between gap-3">
-      <span className="text-xs text-secondary">{label}</span>
+      <span className="text-xs text-secondary inline-flex items-center gap-1.5">
+        {label}
+        {tip && <InfoTip text={tip} iconSize={11} />}
+      </span>
       <span className={`text-sm font-medium financial-value ${colorClass}`}>{value}</span>
     </div>
   )
