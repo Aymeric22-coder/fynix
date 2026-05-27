@@ -314,7 +314,10 @@ function rendementDepuisComposition(p: PatrimoineComplet): number {
 }
 
 export function calculerProgressionFIRE(p: PatrimoineComplet): Score {
-  const { age, age_cible, epargne_mensuelle, revenu_passif_cible } = p.fireInputs
+  const { age, age_cible, epargne_mensuelle } = p.fireInputs
+  // QW9 — Cible AJUSTÉE composition foyer (cf. aggregateur > loadProfile).
+  // La valeur brute saisie sert au slider/édition uniquement.
+  const revenu_passif_cible = p.fireInputs.revenu_passif_cible_ajuste
   if (!age || !age_cible || revenu_passif_cible <= 0) {
     return insufficientData('Progression FIRE')
   }

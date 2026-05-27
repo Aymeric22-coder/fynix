@@ -72,7 +72,10 @@ function mapProfil(p: PatrimoineComplet): AriaUserProfile {
     age_fire_cible:         p.fireInputs.age_cible,
     type_investisseur:      p.profilType,
     tolerance_risque:       p.fireInputs.risk_score,
-    revenu_passif_objectif: p.fireInputs.revenu_passif_cible,
+    // QW9 — Cible AJUSTÉE composition foyer (cf. aggregateur > loadProfile).
+    // ARIA raisonne sur la cible effectivement utilisée par les calculs FIRE,
+    // pour rester cohérent avec les nombres affichés sur /analyse.
+    revenu_passif_objectif: p.fireInputs.revenu_passif_cible_ajuste,
     tmi_rate:               p.fireInputs.tmi_rate,
   }
 }

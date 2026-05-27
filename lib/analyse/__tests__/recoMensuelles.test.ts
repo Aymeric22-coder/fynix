@@ -35,6 +35,7 @@ function pat(over: Partial<PatrimoineComplet> = {}): PatrimoineComplet {
       age: 35, age_cible: 50,
       epargne_mensuelle: 800,
       revenu_passif_cible: 3000,
+      revenu_passif_cible_ajuste: 3000,   // QW9 — pas d'ajustement famille dans cette fixture
       revenu_mensuel_total: 5000,
       charges_mensuelles: 2000,
       risk_score: 50,

@@ -193,7 +193,9 @@ export default async function DashboardPage() {
     epargne_mensuelle_actuelle:   patrimoineComplet.fireInputs.epargne_mensuelle,
     epargne_mensuelle_necessaire: proj?.epargne_mensuelle_necessaire ?? null,
     revenu_passif_actuel:         patrimoineComplet.revenuPassifActuel,
-    revenu_passif_cible:          patrimoineComplet.fireInputs.revenu_passif_cible,
+    // QW9 — Cible AJUSTÉE composition foyer (cohérence avec patrimoine_fire_cible
+    // qui est calculé sur la même valeur dans computeProjectionSnapshot).
+    revenu_passif_cible:          patrimoineComplet.fireInputs.revenu_passif_cible_ajuste,
   }
 
   // ── Calculs patrimoine ────────────────────────────────────────────────────

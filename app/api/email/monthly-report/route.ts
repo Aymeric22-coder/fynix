@@ -279,7 +279,8 @@ async function buildReportData(
     age_fire_projete_median:       projSnap?.age_fire_median ?? projSnap?.age_fire_projete ?? 0,
     age_fire_cible:                patrimoine.fireInputs.age_cible ?? 0,
     revenu_passif_actuel:          Math.round(patrimoine.revenuPassifActuel),
-    revenu_passif_cible:           Math.round(patrimoine.fireInputs.revenu_passif_cible),
+    // QW9 — Cible AJUSTÉE composition foyer (cohérence avec patrimoine_fire_cible).
+    revenu_passif_cible:           Math.round(patrimoine.fireInputs.revenu_passif_cible_ajuste),
     actions_du_mois:               actions,
     repartition,
     meilleure_performance:         meilleurePerf,

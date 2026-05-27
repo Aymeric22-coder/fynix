@@ -89,7 +89,8 @@ export const POST = withAuth(async (_req: Request, user: User) => {
                      + `${String(today.getUTCMonth() + 1).padStart(2, '0')}-`
                      + `${String(today.getUTCDate()).padStart(2, '0')}`
 
-  const cibleFire = (patrimoine.fireInputs.revenu_passif_cible ?? 0) * 12 * 25
+  // QW9 — Cible AJUSTÉE composition foyer (cf. aggregateur > loadProfile).
+  const cibleFire = (patrimoine.fireInputs.revenu_passif_cible_ajuste ?? 0) * 12 * 25
   const progressionFirePct = cibleFire > 0
     ? Math.round((patrimoine.totalNet / cibleFire) * 100 * 10000) / 10000
     : null

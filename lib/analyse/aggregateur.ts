@@ -335,7 +335,15 @@ interface ProfileLoaded {
   age:                  number | null
   age_cible:            number | null
   epargne_mensuelle:    number
+  /** Cible saisie BRUTE par l'utilisateur dans le wizard. Source des sliders /
+   *  saisies. À NE PAS utiliser pour les calculs FIRE aval — passer par
+   *  `revenu_passif_cible_ajuste`. */
   revenu_passif_cible:  number
+  /** Cible AJUSTÉE à la composition du foyer (= brut + adjustCibleFamille).
+   *  Reflète enfants (+300 €/mois/enfant) + couple marié/PACS sans revenu
+   *  conjoint (+50 % de la cible). Source unique pour tout calcul FIRE
+   *  (capital cible, âge FIRE, score Progression FIRE, recos). QW9. */
+  revenu_passif_cible_ajuste: number
   revenu_mensuel_total: number    // vous + conjoint + autres
   charges_mensuelles:   number
   risk_score:           number
@@ -369,7 +377,10 @@ async function loadProfile(userId: string): Promise<ProfileLoaded> {
     return {
       prenom: null, profilType: null,
       age: null, age_cible: null,
-      epargne_mensuelle: 0, revenu_passif_cible: 0, revenu_mensuel_total: 0,
+      epargne_mensuelle: 0,
+      revenu_passif_cible: 0,
+      revenu_passif_cible_ajuste: 0,
+      revenu_mensuel_total: 0,
       charges_mensuelles: 0, risk_score: 50, enveloppes: [], tmi_rate: null,
       situation_familiale: null, enfants: null, fire_type: null,
       priorite: null, stabilite_revenus: null,
@@ -379,7 +390,7 @@ async function loadProfile(userId: string): Promise<ProfileLoaded> {
 
   // Réutilise la lib du module Profil (déjà testée). Import dynamique pour
   // éviter une circularité au boot.
-  const { riskScore, experienceScore, inferProfileType } = await import('@/lib/profil/calculs')
+  const { riskScore, experienceScore, inferProfileType, adjustCibleFamille } = await import('@/lib/profil/calculs')
   const risk = riskScore({ risk_1: p.risk_1, risk_2: p.risk_2, risk_3: p.risk_3, risk_4: p.risk_4 })
   const exp  = experienceScore({
     bourse: { correct: countCorrect(p.quiz_bourse), total: 4 },
@@ -389,13 +400,33 @@ async function loadProfile(userId: string): Promise<ProfileLoaded> {
   const charges       = num(p.loyer) + num(p.autres_credits) + num(p.charges_fixes) + num(p.depenses_courantes)
   const revenuMensuel = num(p.revenu_mensuel) + num(p.revenu_conjoint) + num(p.autres_revenus)
 
+  // QW9 — Cible FIRE ajustée à la composition du foyer.
+  // Brut = ce que l'utilisateur a saisi (Step8 wizard). Ajusté = brut +
+  // adjustCibleFamille (cf. lib/profil/calculs.ts) qui ajoute +300 €/mois
+  // par enfant à charge + 50 % de la cible si couple marié/PACS sans revenu
+  // conjoint déclaré. Pas de double-comptage avec revenu_mensuel_total : le
+  // delta couple ne s'applique QUE si revenu_conjoint == 0.
+  // La valeur ajustée est la source unique pour TOUS les calculs FIRE aval
+  // (capital cible, âge FIRE, scores, recos, snapshots, email mensuel).
+  // La valeur brute reste exposée pour l'édition (sliders ProjectionFIRE.tsx)
+  // et la carte de profil (ProfilCard, hors périmètre QW9).
+  const cibleBrute = num(p.revenu_passif_cible)
+  const deltaFamille = adjustCibleFamille({
+    enfants:             p.enfants,
+    situation_familiale: p.situation_familiale,
+    revenu_conjoint:     num(p.revenu_conjoint),
+    revenu_passif_cible: cibleBrute,
+  })
+  const cibleAjustee = cibleBrute + deltaFamille
+
   return {
     prenom:              p.prenom,
     profilType:          inferProfileType(risk, exp),
     age:                 p.age,
     age_cible:           p.age_cible,
     epargne_mensuelle:   num(p.epargne_mensuelle),
-    revenu_passif_cible: num(p.revenu_passif_cible),
+    revenu_passif_cible:        cibleBrute,
+    revenu_passif_cible_ajuste: cibleAjustee,
     revenu_mensuel_total: revenuMensuel,
     charges_mensuelles:  charges,
     risk_score:          risk,
@@ -698,7 +729,10 @@ export async function getPatrimoineComplet(userId: string): Promise<PatrimoineCo
     age:                  profile.age,
     age_cible:            profile.age_cible,
     epargne_mensuelle:    profile.epargne_mensuelle,
-    revenu_passif_cible:  profile.revenu_passif_cible,
+    // QW9 — Brut conservé pour saisie/édition (slider ProjectionFIRE),
+    // ajusté pour TOUS les calculs FIRE aval (capital, âge, scores, recos).
+    revenu_passif_cible:        profile.revenu_passif_cible,
+    revenu_passif_cible_ajuste: profile.revenu_passif_cible_ajuste,
     revenu_mensuel_total: profile.revenu_mensuel_total,
     charges_mensuelles:   profile.charges_mensuelles,
     risk_score:           profile.risk_score,
@@ -739,7 +773,8 @@ export async function getPatrimoineComplet(userId: string): Promise<PatrimoineCo
     projectionFIRESnapshot: computeProjectionSnapshot({
       ageActuel:             profile.age,
       ageCible:              profile.age_cible,
-      revenuPassifCible:     profile.revenu_passif_cible,
+      // QW9 — Cible AJUSTÉE composition foyer (cf. loadProfile pour la dérivation).
+      revenuPassifCible:     profile.revenu_passif_cible_ajuste,
       epargneMensuelle:      profile.epargne_mensuelle,
       rendementCentral:      Math.max(3, Math.min(12,
         calculerRendementPortefeuille({

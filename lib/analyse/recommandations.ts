@@ -154,7 +154,7 @@ export function genererRecommandations(
     // Calcul d'impact : que se passe-t-il si on convertit 50% du cash en
     // épargne mensuelle équivalente (étalée sur 24 mois) ?
     let moisGagnes: number | null = null
-    if (p.fireInputs.age && p.fireInputs.age_cible && p.fireInputs.revenu_passif_cible > 0) {
+    if (p.fireInputs.age && p.fireInputs.age_cible && p.fireInputs.revenu_passif_cible_ajuste > 0) {
       const deltaEpargneMensuelle = moitieCashAInvestir / 24
       const gainAnnees = calculerImpactEpargne({
         patrimoineActuel:    p.totalNet,
@@ -162,7 +162,8 @@ export function genererRecommandations(
         rendementCentral:    Math.max(p.rendementEstime, 5),
         ageActuel:           p.fireInputs.age,
         ageCible:            p.fireInputs.age_cible,
-        revenuPassifCible:   p.fireInputs.revenu_passif_cible,
+        // QW9 — Cible AJUSTÉE composition foyer (cf. aggregateur > loadProfile).
+        revenuPassifCible:   p.fireInputs.revenu_passif_cible_ajuste,
       }, deltaEpargneMensuelle)
       if (gainAnnees > 0) {
         moisGagnes = Math.round(gainAnnees * 12)
@@ -241,8 +242,9 @@ export function genererRecommandations(
   }
 
   // 7. Retard sur objectif FIRE
-  if (p.fireInputs.age && p.fireInputs.age_cible && p.fireInputs.revenu_passif_cible > 0) {
-    const cible          = p.fireInputs.revenu_passif_cible * 12 * 25
+  // QW9 — Cible AJUSTÉE composition foyer (cf. aggregateur > loadProfile).
+  if (p.fireInputs.age && p.fireInputs.age_cible && p.fireInputs.revenu_passif_cible_ajuste > 0) {
+    const cible          = p.fireInputs.revenu_passif_cible_ajuste * 12 * 25
     const anneesObjectif = p.fireInputs.age_cible - p.fireInputs.age
     if (anneesObjectif > 0 && p.totalNet < cible) {
       // anneesNec = à partir des intérêts composés à 7 %
@@ -266,7 +268,8 @@ export function genererRecommandations(
           rendementCentral:    Math.max(p.rendementEstime, 5),
           ageActuel:           p.fireInputs.age,
           ageCible:            p.fireInputs.age_cible,
-          revenuPassifCible:   p.fireInputs.revenu_passif_cible,
+          // QW9 — Cible AJUSTÉE composition foyer (cf. aggregateur > loadProfile).
+          revenuPassifCible:   p.fireInputs.revenu_passif_cible_ajuste,
         }, DELTA_EPARGNE_TEST)
         const moisGagnes = gainAnnees > 0 ? Math.round(gainAnnees * 12) : null
         push(out, {

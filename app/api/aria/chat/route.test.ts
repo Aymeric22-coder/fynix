@@ -81,7 +81,7 @@ vi.mock('@/lib/analyse/aggregateur', () => ({
     totalBrut: 100_000, totalNet: 100_000, totalPortefeuille: 50_000,
     totalImmo: 0, totalCash: 50_000, totalDettes: 0,
     positions: [], biens: [], comptes: [],
-    fireInputs: { age: 35, age_cible: 50, epargne_mensuelle: 1000, revenu_passif_cible: 3000, charges_mensuelles: 2000, revenu_mensuel_total: 5000, risk_score: 60, enveloppes: [], tmi_rate: 0.3, tmi_estime: false, actions_eu_value: 0 },
+    fireInputs: { age: 35, age_cible: 50, epargne_mensuelle: 1000, revenu_passif_cible: 3000, revenu_passif_cible_ajuste: 3000, charges_mensuelles: 2000, revenu_mensuel_total: 5000, risk_score: 60, enveloppes: [], tmi_rate: 0.3, tmi_estime: false, actions_eu_value: 0 },
     repartitionClasses: [], repartitionSectorielle: [], repartitionGeo: [],
     scores: {}, recommandations: [], rendementEstime: 5,
   })),
