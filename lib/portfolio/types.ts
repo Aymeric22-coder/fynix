@@ -78,6 +78,18 @@ export interface PositionValuation {
   priceSource:       string | null
   /** Statut de la position. */
   status:            PositionStatus
+  /**
+   * Cost basis convertie en devise de référence (par `aggregate` via `fxConvert`).
+   * Rempli uniquement pour les positions actives ET dont la conversion FX a réussi.
+   * Permet aux consommateurs (persist-snapshot, build-from-db) d'agréger par
+   * enveloppe / classe en devise ref sans refaire eux-mêmes la conversion FX.
+   * `0` si la position est inactive ou si fxConvert a échoué.
+   */
+  costBasisRef:      number
+  /** Market value convertie en devise ref. `null` si pas de prix ou FX KO. */
+  marketValueRef:    number | null
+  /** PnL latente convertie en devise ref. `null` si pas de prix ou FX KO. */
+  unrealizedPnLRef:  number | null
 }
 
 /** Vue agrégée du portefeuille pour le cockpit. */

@@ -149,6 +149,11 @@ function valueSinglePosition(
     unrealizedPnLPct,
     priceSource,
     status:           pos.status,
+    // Initialisation : remplis par `aggregate` quand la position est active
+    // et que la conversion FX vers la devise ref a reussi. Sinon reste a 0/null.
+    costBasisRef:     0,
+    marketValueRef:   null,
+    unrealizedPnLRef: null,
   }
 }
 
@@ -180,6 +185,10 @@ function aggregate(
 
     const costRef = v.costBasis * factor
     totalCostBasisRef += costRef
+    // Expose la valeur ref sur la valuation pour permettre une agrégation
+    // ultérieure par enveloppe / classe sans refaire de conversion FX
+    // (cf. persist-snapshot.ts, build-from-db.ts).
+    v.costBasisRef = costRef
 
     // Effective value : prix de marche si dispo, sinon repli sur le cost_basis
     // pour ne pas exclure les positions a valorisation rare (SCPI, REIT non
@@ -196,10 +205,15 @@ function aggregate(
       if (!v.priceStale) freshCount++
       byClass.set(v.assetClass, (byClass.get(v.assetClass) ?? 0) + mv)
       byEnvelope.set(v.envelopeId, (byEnvelope.get(v.envelopeId) ?? 0) + mv)
+      v.marketValueRef   = mv
+      v.unrealizedPnLRef = mv - costRef
     } else {
       totalMarketValueRef += costRef
       byClass.set(v.assetClass, (byClass.get(v.assetClass) ?? 0) + costRef)
       byEnvelope.set(v.envelopeId, (byEnvelope.get(v.envelopeId) ?? 0) + costRef)
+      // marketValueRef / unrealizedPnLRef restent null : pas de prix → pas
+      // de PV inventee. Le fallback cost_basis n'est utilise que pour la
+      // valeur effective de l'allocation, pas pour des metriques de PnL.
     }
   }
 

@@ -29,6 +29,11 @@ import {
   type DividendTx,
   type PortfolioDividendSummary,
 } from './dividends'
+import {
+  computeEnvelopePerformance,
+  type EnvelopePerformance,
+} from './envelope-performance'
+import type { ValuePoint, CashFlow } from './analytics'
 
 // ─── DB row types (lecture seule, ce qu'on attend du SELECT) ────────────
 
@@ -104,14 +109,20 @@ export const NO_ENVELOPE_KEY = '__no_envelope__'
  */
 export interface PortfolioSummaryWithFx extends PortfolioSummary {
   /** Vide si toutes les paires ont été résolues. */
-  excludedForFx:  UnresolvedFxPair[]
+  excludedForFx:       UnresolvedFxPair[]
   /** Agrégat dividendes 12 mois glissants (E3). En devise ref. */
-  dividends:      PortfolioDividendSummary
+  dividends:           PortfolioDividendSummary
   /**
    * Plus-values réalisées 12 mois glissants (R6). `null` si aucune vente
    * portant un `realized_pnl` non nul sur la période.
    */
-  realizedPnlTtm: PortfolioRealizedPnlTtm | null
+  realizedPnlTtm:      PortfolioRealizedPnlTtm | null
+  /**
+   * Performance détaillée par enveloppe (E12 / Étape 3) :
+   * currentValue, investedValue, unrealizedPnl, realizedPnlTtm, TWR, MWR.
+   * Vide tant que l'utilisateur n'a pas d'enveloppe avec position active.
+   */
+  envelopePerformance: EnvelopePerformance[]
 }
 
 export interface PortfolioResultWithFx {
@@ -226,6 +237,78 @@ export async function buildPortfolioFromDb(
     position:     { envelope_id: string | null } | { envelope_id: string | null }[] | null
   }
   const realizedSales: RealizedRow[] = (realizedRows ?? []) as RealizedRow[]
+
+  // 3.quart — Performance par enveloppe (Étape 3 / E12). On charge en parallèle :
+  //   - Labels des enveloppes (financial_envelopes.name)
+  //   - Snapshots par enveloppe (portfolio_snapshots WHERE envelope_id IS NOT NULL)
+  //   - Cash flows par enveloppe via JOIN transactions → positions (envelope_id
+  //     n'existe PAS sur transactions — c'est positions.envelope_id qui porte
+  //     l'info, d'où le foreign join).
+  const [
+    { data: envelopeNameRows },
+    { data: envelopeSnapshotRows },
+    { data: envelopeCashFlowRows },
+  ] = await Promise.all([
+    supabase
+      .from('financial_envelopes')
+      .select('id, name')
+      .eq('user_id', userId),
+    supabase
+      .from('portfolio_snapshots')
+      .select('envelope_id, snapshot_date, total_market_value')
+      .eq('user_id', userId)
+      .not('envelope_id', 'is', null)
+      .order('snapshot_date', { ascending: true }),
+    supabase
+      .from('transactions')
+      .select('transaction_type, amount, executed_at, position:positions!position_id(envelope_id)')
+      .eq('user_id', userId)
+      .in('transaction_type', ['purchase', 'sale'])
+      .not('position_id', 'is', null),
+  ])
+
+  interface EnvNameRow      { id: string; name: string }
+  interface EnvSnapRow      { envelope_id: string; snapshot_date: string; total_market_value: number }
+  interface EnvCashFlowRow  {
+    transaction_type: 'purchase' | 'sale'
+    amount:           number
+    executed_at:      string
+    position:         { envelope_id: string | null } | { envelope_id: string | null }[] | null
+  }
+
+  const envelopeLabels: Record<string, string> = {}
+  for (const e of (envelopeNameRows ?? []) as EnvNameRow[]) {
+    envelopeLabels[e.id] = e.name
+  }
+
+  // Bucket des snapshots par envelope_id
+  const snapshotsByEnvelope: Record<string, ValuePoint[]> = {}
+  for (const s of (envelopeSnapshotRows ?? []) as EnvSnapRow[]) {
+    const arr = snapshotsByEnvelope[s.envelope_id] ?? []
+    arr.push({ date: s.snapshot_date, value: Number(s.total_market_value) })
+    snapshotsByEnvelope[s.envelope_id] = arr
+  }
+
+  // Bucket des cash flows par envelope_id, en respectant la convention
+  // `CashFlow.amount` (positif = apport, inversion vs transactions.amount —
+  // cf. lib/portfolio/cash-flows.ts).
+  const cashFlowsByEnvelope: Record<string, CashFlow[]> = {}
+  for (const t of (envelopeCashFlowRows ?? []) as EnvCashFlowRow[]) {
+    const posRel  = Array.isArray(t.position) ? t.position[0] ?? null : t.position
+    const envId   = posRel?.envelope_id ?? null
+    if (envId === null) continue
+    const arr = cashFlowsByEnvelope[envId] ?? []
+    arr.push({
+      date:   t.executed_at.slice(0, 10),
+      amount: -Number(t.amount),
+    })
+    cashFlowsByEnvelope[envId] = arr
+  }
+  // Tri chronologique des cash flows par enveloppe (le helper TWR/MWR
+  // trie en interne, mais on garde le contrat propre).
+  for (const arr of Object.values(cashFlowsByEnvelope)) {
+    arr.sort((a, b) => a.date.localeCompare(b.date))
+  }
 
   // 4. Mapping vers les types purs
   const positionInputs: PositionInput[] = positions.map((p) => ({
@@ -377,9 +460,36 @@ export async function buildPortfolioFromDb(
     realizedPnlTtm = { total, byEnvelope }
   }
 
+  // 10. Performance par enveloppe (Étape 3 / E12).
+  //     Les positions ont été enrichies par `valuePortfolio` ci-dessus avec
+  //     costBasisRef / marketValueRef / unrealizedPnLRef → on peut agréger
+  //     par enveloppe sans refaire de FX. realizedPnlTtm.byEnvelope (R6)
+  //     est passé tel quel — `__no_envelope__` est simplement ignoré par
+  //     le helper qui n'itère que sur les enveloppes réelles.
+  const realizedPnlTtmByEnvelopeMap: Record<string, number> = {}
+  if (realizedPnlTtm) {
+    for (const [k, v] of Object.entries(realizedPnlTtm.byEnvelope)) {
+      if (k !== '__no_envelope__') realizedPnlTtmByEnvelopeMap[k] = v
+    }
+  }
+  const envelopePerformance = computeEnvelopePerformance({
+    positions:                result.positions,
+    envelopeLabels,
+    snapshotsByEnvelope,
+    cashFlowsByEnvelope,
+    realizedPnlTtmByEnvelope: realizedPnlTtmByEnvelopeMap,
+    totalMarketValueRef:      result.summary.totalMarketValue,
+  })
+
   return {
     positions: result.positions,
-    summary:   { ...result.summary, excludedForFx, dividends, realizedPnlTtm },
+    summary:   {
+      ...result.summary,
+      excludedForFx,
+      dividends,
+      realizedPnlTtm,
+      envelopePerformance,
+    },
   }
 }
 
@@ -405,6 +515,7 @@ function emptyResult(ref: CurrencyCode): PortfolioResultWithFx {
         yieldOnMarket: null,
       },
       realizedPnlTtm:        null,
+      envelopePerformance:   [],
     },
   }
 }

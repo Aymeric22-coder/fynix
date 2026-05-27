@@ -29,9 +29,15 @@ const mockedGetFxRate = vi.mocked(getFxRate)
 // `await` récupère { data, error }.
 
 interface TableData {
-  positions:          unknown[]
-  instruments:        unknown[]
-  instrument_prices:  unknown[]
+  positions:           unknown[]
+  instruments:         unknown[]
+  instrument_prices:   unknown[]
+  // Tables additionnelles introduites par R6 / E12 (Étape 3). Par défaut
+  // vides — les tests qui veulent peupler les snapshots ou cash flows
+  // par enveloppe les fournissent explicitement.
+  financial_envelopes?: unknown[]
+  portfolio_snapshots?: unknown[]
+  transactions?:        unknown[]
 }
 
 function makeSupabaseStub(data: TableData) {
@@ -40,6 +46,7 @@ function makeSupabaseStub(data: TableData) {
       select: () => chain,
       eq:     () => chain,
       in:     () => chain,
+      or:     () => chain,
       order:  () => chain,
       not:    () => chain,   // requête R6 (realized_pnl IS NOT NULL)
       gte:    () => chain,   // requête R6 (executed_at >= cutoff)
@@ -52,7 +59,9 @@ function makeSupabaseStub(data: TableData) {
 
   return {
     from(table: keyof TableData) {
-      return makeChain(data[table])
+      // Tables optionnelles : si non fournies par le test, on renvoie [].
+      const rows = data[table] ?? []
+      return makeChain(rows as unknown[])
     },
   } as unknown as Parameters<typeof buildPortfolioFromDb>[0]
 }

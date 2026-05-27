@@ -17,6 +17,7 @@ import {
 import { CategoryTabs }               from '@/components/portfolio/category-tabs'
 import { FxFallbackBanner }           from '@/components/portfolio/fx-fallback-banner'
 import { RealizedPnlCard }            from '@/components/portfolio/realized-pnl-card'
+import { EnvelopePerformanceTable }   from '@/components/portfolio/envelope-performance-table'
 import {
   formatCurrency, formatPercent, formatQuantity,
   ASSET_CLASS_LABELS,
@@ -307,6 +308,15 @@ export default async function PortefeuillePage({ searchParams }: Props) {
               envelopeLabels={Object.fromEntries(
                 (envelopes ?? []).map((e) => [e.id, e.name]),
               )}
+            />
+          </div>
+
+          {/* ── Tableau Performance par enveloppe (E12 / Étape 4).
+              Le composant se rend lui-même conditionnel (≥ 2 enveloppes). */}
+          <div className="mb-6">
+            <EnvelopePerformanceTable
+              data={fullResult.summary.envelopePerformance}
+              currency={summary.referenceCurrency}
             />
           </div>
 

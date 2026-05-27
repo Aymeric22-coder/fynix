@@ -895,6 +895,11 @@ export interface PortfolioSnapshot {
   positions_count:        number
   freshness_ratio:        number | null
   created_at:             string
+  // ── Migration 044 — Snapshots par enveloppe ──
+  // NULL = snapshot global du portefeuille entier (comportement historique).
+  // Non-NULL = snapshot d'une enveloppe specifique (PEA, CTO, AV...).
+  // Les deux coexistent pour la meme date — cf. index uniques partiels.
+  envelope_id:            string | null
 }
 
 /** Sprint 1 — Migration 025 : dedup imports CSV par SHA-256. */

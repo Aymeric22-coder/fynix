@@ -27,6 +27,11 @@ const p = (over: Partial<PositionValuation> = {}): PositionValuation => ({
   unrealizedPnLPct: 10,
   priceSource:      'test',
   status:           'active',
+  // Champs en devise ref (migration 044 / valuation.ts) — pour ce factory
+  // de test on travaille déjà en EUR donc Ref = local.
+  costBasisRef:     1000,
+  marketValueRef:   1100,
+  unrealizedPnLRef: 100,
   ...over,
 })
 
