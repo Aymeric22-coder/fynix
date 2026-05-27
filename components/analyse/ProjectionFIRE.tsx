@@ -108,7 +108,15 @@ function ProjectionFIREInner({ patrimoine, lastUpdatedAt }: Props) {
 
   const [epargne,           setEpargne]           = useState<number>(fi.epargne_mensuelle)
   const [rendement,         setRendement]         = useState<number>(rendementDefaut)
+  // QW9 — Le slider édite la cible BRUTE (= ce que l'utilisateur a saisi
+  // dans le wizard). Le delta famille (enfants + couple sans revenu conjoint)
+  // est figé par le profil sauvegardé et recomposé au moment du calcul ci-
+  // dessous, pour rester cohérent avec le Hero / score Progression FIRE
+  // qui consomment, eux, la cible ajustée.
   const [revenuCible,       setRevenuCible]       = useState<number>(fi.revenu_passif_cible)
+  // Delta famille figé pour la session (le slider ne le modifie pas).
+  // = revenu_passif_cible_ajuste − revenu_passif_cible (calculé par loadProfile).
+  const deltaFamille = Math.max(0, fi.revenu_passif_cible_ajuste - fi.revenu_passif_cible)
   const [appreciationImmo,  setAppreciationImmo]  = useState<number>(2)
   const [inflationLoyers,   setInflationLoyers]   = useState<number>(1.5)
   // Sprint 3 sliders
@@ -131,7 +139,9 @@ function ProjectionFIREInner({ patrimoine, lastUpdatedAt }: Props) {
   const baseInputs = useMemo(() => ({
     ageActuel:                 fi.age!,
     ageCible:                  fi.age_cible!,
-    revenuPassifCible:         revenuCible,
+    // QW9 — Cible effective = brut (slider) + delta famille (figé profil).
+    // Cohérent avec ce que le Hero / score Progression FIRE consomment.
+    revenuPassifCible:         revenuCible + deltaFamille,
     epargneMensuelle:          epargne,
     rendementCentral:          rendement,
     appreciationImmoPct:       appreciationImmo,
@@ -145,7 +155,7 @@ function ProjectionFIREInner({ patrimoine, lastUpdatedAt }: Props) {
     biensExistants:            patrimoine.biens,
     acquisitionsFutures:       acquisitions,
   }), [
-    fi.age, fi.age_cible, revenuCible, epargne, rendement,
+    fi.age, fi.age_cible, revenuCible, deltaFamille, epargne, rendement,
     appreciationImmo, inflationLoyers, inflationGenerale, swr, epargneCroissance,
     tauxFiscalDefaut, patrimoine, acquisitions,
   ])
@@ -465,7 +475,9 @@ function ProjectionFIREInner({ patrimoine, lastUpdatedAt }: Props) {
           age_actuel={fi.age!}
           age_cible={fi.age_cible!}
           cible_fire={result.ciblePatrimoineAjusteeInflation}
-          revenu_passif_cible={revenuCible}
+          // QW9 — Cible effective passée au stress-test = brut + delta famille,
+          // cohérent avec ce qui est utilisé pour cible_fire (calcul ajusté).
+          revenu_passif_cible={revenuCible + deltaFamille}
           rendement_central_pct={rendement}
           swr_pct={swr}
           inflation_pct={inflationGenerale}

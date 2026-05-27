@@ -50,6 +50,9 @@ export function buildTextResponse(
       return (
         `${bonjour(p)}d'après ton questionnaire, tu es un profil **${inv}** (${age}${ageCible}). ` +
         `Ton score de tolérance au risque est ${Math.round(p.fireInputs.risk_score)}/100. ` +
+        // QW9 — On utilise la cible BRUTE ici (texte conversationnel "tu vises X").
+        // L'utilisateur reconnaît ainsi ce qu'il a déclaré saisir. Les calculs
+        // ARIA en aval (computeMetrics, projectionInputs) utilisent eux l'ajustée.
         `Tu vises un revenu passif de ${fmtEur(p.fireInputs.revenu_passif_cible)}/mois à terme. ` +
         `Tes enveloppes actives : ${p.fireInputs.enveloppes.length > 0 ? p.fireInputs.enveloppes.join(', ') : '(à compléter)'}.`
       )

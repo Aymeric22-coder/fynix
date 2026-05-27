@@ -64,7 +64,8 @@ function EpargneTab({ patrimoine }: { patrimoine: PatrimoineComplet }) {
     rendementCentral:    Math.max(patrimoine.rendementEstime, 5),
     ageActuel:           patrimoine.fireInputs.age ?? 30,
     ageCible:            patrimoine.fireInputs.age_cible ?? 55,
-    revenuPassifCible:   patrimoine.fireInputs.revenu_passif_cible,
+    // QW9 — Cible AJUSTÉE composition foyer (cf. aggregateur > loadProfile).
+    revenuPassifCible:   patrimoine.fireInputs.revenu_passif_cible_ajuste,
     deltaEpargneMensuel: delta,
   }), [patrimoine, delta])
 
@@ -142,7 +143,8 @@ function ImmoTab({ patrimoine }: { patrimoine: PatrimoineComplet }) {
     rendementCentral:    Math.max(patrimoine.rendementEstime, 5),
     ageActuel:           patrimoine.fireInputs.age ?? 30,
     ageCible:            patrimoine.fireInputs.age_cible ?? 55,
-    revenuPassifCible:   patrimoine.fireInputs.revenu_passif_cible,
+    // QW9 — Cible AJUSTÉE composition foyer (cf. aggregateur > loadProfile).
+    revenuPassifCible:   patrimoine.fireInputs.revenu_passif_cible_ajuste,
     prix_bien:           prix,
     loyer_mensuel:       loyer,
     charges_mensuelles:  charges,

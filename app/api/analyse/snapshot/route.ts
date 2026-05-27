@@ -62,7 +62,8 @@ export const POST = withAuth(async (req: Request, user: User) => {
                      + `${String(today.getUTCDate()).padStart(2, '0')}`
 
   // Progression FIRE : patrimoine_net / cible × 100. Null si pas de cible.
-  const cibleFire = (p.fireInputs.revenu_passif_cible ?? 0) * 12 * 25
+  // QW9 — Cible AJUSTÉE composition foyer (cf. aggregateur > loadProfile).
+  const cibleFire = (p.fireInputs.revenu_passif_cible_ajuste ?? 0) * 12 * 25
   const progressionFirePct = cibleFire > 0
     ? Math.round((p.totalNet / cibleFire) * 100 * 10000) / 10000
     : null

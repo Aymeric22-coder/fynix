@@ -340,7 +340,17 @@ export interface PatrimoineComplet {
     age:                 number | null
     age_cible:           number | null
     epargne_mensuelle:   number   // €/mois
-    revenu_passif_cible: number   // €/mois
+    revenu_passif_cible: number   // €/mois — VALEUR BRUTE saisie par l'utilisateur dans le wizard.
+                                  //   Utilisée pour l'édition (sliders, wizard).
+                                  //   ⚠ Ne PAS utiliser pour les calculs FIRE en aval — passer par
+                                  //   `revenu_passif_cible_ajuste` qui reflète la composition familiale.
+    /** Cible AJUSTÉE à la composition du foyer (= brut + adjustCibleFamille).
+     *  Source unique pour tout calcul de capital/âge FIRE en aval
+     *  (computeProjectionSnapshot, calculerProgressionFIRE, recos #3/#7,
+     *  WhatIfSimulator, ARIA, snapshots quotidiens, rapport email mensuel).
+     *  La carte de profil (ProfilCard) reste sur la valeur BRUTE pour l'instant
+     *  — un ticket de réconciliation est ouvert séparément (cf. .audit/analyseprofil.md). */
+    revenu_passif_cible_ajuste: number   // €/mois
     charges_mensuelles:  number   // pour le scoring solidité (loyer + crédits + fixes + courantes)
     /** Revenu mensuel total (vous + conjoint + autres revenus) — utilisé
      *  par le score Solidité pour calculer le taux d'effort. */

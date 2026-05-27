@@ -22,7 +22,10 @@ export function buildProjectionInputs(
 ): ProjectionInputs | null {
   const age      = p.fireInputs.age
   const ageCible = p.fireInputs.age_cible
-  const revenuPassifCible = p.fireInputs.revenu_passif_cible
+  // QW9 — Cible AJUSTÉE composition foyer (cf. aggregateur > loadProfile).
+  // Les simulations ARIA (DCA, acquisition, stress-test) doivent partir de la
+  // même cible que le reste de /analyse.
+  const revenuPassifCible = p.fireInputs.revenu_passif_cible_ajuste
 
   if (age === null || ageCible === null || revenuPassifCible <= 0) return null
   if (ageCible <= age) return null
