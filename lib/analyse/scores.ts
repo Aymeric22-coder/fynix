@@ -370,9 +370,13 @@ export function calculerProgressionFIRE(p: PatrimoineComplet): Score {
   const manque = Math.max(0, cible - actuel)
   const couvertureFirePct = Math.round((revenuImmoMensuel / revenu_passif_cible) * 100)
 
+  // QW9-bis — Mention inline "foyer ajusté" visible sans ouvrir le modal,
+  // pour l'utilisateur qui voit juste la carte de score.
+  const foyerSuffix = p.fireInputs.cibleFoyerDetail.hasAdjustment ? ' · foyer ajusté' : ''
+
   return {
     value, niveau, label,
-    details: `${cheminPct} % du chemin · ${ecartTexte}`,
+    details: `${cheminPct} % du chemin · ${ecartTexte}${foyerSuffix}`,
     explanation: {
       formule:
         'Étape 1 : revenu immo net mensuel REDUIT la cible (déjà acquis)\n' +
@@ -381,7 +385,22 @@ export function calculerProgressionFIRE(p: PatrimoineComplet): Score {
         'Étape 3 : simulation intérêts composés à 7 %/an sur le patrimoine financier\n' +
         'Score = 100 si arrivé, 80+ si dans les temps, dégradé selon le retard',
       inputs: [
-        { label: 'Revenu passif cible',                    value: `${revenu_passif_cible.toFixed(0)} € / mois` },
+        // QW9-bis — Si la cible est ajustée à la composition du foyer,
+        // on expose explicitement saisi vs ajusté + les raisons. Sinon on
+        // garde la ligne unique legacy (1 chiffre, pas de bruit visuel).
+        ...(p.fireInputs.cibleFoyerDetail.hasAdjustment
+          ? [
+              { label: 'Revenu passif cible (saisi)',          value: `${p.fireInputs.cibleFoyerDetail.brut.toFixed(0)} € / mois` },
+              { label: 'Revenu passif cible (foyer ajusté)',   value: `${revenu_passif_cible.toFixed(0)} € / mois`, highlight: true as const },
+              ...p.fireInputs.cibleFoyerDetail.raisons.map((r) => ({
+                label: `  + ${r.label}`,
+                value: `+${r.montant.toFixed(0)} € / mois`,
+              })),
+            ]
+          : [
+              { label: 'Revenu passif cible',                  value: `${revenu_passif_cible.toFixed(0)} € / mois` },
+            ]
+        ),
         { label: 'Loyers nets actuels (immo)',             value: `${revenuImmoMensuel.toFixed(0)} € / mois (${couvertureFirePct} % de la cible)` },
         { label: 'Cible restante à générer (financier)',   value: `${cibleRestanteMensuel.toFixed(0)} € / mois` },
         { label: 'Patrimoine financier à constituer',      value: `${cible.toFixed(0)} €` },

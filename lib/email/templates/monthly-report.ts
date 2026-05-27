@@ -29,6 +29,9 @@ export interface MonthlyReportData {
   age_fire_cible:                  number
   revenu_passif_actuel:            number
   revenu_passif_cible:             number
+  /** QW9-bis — Suffixe parenthétique « (ajusté pour ton foyer : couple + 2 enfants) »
+   *  injecté à droite de la cible si la composition foyer l'ajuste. Vide sinon. */
+  revenu_passif_cible_foyer_label: string
   actions_du_mois:                 Array<{ titre: string; detail: string }>
   repartition:                     Array<{ label: string; pct: number; valeur: number; color?: string }>
   meilleure_performance:           { nom: string; gain_pct: number } | null
@@ -215,7 +218,7 @@ function renderFireProgress(data: MonthlyReportData, pctFire: number): string {
             <td style="font-size:12px;color:${COLORS.muted};padding-top:4px;">Revenu passif</td>
             <td align="right" style="font-size:13px;color:${COLORS.primary};padding-top:4px;font-variant-numeric:tabular-nums;">
               ${formatEur(data.revenu_passif_actuel)}/m
-              <span style="color:${COLORS.muted};font-size:11px;">sur ${formatEur(data.revenu_passif_cible)}/m visés</span>
+              <span style="color:${COLORS.muted};font-size:11px;">sur ${formatEur(data.revenu_passif_cible)}/m visés${escapeHtml(data.revenu_passif_cible_foyer_label)}</span>
             </td>
           </tr>
         </table>

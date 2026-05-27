@@ -25,6 +25,8 @@ import { genererActionsMensuelles } from '@/lib/analyse/recoMensuelles'
 import { calculerOpportunitesFiscales } from '@/lib/analyse/optimiseurFiscal'
 import { sendEmail } from '@/lib/email/sendEmail'
 import { runInBatches } from '@/lib/email/batch'
+import { buildCibleFoyerEmailLabel } from '@/lib/profil/cibleFamille'
+import { formatEur } from '@/lib/utils/format'
 import {
   generateMonthlyReportHTML,
   type MonthlyReportData,
@@ -281,6 +283,13 @@ async function buildReportData(
     revenu_passif_actuel:          Math.round(patrimoine.revenuPassifActuel),
     // QW9 — Cible AJUSTÉE composition foyer (cohérence avec patrimoine_fire_cible).
     revenu_passif_cible:           Math.round(patrimoine.fireInputs.revenu_passif_cible_ajuste),
+    // QW9-bis — Suffixe parenthétique « (3 000 € saisi, ajusté pour ton
+    // foyer : couple + 2 enfants) ». Inclut la valeur saisie explicitement
+    // pour éviter toute ambiguïté. Vide si !hasAdjustment.
+    revenu_passif_cible_foyer_label: buildCibleFoyerEmailLabel(
+      patrimoine.fireInputs.cibleFoyerDetail,
+      (eur) => formatEur(eur, { decimals: 0 }),
+    ),
     actions_du_mois:               actions,
     repartition,
     meilleure_performance:         meilleurePerf,

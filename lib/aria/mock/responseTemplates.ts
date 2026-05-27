@@ -6,6 +6,7 @@
  */
 
 import { formatCurrency, formatPercent } from '@/lib/utils/format'
+import { buildCibleFoyerAriaLabel } from '@/lib/profil/cibleFamille'
 import type { PatrimoineComplet } from '@/types/analyse'
 
 function fmtEur(v: number | null | undefined): string {
@@ -50,10 +51,12 @@ export function buildTextResponse(
       return (
         `${bonjour(p)}d'après ton questionnaire, tu es un profil **${inv}** (${age}${ageCible}). ` +
         `Ton score de tolérance au risque est ${Math.round(p.fireInputs.risk_score)}/100. ` +
-        // QW9 — On utilise la cible BRUTE ici (texte conversationnel "tu vises X").
-        // L'utilisateur reconnaît ainsi ce qu'il a déclaré saisir. Les calculs
-        // ARIA en aval (computeMetrics, projectionInputs) utilisent eux l'ajustée.
-        `Tu vises un revenu passif de ${fmtEur(p.fireInputs.revenu_passif_cible)}/mois à terme. ` +
+        // QW9 + QW9-bis — On affiche la cible BRUTE (ce que l'utilisateur a
+        // déclaré saisir) PUIS le suffixe LONG « (ajusté pour ton foyer à
+        // 5 100 €/mois — couple, 2 enfants) » si applicable. L'utilisateur
+        // reconnaît sa saisie ET comprend pourquoi ARIA raisonne sur la
+        // cible foyer dans les calculs (computeMetrics, projectionInputs).
+        `Tu vises un revenu passif de ${fmtEur(p.fireInputs.revenu_passif_cible)}/mois${buildCibleFoyerAriaLabel(p.fireInputs.cibleFoyerDetail, fmtEur)} à terme. ` +
         `Tes enveloppes actives : ${p.fireInputs.enveloppes.length > 0 ? p.fireInputs.enveloppes.join(', ') : '(à compléter)'}.`
       )
     }

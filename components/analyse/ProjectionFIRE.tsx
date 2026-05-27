@@ -25,8 +25,10 @@ import {
   SWR_DEFAUT_PCT, INFLATION_DEFAUT_PCT,
 } from '@/lib/analyse/projectionFIRE'
 import { normalizeFireType } from '@/lib/profil/calculs'
+import { adjustCibleFamilleDetail } from '@/lib/profil/cibleFamille'
 import { formatCurrency } from '@/lib/utils/format'
 import { Button } from '@/components/ui/button'
+import { CibleFoyer } from '@/components/profil/CibleFoyer'
 import { AcquisitionFutureForm } from './AcquisitionFutureForm'
 import { StressTestPanel } from './StressTestPanel'
 import { useFutureAcquisitions } from '@/hooks/use-future-acquisitions'
@@ -109,14 +111,20 @@ function ProjectionFIREInner({ patrimoine, lastUpdatedAt }: Props) {
   const [epargne,           setEpargne]           = useState<number>(fi.epargne_mensuelle)
   const [rendement,         setRendement]         = useState<number>(rendementDefaut)
   // QW9 — Le slider édite la cible BRUTE (= ce que l'utilisateur a saisi
-  // dans le wizard). Le delta famille (enfants + couple sans revenu conjoint)
-  // est figé par le profil sauvegardé et recomposé au moment du calcul ci-
-  // dessous, pour rester cohérent avec le Hero / score Progression FIRE
-  // qui consomment, eux, la cible ajustée.
+  // dans le wizard). QW9-bis : le `detailLive` est RECALCULÉ à chaque drag
+  // depuis la valeur du slider + les inputs profil bruts (situation, enfants,
+  // revenu_conjoint), de sorte que le bonus couple (+50 % de la cible)
+  // bouge avec le slider — pas figé sur la cible saisie initialement.
   const [revenuCible,       setRevenuCible]       = useState<number>(fi.revenu_passif_cible)
-  // Delta famille figé pour la session (le slider ne le modifie pas).
-  // = revenu_passif_cible_ajuste − revenu_passif_cible (calculé par loadProfile).
-  const deltaFamille = Math.max(0, fi.revenu_passif_cible_ajuste - fi.revenu_passif_cible)
+  const detailLive = useMemo(
+    () => adjustCibleFamilleDetail({
+      enfants:             fi.enfants,
+      situation_familiale: fi.situation_familiale,
+      revenu_conjoint:     fi.revenu_conjoint,
+      revenu_passif_cible: revenuCible,
+    }),
+    [revenuCible, fi.enfants, fi.situation_familiale, fi.revenu_conjoint],
+  )
   const [appreciationImmo,  setAppreciationImmo]  = useState<number>(2)
   const [inflationLoyers,   setInflationLoyers]   = useState<number>(1.5)
   // Sprint 3 sliders
@@ -139,9 +147,10 @@ function ProjectionFIREInner({ patrimoine, lastUpdatedAt }: Props) {
   const baseInputs = useMemo(() => ({
     ageActuel:                 fi.age!,
     ageCible:                  fi.age_cible!,
-    // QW9 — Cible effective = brut (slider) + delta famille (figé profil).
-    // Cohérent avec ce que le Hero / score Progression FIRE consomment.
-    revenuPassifCible:         revenuCible + deltaFamille,
+    // QW9-bis — Cible effective = detailLive.ajuste, RECALCULÉ en live à
+    // partir de la valeur du slider. Le bonus couple bouge donc avec le
+    // slider (50 % de la cible courante), les enfants restent à +300 €/N.
+    revenuPassifCible:         detailLive.ajuste,
     epargneMensuelle:          epargne,
     rendementCentral:          rendement,
     appreciationImmoPct:       appreciationImmo,
@@ -155,7 +164,10 @@ function ProjectionFIREInner({ patrimoine, lastUpdatedAt }: Props) {
     biensExistants:            patrimoine.biens,
     acquisitionsFutures:       acquisitions,
   }), [
-    fi.age, fi.age_cible, revenuCible, deltaFamille, epargne, rendement,
+    // revenuCible n'est pas listé : il influence baseInputs uniquement via
+    // detailLive.ajuste (cf. useMemo plus haut qui dépend de revenuCible),
+    // qui est déjà dans les deps ci-dessous. Inclure les 2 = warning ESLint.
+    fi.age, fi.age_cible, detailLive.ajuste, epargne, rendement,
     appreciationImmo, inflationLoyers, inflationGenerale, swr, epargneCroissance,
     tauxFiscalDefaut, patrimoine, acquisitions,
   ])
@@ -397,8 +409,14 @@ function ProjectionFIREInner({ patrimoine, lastUpdatedAt }: Props) {
                 format={(v) => formatCurrency(v, 'EUR', { decimals: 0 })} onChange={setEpargne} />
         <Slider label="Rendement marchés"      value={rendement}        min={3}    max={12}    step={0.5}
                 format={(v) => `${v.toFixed(1)} %`} onChange={setRendement} />
-        <Slider label="Revenu passif cible"    value={revenuCible}      min={1000} max={10000} step={100}
-                format={(v) => `${formatCurrency(v, 'EUR', { decimals: 0 })}/m`} onChange={setRevenuCible} />
+        <div className="flex flex-col gap-2 min-w-0">
+          <Slider label="Revenu passif cible"    value={revenuCible}      min={1000} max={10000} step={100}
+                  format={(v) => `${formatCurrency(v, 'EUR', { decimals: 0 })}/m`} onChange={setRevenuCible} />
+          {/* QW9-bis — Badge "Pour ton foyer" recompose en live le delta
+              depuis la valeur du slider. Le composant retourne null si
+              !hasAdjustment (célibataire 0 enfant) → aucun bruit visuel. */}
+          <CibleFoyer detail={detailLive} variant="inline" />
+        </div>
         <Slider label="Appréciation immo"      value={appreciationImmo} min={0}    max={5}     step={0.5}
                 format={(v) => `${v.toFixed(1)} %`} onChange={setAppreciationImmo} />
         <Slider label="Inflation loyers"       value={inflationLoyers}  min={0}    max={4}     step={0.5}
@@ -475,9 +493,9 @@ function ProjectionFIREInner({ patrimoine, lastUpdatedAt }: Props) {
           age_actuel={fi.age!}
           age_cible={fi.age_cible!}
           cible_fire={result.ciblePatrimoineAjusteeInflation}
-          // QW9 — Cible effective passée au stress-test = brut + delta famille,
-          // cohérent avec ce qui est utilisé pour cible_fire (calcul ajusté).
-          revenu_passif_cible={revenuCible + deltaFamille}
+          // QW9-bis — Cible effective passée au stress-test = detailLive.ajuste,
+          // cohérent avec ce qui est utilisé pour cible_fire et baseInputs.
+          revenu_passif_cible={detailLive.ajuste}
           rendement_central_pct={rendement}
           swr_pct={swr}
           inflation_pct={inflationGenerale}

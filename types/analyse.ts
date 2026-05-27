@@ -347,10 +347,26 @@ export interface PatrimoineComplet {
     /** Cible AJUSTÉE à la composition du foyer (= brut + adjustCibleFamille).
      *  Source unique pour tout calcul de capital/âge FIRE en aval
      *  (computeProjectionSnapshot, calculerProgressionFIRE, recos #3/#7,
-     *  WhatIfSimulator, ARIA, snapshots quotidiens, rapport email mensuel).
-     *  La carte de profil (ProfilCard) reste sur la valeur BRUTE pour l'instant
-     *  — un ticket de réconciliation est ouvert séparément (cf. .audit/analyseprofil.md). */
+     *  WhatIfSimulator, ARIA, snapshots quotidiens, rapport email mensuel). */
     revenu_passif_cible_ajuste: number   // €/mois
+    /** QW9-bis — Décomposition de l'ajustement famille (raisons, deltas
+     *  par cause). Snapshot figé par le profil sauvegardé (= valeurs Step8).
+     *  Affiché par les surfaces de présentation (Hero, score, ProfilCard).
+     *  Le slider de /analyse RECOMPUTE en live à partir des champs bruts
+     *  (situation_familiale, enfants, revenu_conjoint) qui sont aussi
+     *  exposés ci-dessous. */
+    cibleFoyerDetail: import('@/lib/profil/cibleFamille').CibleFoyerDetail
+    /** QW9-bis — Revenu mensuel net du conjoint (€). Exposé pour permettre au
+     *  slider live de recomputer le delta couple à chaque drag. Ne participe
+     *  PAS au scoring (déjà inclus dans revenu_mensuel_total).  */
+    revenu_conjoint: number
+    /** QW9-bis — Situation familiale brute du wizard (libellé). Exposée pour
+     *  le slider live (recompute du detail à chaque drag) et la cohérence
+     *  des helpers texte. Source : profile.situation_familiale. */
+    situation_familiale: string | null
+    /** QW9-bis — Nombre d'enfants brut du wizard ("0".."4+"). Exposé pour
+     *  le slider live et les helpers texte. Source : profile.enfants. */
+    enfants: string | null
     charges_mensuelles:  number   // pour le scoring solidité (loyer + crédits + fixes + courantes)
     /** Revenu mensuel total (vous + conjoint + autres revenus) — utilisé
      *  par le score Solidité pour calculer le taux d'effort. */

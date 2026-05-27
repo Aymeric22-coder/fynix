@@ -24,6 +24,7 @@ function makeData(over: Partial<MonthlyReportData> = {}): MonthlyReportData {
     age_fire_cible:                60,
     revenu_passif_actuel:          800,
     revenu_passif_cible:           3000,
+    revenu_passif_cible_foyer_label: '',   // QW9-bis — pas d'ajustement famille par défaut
     actions_du_mois: [
       { titre: 'Rebalancer 5 000 €', detail: 'ETF → Obligataire' },
     ],

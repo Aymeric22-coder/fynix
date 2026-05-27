@@ -20,6 +20,7 @@ import { formatCurrency } from '@/lib/utils/format'
 import { computeProfileMetrics, FIRE_TYPES } from '@/lib/profil/calculs'
 import { ScoreRing } from './ScoreRing'
 import { GaugeArc } from './GaugeArc'
+import { CibleFoyer } from './CibleFoyer'
 import type { Profile } from '@/types/database.types'
 
 interface Props {
@@ -83,11 +84,43 @@ export function ProfilCard({ profile, onEdit }: Props) {
 
         <div className="card p-5">
           <p className="text-xs text-secondary uppercase tracking-widest mb-4">Objectif d&apos;indépendance</p>
+          {/* QW9-bis — Si la composition foyer ajuste la cible (couple sans
+              revenu conjoint et/ou enfants), on bascule les 3 chiffres FIRE
+              (capital cible, années, âge) sur les variantes AJUSTÉES, pour
+              éviter d'annoncer un FIRE plus précoce que la réalité foyer.
+              Si pas d'ajustement, comportement strictement inchangé (champs
+              fireTargetCapital/fireYearsValue/fireAge legacy). */}
+          {m.cibleFoyerDetail.hasAdjustment && (
+            <div className="mb-4">
+              <CibleFoyer detail={m.cibleFoyerDetail} variant="detailed" />
+            </div>
+          )}
           <ul className="space-y-3">
             <FireLine icon={<Flame size={14} className="text-accent" />}     label="Type"       value={fireDef?.name ?? '—'} accent />
-            <FireLine icon={<Target size={14} className="text-secondary" />} label="Cible"      value={formatCurrency(m.fireTargetCapital, 'EUR', { decimals: 0 })} />
-            <FireLine icon={<Hourglass size={14} className="text-accent" />} label="Estimation" value={m.fireYearsValue >= 99 ? 'N/A' : `${Math.ceil(m.fireYearsValue)} ans`} accent />
-            <FireLine icon={<Calendar size={14} className="text-secondary" />} label="Âge d&apos;indépendance" value={m.fireAge ? `${m.fireAge} ans` : '—'} />
+            <FireLine
+              icon={<Target size={14} className="text-secondary" />}
+              label="Cible"
+              value={formatCurrency(
+                m.cibleFoyerDetail.hasAdjustment ? m.fireTargetCapitalAjuste : m.fireTargetCapital,
+                'EUR',
+                { decimals: 0 },
+              )}
+            />
+            <FireLine
+              icon={<Hourglass size={14} className="text-accent" />}
+              label="Estimation"
+              value={(m.cibleFoyerDetail.hasAdjustment ? m.fireYearsValueAjuste : m.fireYearsValue) >= 99
+                ? 'N/A'
+                : `${Math.ceil(m.cibleFoyerDetail.hasAdjustment ? m.fireYearsValueAjuste : m.fireYearsValue)} ans`}
+              accent
+            />
+            <FireLine
+              icon={<Calendar size={14} className="text-secondary" />}
+              label="Âge d&apos;indépendance"
+              value={(m.cibleFoyerDetail.hasAdjustment ? m.fireAgeAjuste : m.fireAge)
+                ? `${m.cibleFoyerDetail.hasAdjustment ? m.fireAgeAjuste : m.fireAge} ans`
+                : '—'}
+            />
             {profile.priorite && (
               <FireLine icon={<Lightbulb size={14} className="text-secondary" />} label="Priorité" value={profile.priorite} />
             )}

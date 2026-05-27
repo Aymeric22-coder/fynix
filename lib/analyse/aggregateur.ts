@@ -344,6 +344,13 @@ interface ProfileLoaded {
    *  conjoint (+50 % de la cible). Source unique pour tout calcul FIRE
    *  (capital cible, âge FIRE, score Progression FIRE, recos). QW9. */
   revenu_passif_cible_ajuste: number
+  /** QW9-bis — Décomposition explicable (raisons, deltas par cause).
+   *  Source unique pour les composants UI <CibleFoyer> sur Hero / score /
+   *  ProfilCard / slider, ainsi que pour les helpers texte (email, ARIA). */
+  cibleFoyerDetail: import('@/lib/profil/cibleFamille').CibleFoyerDetail
+  /** QW9-bis — Exposé pour le slider live de /analyse (recompute du delta
+   *  couple). Pas utilisé pour le scoring (somme déjà dans revenu_mensuel_total). */
+  revenu_conjoint:  number
   revenu_mensuel_total: number    // vous + conjoint + autres
   charges_mensuelles:   number
   risk_score:           number
@@ -374,12 +381,17 @@ async function loadProfile(userId: string): Promise<ProfileLoaded> {
     .eq('id', userId)
     .maybeSingle()
   if (!data) {
+    // QW9-bis — Detail neutre (pas d'ajustement) pour profil absent.
+    // Import statique : pas de cycle (cibleFamille ne dépend pas de aggregateur).
+    const { adjustCibleFamilleDetail: _detailEmpty } = await import('@/lib/profil/cibleFamille')
     return {
       prenom: null, profilType: null,
       age: null, age_cible: null,
       epargne_mensuelle: 0,
       revenu_passif_cible: 0,
       revenu_passif_cible_ajuste: 0,
+      cibleFoyerDetail: _detailEmpty({}),
+      revenu_conjoint: 0,
       revenu_mensuel_total: 0,
       charges_mensuelles: 0, risk_score: 50, enveloppes: [], tmi_rate: null,
       situation_familiale: null, enfants: null, fire_type: null,
@@ -390,7 +402,7 @@ async function loadProfile(userId: string): Promise<ProfileLoaded> {
 
   // Réutilise la lib du module Profil (déjà testée). Import dynamique pour
   // éviter une circularité au boot.
-  const { riskScore, experienceScore, inferProfileType, adjustCibleFamille } = await import('@/lib/profil/calculs')
+  const { riskScore, experienceScore, inferProfileType } = await import('@/lib/profil/calculs')
   const risk = riskScore({ risk_1: p.risk_1, risk_2: p.risk_2, risk_3: p.risk_3, risk_4: p.risk_4 })
   const exp  = experienceScore({
     bourse: { correct: countCorrect(p.quiz_bourse), total: 4 },
@@ -400,24 +412,27 @@ async function loadProfile(userId: string): Promise<ProfileLoaded> {
   const charges       = num(p.loyer) + num(p.autres_credits) + num(p.charges_fixes) + num(p.depenses_courantes)
   const revenuMensuel = num(p.revenu_mensuel) + num(p.revenu_conjoint) + num(p.autres_revenus)
 
-  // QW9 — Cible FIRE ajustée à la composition du foyer.
+  // QW9 + QW9-bis — Cible FIRE ajustée à la composition du foyer.
   // Brut = ce que l'utilisateur a saisi (Step8 wizard). Ajusté = brut +
   // adjustCibleFamille (cf. lib/profil/calculs.ts) qui ajoute +300 €/mois
   // par enfant à charge + 50 % de la cible si couple marié/PACS sans revenu
   // conjoint déclaré. Pas de double-comptage avec revenu_mensuel_total : le
   // delta couple ne s'applique QUE si revenu_conjoint == 0.
-  // La valeur ajustée est la source unique pour TOUS les calculs FIRE aval
-  // (capital cible, âge FIRE, scores, recos, snapshots, email mensuel).
-  // La valeur brute reste exposée pour l'édition (sliders ProjectionFIRE.tsx)
-  // et la carte de profil (ProfilCard, hors périmètre QW9).
+  // La valeur ajustée est la source unique pour TOUS les calculs FIRE aval.
+  // QW9-bis : on calcule aussi le `detail` explicable (raisons par cause),
+  // exposé dans fireInputs pour les composants <CibleFoyer> en aval.
   const cibleBrute = num(p.revenu_passif_cible)
-  const deltaFamille = adjustCibleFamille({
+  const revenuConjoint = num(p.revenu_conjoint)
+  const { adjustCibleFamilleDetail } = await import('@/lib/profil/cibleFamille')
+  const cibleFoyerDetail = adjustCibleFamilleDetail({
     enfants:             p.enfants,
     situation_familiale: p.situation_familiale,
-    revenu_conjoint:     num(p.revenu_conjoint),
+    revenu_conjoint:     revenuConjoint,
     revenu_passif_cible: cibleBrute,
   })
-  const cibleAjustee = cibleBrute + deltaFamille
+  // Garantie strictement legacy : ajuste = brut + adjustCibleFamille(p).
+  // (Identité testée dans cibleFamille.test.ts.)
+  const cibleAjustee = cibleFoyerDetail.ajuste
 
   return {
     prenom:              p.prenom,
@@ -427,6 +442,8 @@ async function loadProfile(userId: string): Promise<ProfileLoaded> {
     epargne_mensuelle:   num(p.epargne_mensuelle),
     revenu_passif_cible:        cibleBrute,
     revenu_passif_cible_ajuste: cibleAjustee,
+    cibleFoyerDetail:           cibleFoyerDetail,
+    revenu_conjoint:            revenuConjoint,
     revenu_mensuel_total: revenuMensuel,
     charges_mensuelles:  charges,
     risk_score:          risk,
@@ -733,6 +750,10 @@ export async function getPatrimoineComplet(userId: string): Promise<PatrimoineCo
     // ajusté pour TOUS les calculs FIRE aval (capital, âge, scores, recos).
     revenu_passif_cible:        profile.revenu_passif_cible,
     revenu_passif_cible_ajuste: profile.revenu_passif_cible_ajuste,
+    // QW9-bis — Detail explicable + revenu_conjoint pour les composants UI
+    // et le recompute live du slider.
+    cibleFoyerDetail:           profile.cibleFoyerDetail,
+    revenu_conjoint:            profile.revenu_conjoint,
     revenu_mensuel_total: profile.revenu_mensuel_total,
     charges_mensuelles:   profile.charges_mensuelles,
     risk_score:           profile.risk_score,
