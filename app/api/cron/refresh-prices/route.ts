@@ -18,10 +18,8 @@
  */
 
 import { createClient } from '@supabase/supabase-js'
-import { buildOrchestrator } from '@/lib/portfolio/providers'
+import { refreshInstrumentPrices } from '@/lib/portfolio/refresh-prices'
 import { persistPortfolioSnapshot } from '@/lib/portfolio/persist-snapshot'
-import type { AssetClass } from '@/types/database.types'
-import type { InstrumentLookup } from '@/lib/portfolio/providers'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -29,24 +27,6 @@ export const runtime = 'nodejs'
 const SERVICE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!
 const CRON_SECRET = process.env.CRON_SECRET
-
-interface InstrumentRow {
-  id:          string
-  name:        string
-  ticker:      string | null
-  isin:        string | null
-  provider_id: string | null
-  asset_class: AssetClass
-}
-
-interface PriceInsertRow {
-  instrument_id: string
-  price:         number
-  currency:      string
-  priced_at:     string
-  source:        string
-  confidence:    string
-}
 
 export async function GET(req: Request) {
   // ── Auth ────────────────────────────────────────────────────────────────
@@ -84,71 +64,26 @@ export async function GET(req: Request) {
 
   const ids = Array.from(new Set((held ?? []).map((r) => r.instrument_id as string)))
   if (ids.length === 0) {
-    return Response.json({ refreshed: 0, skipped: 0, errors: 0, message: 'no active positions' })
+    return Response.json({
+      refreshed: 0, skipped: 0, errors: 0, protected_manual: 0,
+      message: 'no active positions',
+    })
   }
 
-  const { data: instruments, error: e2 } = await supabase
-    .from('instruments')
-    .select('id, name, ticker, isin, provider_id, asset_class')
-    .in('id', ids)
-
-  if (e2) {
-    return Response.json({ error: e2.message }, { status: 500 })
+  // ── 2. Boucle de refresh factorisee (cf. lib/portfolio/refresh-prices.ts) ─
+  //      Le helper gere : chargement instruments, orchestrateur, fetch +
+  //      upsert idempotent, et P2 (UPDATE last_refresh_attempted_at).
+  //      Specificite cron : on passe `supabase` (service-role) et on
+  //      enchaine ensuite les snapshots de TOUS les utilisateurs.
+  let refreshResult
+  try {
+    refreshResult = await refreshInstrumentPrices(supabase, ids)
+  } catch (e) {
+    return Response.json({ error: (e as Error).message }, { status: 500 })
   }
+  const { refreshed, skipped, errors, protectedManual, instrumentsScanned } = refreshResult
 
-  // ── 2. Orchestrateur ────────────────────────────────────────────────────
-  const orchestrator = await buildOrchestrator(supabase)
-
-  // ── 3. Fetch + insert ───────────────────────────────────────────────────
-  const inserts: PriceInsertRow[] = []
-  let refreshed = 0
-  let skipped = 0
-  let errors = 0
-
-  for (const inst of (instruments ?? []) as InstrumentRow[]) {
-    const lookup: InstrumentLookup = {
-      ticker:     inst.ticker,
-      isin:       inst.isin,
-      providerId: inst.provider_id,
-      assetClass: inst.asset_class,
-      name:       inst.name,
-    }
-
-    try {
-      const quote = await orchestrator.getQuote(lookup)
-      if (!quote) { skipped++; continue }
-
-      // Tronque la timestamp à la minute pour éviter la collision de l'index UNIQUE
-      const pricedAt = new Date(quote.pricedAt)
-      pricedAt.setSeconds(0, 0)
-
-      inserts.push({
-        instrument_id: inst.id,
-        price:         quote.price,
-        currency:      quote.currency,
-        priced_at:     pricedAt.toISOString(),
-        source:        quote.source,
-        confidence:    quote.confidence,
-      })
-      refreshed++
-    } catch (e) {
-      console.error(`[cron] refresh failed for ${inst.id}:`, e)
-      errors++
-    }
-  }
-
-  if (inserts.length > 0) {
-    // upsert pour éviter les duplicatas si la même minute est re-jouée
-    const { error: e3 } = await supabase
-      .from('instrument_prices')
-      .upsert(inserts, { onConflict: 'instrument_id,priced_at,source', ignoreDuplicates: true })
-
-    if (e3) {
-      return Response.json({ error: e3.message, refreshed: 0 }, { status: 500 })
-    }
-  }
-
-  // ── 4. Snapshot quotidien pour chaque utilisateur qui detient des positions ──
+  // ── 3. Snapshot quotidien pour chaque utilisateur qui detient des positions ──
   const { data: usersWithPos } = await supabase
     .from('positions')
     .select('user_id')
@@ -169,7 +104,8 @@ export async function GET(req: Request) {
     refreshed,
     skipped,
     errors,
-    instrumentsScanned: instruments?.length ?? 0,
+    protected_manual: protectedManual,
+    instrumentsScanned,
     snapshotsCreated,
   })
 }

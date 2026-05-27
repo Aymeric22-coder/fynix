@@ -604,20 +604,15 @@ export default async function PortefeuillePage({ searchParams }: Props) {
                       </td>
                       <td className="px-4 py-3 text-right">
                         {p.priceFreshAt ? (
-                          <div title={p.priceSource ? `Source : ${p.priceSource}` : undefined}>
-                            <div className={`text-xs ${p.priceStale ? 'text-warning' : 'text-secondary'}`}>
-                              {new Date(p.priceFreshAt).toLocaleString('fr-FR', {
-                                day: '2-digit', month: '2-digit',
-                                hour: '2-digit', minute: '2-digit',
-                              })}
-                            </div>
-                            {p.priceSource && (
-                              <div className="text-[10px] text-muted leading-none mt-0.5">
-                                {p.priceSource}
-                              </div>
-                            )}
-                          </div>
-                        ) : <span className="text-muted text-xs">jamais</span>}
+                          <PriceFreshnessCell
+                            priceFreshAt={p.priceFreshAt}
+                            priceSource={p.priceSource}
+                            priceStale={p.priceStale}
+                            lastRefreshAttemptedAt={p.lastRefreshAttemptedAt}
+                          />
+                        ) : (
+                          <NoPriceCell positionId={p.positionId} />
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         {editDataById.has(p.positionId) && (
@@ -635,6 +630,104 @@ export default async function PortefeuillePage({ searchParams }: Props) {
           </div>
         </>
       )}
+    </div>
+  )
+}
+
+// ─── Helpers UI : fraicheur prix + badge source (REFR P2 + P5) ───────────────
+
+/**
+ * Formate la "derniere tentative de refresh" en relatif. Retourne null si
+ * `iso` est null — l'appelant n'affiche alors PAS de mention "vérifié" plutot
+ * que de risquer un "vérifié il y a NaN j" (instruments anterieurs a la
+ * migration 045 dont last_refresh_attempted_at n'est pas encore peuple).
+ */
+function formatRelativeAttempt(iso: string | null): string | null {
+  if (!iso) return null
+  const ts = new Date(iso).getTime()
+  if (!Number.isFinite(ts)) return null
+  const days = (Date.now() - ts) / (1000 * 60 * 60 * 24)
+  if (days < 1)  return 'auj.'
+  if (days < 2)  return 'hier'
+  if (days < 30) return `il y a ${Math.floor(days)} j`
+  // Au-dela : on bascule sur une date courte fr-FR pour rester lisible
+  return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })
+}
+
+interface PriceFreshnessCellProps {
+  priceFreshAt:           string
+  priceSource:            string | null
+  priceStale:             boolean
+  lastRefreshAttemptedAt: string | null
+}
+
+/**
+ * Cellule prix/date/source avec :
+ *  - date de validite marche (priceFreshAt) — orange si priceStale
+ *  - badge "saisie manuelle" si source = manual, sinon nom de source
+ *  - "vérifié auj./hier/il y a N j" SI la date du dernier refresh diffère
+ *    du jour calendaire de priceFreshAt (ex. justetf fige au 22/05, cron
+ *    a re-tenté aujourd'hui → "22/05 · vérifié auj.")
+ *  - le label "vérifié" passe en warning si LE PRIX EST STALE et que la
+ *    derniere tentative est elle aussi vieille (cas anormal "cron casse")
+ */
+function PriceFreshnessCell({
+  priceFreshAt, priceSource, priceStale, lastRefreshAttemptedAt,
+}: PriceFreshnessCellProps) {
+  const isManual = priceSource === 'manual'
+  const relativeAttempt = formatRelativeAttempt(lastRefreshAttemptedAt)
+  // On n'affiche "vérifié X" que si la verif est sur un jour DIFFERENT
+  // de la date du prix marche (sinon redondant).
+  const showAttempt =
+    relativeAttempt !== null &&
+    lastRefreshAttemptedAt !== null &&
+    priceFreshAt.slice(0, 10) !== lastRefreshAttemptedAt.slice(0, 10)
+  // Cas anormal : prix stale ET derniere verif aussi vieille → orange.
+  const attemptStale =
+    priceStale &&
+    !!lastRefreshAttemptedAt &&
+    (Date.now() - new Date(lastRefreshAttemptedAt).getTime()) / (1000 * 60 * 60 * 24) > 2
+  return (
+    <div title={priceSource ? `Source : ${priceSource}` : undefined}>
+      <div className={`text-xs ${priceStale ? 'text-warning' : 'text-secondary'}`}>
+        {new Date(priceFreshAt).toLocaleString('fr-FR', {
+          day: '2-digit', month: '2-digit',
+          hour: '2-digit', minute: '2-digit',
+        })}
+      </div>
+      {showAttempt && (
+        <div className={`text-[10px] leading-none mt-0.5 ${attemptStale ? 'text-warning' : 'text-muted'}`}>
+          · vérifié {relativeAttempt}
+        </div>
+      )}
+      <div className="text-[10px] leading-none mt-0.5">
+        {isManual ? (
+          <Badge variant="muted" className="!px-1.5 !py-0 !text-[9px]">
+            saisie manuelle
+          </Badge>
+        ) : priceSource && (
+          <span className="text-muted">{priceSource}</span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Cellule "jamais de prix" (typique SCPI sans cotation publique).
+ * Propose un lien direct vers la page detail ou la modale prix manuel
+ * est accessible (AddPriceModalTrigger).
+ */
+function NoPriceCell({ positionId }: { positionId: string }) {
+  return (
+    <div className="flex flex-col items-end gap-0.5">
+      <span className="text-muted text-xs">jamais</span>
+      <Link
+        href={`/portefeuille/${positionId}`}
+        className="text-[10px] text-accent hover:underline"
+      >
+        → saisir un prix manuel
+      </Link>
     </div>
   )
 }

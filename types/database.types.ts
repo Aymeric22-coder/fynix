@@ -732,6 +732,12 @@ export interface Instrument {
   metadata: Json
   created_at: string
   updated_at: string
+  // ── Migration 045 — Preuve de vie cron / refresh manuel ──
+  // Horodatage de la dernière TENTATIVE de refresh (succès, skip ou échec).
+  // Distinct de `instrument_prices.priced_at` qui est la date de validité
+  // marché. Permet à l'UI de distinguer "prix vieux car marché ne bouge pas"
+  // (priced_at ancien + last_refresh récent) de "cron cassé" (les deux anciens).
+  last_refresh_attempted_at: string | null
 }
 
 export interface Position {

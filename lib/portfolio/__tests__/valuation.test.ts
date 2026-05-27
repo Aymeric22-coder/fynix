@@ -6,7 +6,9 @@ import type { InstrumentInput, PositionInput, PriceInput } from '../types'
 
 const I = (id: string, over: Partial<InstrumentInput> = {}): InstrumentInput => ({
   id, ticker: 'TST', isin: null, name: 'Test', assetClass: 'equity', valuationFrequency: 'daily',
-  subclass: null, currency: 'EUR', sector: null, geography: null, ...over,
+  subclass: null, currency: 'EUR', sector: null, geography: null,
+  lastRefreshAttemptedAt: null,  // Migration 045
+  ...over,
 })
 
 const P = (id: string, instrumentId: string, over: Partial<PositionInput> = {}): PositionInput => ({
