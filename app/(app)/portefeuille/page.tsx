@@ -318,18 +318,27 @@ export default async function PortefeuillePage({ searchParams }: Props) {
                 </p>
                 <p className="text-xs text-secondary mt-1">sur valeur actuelle</p>
               </div>
-              {/* DCAL — projection annuelle. Le composant gère son
-                  rendu conditionnel (null si data null ou 0 projection). */}
-              <DividendProjectionCard
-                data={fullResult.summary.dividendCalendar}
-                currency={summary.referenceCurrency}
-              />
+              {/* DCAL — projection annuelle. Agrégat portefeuille entier
+                  (totalAnnualProjectionRef = somme de TOUTES les positions
+                  distributrices), donc Global uniquement — sous-onglets de
+                  classe induiraient en erreur. Convention déjà appliquée à
+                  la courbe d'évolution / analytics historiques ci-dessous. */}
+              {activeCategory === 'global' && (
+                <DividendProjectionCard
+                  data={fullResult.summary.dividendCalendar}
+                  currency={summary.referenceCurrency}
+                />
+              )}
             </div>
           )}
 
           {/* ── Frise calendrier des prochains versements (DCAL).
-              Composant SSR avec rendu conditionnel intrinsèque. */}
-          {fullResult.summary.dividendCalendar && (
+              Composant SSR avec rendu conditionnel intrinsèque.
+              Global uniquement : la frise agrège les cycles attendus de
+              TOUTES les positions, l'afficher dans un sous-onglet de
+              classe (qui ne contient qu'une partie des positions) serait
+              trompeur. */}
+          {activeCategory === 'global' && fullResult.summary.dividendCalendar && (
             <div className="mb-6">
               <DividendCalendarStrip
                 data={fullResult.summary.dividendCalendar.calendar}
@@ -353,13 +362,18 @@ export default async function PortefeuillePage({ searchParams }: Props) {
           </div>
 
           {/* ── Tableau Performance par enveloppe (E12 / Étape 4).
-              Le composant se rend lui-même conditionnel (≥ 2 enveloppes). */}
-          <div className="mb-6">
-            <EnvelopePerformanceTable
-              data={fullResult.summary.envelopePerformance}
-              currency={summary.referenceCurrency}
-            />
-          </div>
+              Le composant se rend lui-même conditionnel (≥ 2 enveloppes).
+              Global uniquement : la table agrège la performance sur
+              l'ensemble du portefeuille (TWR / MWR / +/- par enveloppe),
+              redondant et trompeur dans les sous-onglets de classe d'actif. */}
+          {activeCategory === 'global' && (
+            <div className="mb-6">
+              <EnvelopePerformanceTable
+                data={fullResult.summary.envelopePerformance}
+                currency={summary.referenceCurrency}
+              />
+            </div>
+          )}
 
           {/* ── Courbe d'évolution (uniquement en vue Global) ─────────────
               Les snapshots sont stockés au niveau du portefeuille global,
