@@ -18,6 +18,8 @@ import { CategoryTabs }               from '@/components/portfolio/category-tabs
 import { FxFallbackBanner }           from '@/components/portfolio/fx-fallback-banner'
 import { RealizedPnlCard }            from '@/components/portfolio/realized-pnl-card'
 import { EnvelopePerformanceTable }   from '@/components/portfolio/envelope-performance-table'
+import { DividendProjectionCard }     from '@/components/portfolio/dividend-projection-card'
+import { DividendCalendarStrip }      from '@/components/portfolio/dividend-calendar-strip'
 import {
   formatCurrency, formatPercent, formatQuantity,
   ASSET_CLASS_LABELS,
@@ -280,10 +282,11 @@ export default async function PortefeuillePage({ searchParams }: Props) {
             </div>
           </div>
 
-          {/* ── KPI Dividendes (E3) — rangée affichée seulement si au moins
-              un dividende a été encaissé sur 12 mois glissants. */}
+          {/* ── KPI Dividendes (E3 + DCAL) — rangée affichée seulement si au moins
+              un dividende a été encaissé sur 12 mois glissants. La carte
+              Projection (DCAL) rejoint la rangée en 4e colonne, conditionnelle. */}
           {fullResult.summary.dividends.ttmTotal > 0 && (
-            <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
               <div className="card p-5">
                 <p className="text-xs text-secondary uppercase tracking-widest flex items-center gap-1">
                   <Coins size={11} /> Dividendes 12 mois
@@ -315,6 +318,23 @@ export default async function PortefeuillePage({ searchParams }: Props) {
                 </p>
                 <p className="text-xs text-secondary mt-1">sur valeur actuelle</p>
               </div>
+              {/* DCAL — projection annuelle. Le composant gère son
+                  rendu conditionnel (null si data null ou 0 projection). */}
+              <DividendProjectionCard
+                data={fullResult.summary.dividendCalendar}
+                currency={summary.referenceCurrency}
+              />
+            </div>
+          )}
+
+          {/* ── Frise calendrier des prochains versements (DCAL).
+              Composant SSR avec rendu conditionnel intrinsèque. */}
+          {fullResult.summary.dividendCalendar && (
+            <div className="mb-6">
+              <DividendCalendarStrip
+                data={fullResult.summary.dividendCalendar.calendar}
+                currency={summary.referenceCurrency}
+              />
             </div>
           )}
 

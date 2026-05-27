@@ -33,6 +33,12 @@ import {
   computeEnvelopePerformance,
   type EnvelopePerformance,
 } from './envelope-performance'
+import {
+  projectDividends,
+  buildDividendCalendar,
+  type DividendProjection,
+  type CalendarMonth,
+} from './dividend-calendar'
 import type { ValuePoint, CashFlow } from './analytics'
 
 // ─── DB row types (lecture seule, ce qu'on attend du SELECT) ────────────
@@ -123,6 +129,17 @@ export interface PortfolioSummaryWithFx extends PortfolioSummary {
    * Vide tant que l'utilisateur n'a pas d'enveloppe avec position active.
    */
   envelopePerformance: EnvelopePerformance[]
+  /**
+   * Projection annuelle dividendes + calendrier des prochains versements
+   * sur 12 mois glissants (DCAL). `null` si aucune position avec dividende
+   * TTM (pas de projection possible). Tous les montants en devise ref.
+   */
+  dividendCalendar:    {
+    projections:              DividendProjection[]
+    calendar:                 CalendarMonth[]
+    /** SUM des annualProjectionRef de toutes les projections. */
+    totalAnnualProjectionRef: number
+  } | null
 }
 
 export interface PortfolioResultWithFx {
@@ -481,6 +498,70 @@ export async function buildPortfolioFromDb(
     totalMarketValueRef:      result.summary.totalMarketValue,
   })
 
+  // 11. Projection dividendes + calendrier (DCAL).
+  //     Toutes les conversions FX sont faites ici en pre-traitement pour
+  //     que le module pur `dividend-calendar` ne manipule que des devises
+  //     ref. Les tickers sont joints depuis les instruments deja charges.
+  let dividendCalendar: PortfolioSummaryWithFx['dividendCalendar'] = null
+  if (allDividends.length > 0) {
+    // (a) Index ticker par positionId (via instrumentId).
+    const tickerByInstrumentId = new Map<string, string>()
+    for (const inst of instrumentInputs) {
+      tickerByInstrumentId.set(inst.id, inst.ticker ?? '')
+    }
+    const dcalPositions: { id: string; ticker: string }[] = []
+    for (const p of positionInputs) {
+      if (p.status !== 'active') continue
+      dcalPositions.push({
+        id:     p.id,
+        ticker: tickerByInstrumentId.get(p.instrumentId) ?? '',
+      })
+    }
+
+    // (b) Groupement des dividendes par positionId + conversion en devise ref.
+    //     Les dividendes sans position_id (NULL en DB) ne peuvent etre
+    //     projetes — on les exclut silencieusement.
+    const dividendsByPosition: Record<string, { date: string; amountRef: number }[]> = {}
+    for (const d of allDividends) {
+      if (!d.position_id) continue
+      const amountRef = d.amount * fxConvert(d.currency, ref)
+      const arr = dividendsByPosition[d.position_id] ?? []
+      arr.push({ date: d.executed_at.slice(0, 10), amountRef })
+      dividendsByPosition[d.position_id] = arr
+    }
+
+    // (c) Projection.
+    const projections = projectDividends({
+      positions:           dcalPositions,
+      dividendsByPosition,
+      now:                 nowForTtm,
+    })
+
+    if (projections.length > 0) {
+      // (d) Calendrier. `confirmedDividends` = les versements TTM reels
+      //     en devise ref (meme conversion que ci-dessus).
+      const confirmedDividends = ttmDivs
+        .filter((d) => !!d.position_id)
+        .map((d) => ({
+          positionId: d.position_id,
+          date:       d.executed_at.slice(0, 10),
+          amountRef:  d.amount * fxConvert(d.currency, ref),
+        }))
+
+      const calendar = buildDividendCalendar({
+        projections,
+        confirmedDividends,
+        monthCount: 12,
+        now:        nowForTtm,
+      })
+
+      const totalAnnualProjectionRef =
+        projections.reduce((s, p) => s + p.annualProjectionRef, 0)
+
+      dividendCalendar = { projections, calendar, totalAnnualProjectionRef }
+    }
+  }
+
   return {
     positions: result.positions,
     summary:   {
@@ -489,6 +570,7 @@ export async function buildPortfolioFromDb(
       dividends,
       realizedPnlTtm,
       envelopePerformance,
+      dividendCalendar,
     },
   }
 }
@@ -516,6 +598,7 @@ function emptyResult(ref: CurrencyCode): PortfolioResultWithFx {
       },
       realizedPnlTtm:        null,
       envelopePerformance:   [],
+      dividendCalendar:      null,
     },
   }
 }

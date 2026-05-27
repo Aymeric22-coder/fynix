@@ -17,6 +17,7 @@ import {
   computePositionDividendMetrics,
   type DividendTx,
 } from '@/lib/portfolio/dividends'
+import { projectDividends } from '@/lib/portfolio/dividend-calendar'
 import {
   formatCurrency, formatPercent, formatQuantity, formatDate,
   ASSET_CLASS_LABELS,
@@ -126,6 +127,28 @@ export default async function PositionDetailPage({ params, searchParams }: Props
     dividendTxs,
     { positionId: String(position.id), costBasis: cost, marketValue: mv, currency },
   )
+
+  // ── Projection / frequence (DCAL) ──
+  // On reutilise `projectDividends` localement avec les dividendes de la
+  // position courante. Pas de conversion FX necessaire ici : on reste dans
+  // la devise de la position, cohérent avec le reste du bloc Dividendes.
+  const positionProjections = projectDividends({
+    positions: [{ id: String(position.id), ticker: instrument.ticker ?? '' }],
+    dividendsByPosition: {
+      [String(position.id)]: dividendTxs.map((t) => ({
+        date:      t.executed_at.slice(0, 10),
+        amountRef: t.amount,  // meme devise que `currency` ci-dessus
+      })),
+    },
+  })
+  const projection = positionProjections[0] ?? null
+  const FREQUENCY_LABELS_DCAL: Record<string, string> = {
+    monthly:       'Mensuelle',
+    quarterly:     'Trimestrielle',
+    'semi-annual': 'Semestrielle',
+    annual:        'Annuelle',
+    unknown:       'Irrégulière',
+  }
 
   // ── Cadence de valorisation ─────────────────────────────────────────
   const freq      = (instrument.valuation_frequency ?? 'daily') as ValuationFrequency
@@ -312,7 +335,7 @@ export default async function PositionDetailPage({ params, searchParams }: Props
         </div>
       )}
 
-      {/* ── Dividendes (E3) ────────────────────────────────────────── */}
+      {/* ── Dividendes (E3 + DCAL) ──────────────────────────────────── */}
       <div className="card p-5 mb-6">
         <p className="text-xs text-secondary uppercase tracking-widest flex items-center gap-1 mb-4">
           <Coins size={11} /> Dividendes
@@ -344,6 +367,38 @@ export default async function PositionDetailPage({ params, searchParams }: Props
             </p>
           </div>
         </div>
+
+        {/* Projection annuelle (DCAL) — visible uniquement quand on a une
+            frequence detectee. Une seule date TTM = unknown → on cache. */}
+        {projection && (
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mt-4 pt-4 border-t border-border">
+            <div>
+              <p className="text-xs text-secondary">Fréquence détectée</p>
+              <p className="text-base font-semibold text-primary mt-1">
+                {FREQUENCY_LABELS_DCAL[projection.frequency] ?? projection.frequency}
+                {projection.confidenceLevel === 'low' && (
+                  <span className="text-[10px] text-muted ml-2">basse confiance</span>
+                )}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-secondary">Projection annuelle</p>
+              <p className="text-base font-semibold financial-value text-accent mt-1">
+                {projection.frequency === 'unknown'
+                  ? <span className="text-muted">—</span>
+                  : formatCurrency(projection.annualProjectionRef, currency, { decimals: 2 })}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-secondary">Prochain versement attendu</p>
+              <p className="text-base font-semibold text-primary mt-1">
+                {projection.nextExpectedDate
+                  ? formatDate(projection.nextExpectedDate)
+                  : <span className="text-muted">—</span>}
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── Transactions liées ────────────────────────────────────── */}
