@@ -11,7 +11,8 @@ import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PriceHistoryChart, type PricePoint } from '@/components/portfolio/price-history-chart'
 import { AddPriceModalTrigger } from '@/components/portfolio/add-price-modal'
-import { AddDividendModal } from '@/components/portfolio/add-dividend-modal'
+import { PositionTransactionActions } from '@/components/portfolio/position-transaction-actions'
+import type { TransactionType } from '@/components/portfolio/add-transaction-modal'
 import {
   computePositionDividendMetrics,
   type DividendTx,
@@ -27,10 +28,18 @@ import type { AssetClass, CurrencyCode, ValuationFrequency } from '@/types/datab
 
 export const metadata: Metadata = { title: 'Détail position' }
 
-type Props = { params: Promise<{ id: string }> }
+type Props = {
+  params:       Promise<{ id: string }>
+  searchParams: Promise<{ type?: string }>
+}
 
-export default async function PositionDetailPage({ params }: Props) {
-  const { id } = await params
+export default async function PositionDetailPage({ params, searchParams }: Props) {
+  const { id }         = await params
+  const { type: typeQ } = await searchParams
+  // Pre-selection du type de transaction via query param (?type=sell|buy|dividend).
+  // Tout autre valeur est ignoree silencieusement.
+  const defaultTxType: TransactionType | undefined =
+    typeQ === 'sell' || typeQ === 'buy' || typeQ === 'dividend' ? typeQ : undefined
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
 
@@ -150,10 +159,17 @@ export default async function PositionDetailPage({ params }: Props) {
             }
           />
           <div className="pt-1 flex items-center gap-2">
-            <AddDividendModal
-              positionId={String(position.id)}
-              positionName={instrument.name}
-              positionCurrency={currency}
+            <PositionTransactionActions
+              position={{
+                id:            String(position.id),
+                ticker:        instrument.ticker ?? '',
+                name:          instrument.name,
+                envelopeLabel: envelope?.name ?? '',
+                currentQty:    qty,
+                averagePrice:  pru,
+                currency,
+              }}
+              defaultType={defaultTxType}
             />
             <AddPriceModalTrigger
               positionId={position.id}

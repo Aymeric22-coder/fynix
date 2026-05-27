@@ -131,10 +131,28 @@ export default async function PortefeuillePage({ searchParams }: Props) {
     .eq('user_id', user!.id)
 
   type RawInstr = { name: string; ticker: string | null; isin: string | null; asset_class: AssetClass }
+  // Mapping envelope_id → name pour le label affiche dans la modale TX.
+  const envelopeNameById = new Map<string, string>()
+  for (const e of envelopes ?? []) {
+    envelopeNameById.set(e.id as string, e.name as string)
+  }
+  // Liste serialisee des positions actives consommee par PortefeuilleActions
+  // → AddTransactionModal. On ne sert que ce dont le composant client a besoin.
+  const transactionPositions: import('@/components/portfolio/add-transaction-modal').TransactionModalPosition[] = []
   const editDataById = new Map<string, PositionInitialData>()
   for (const r of (rawPositions ?? [])) {
     const inst = (Array.isArray(r.instrument) ? r.instrument[0] : r.instrument) as RawInstr | null
     if (!inst) continue
+    const envId = (r.envelope_id as string | null) ?? ''
+    transactionPositions.push({
+      id:            r.id as string,
+      ticker:        inst.ticker ?? '',
+      name:          inst.name,
+      envelopeLabel: envId ? (envelopeNameById.get(envId) ?? '') : '',
+      currentQty:    Number(r.quantity),
+      averagePrice:  Number(r.average_price),
+      currency:      r.currency as CurrencyCode,
+    })
     editDataById.set(r.id as string, {
       id:               r.id as string,
       name:             inst.name,
@@ -163,7 +181,10 @@ export default async function PortefeuillePage({ searchParams }: Props) {
         action={
           <div className="flex items-center gap-3">
             {fullResult.summary.positionsCount > 0 && <RefreshPricesButton />}
-            <PortefeuilleActions envelopes={envelopes ?? []} />
+            <PortefeuilleActions
+              envelopes={envelopes ?? []}
+              transactionPositions={transactionPositions}
+            />
           </div>
         }
       />

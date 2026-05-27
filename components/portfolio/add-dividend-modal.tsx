@@ -1,3 +1,9 @@
+/**
+ * @deprecated Remplace par `AddTransactionModal` (avec `defaultType='dividend'`)
+ * dans tous les nouveaux ecrans. Composant conserve pour eviter de casser
+ * un eventuel consommateur externe et faciliter le rollback ; sera
+ * supprime dans une prochaine vague de menage.
+ */
 'use client'
 
 import { useState } from 'react'

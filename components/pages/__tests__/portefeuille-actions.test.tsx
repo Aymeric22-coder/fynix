@@ -11,6 +11,15 @@ vi.mock('@/components/forms/add-position-form', () => ({
 vi.mock('@/components/portfolio/import-csv-modal', () => ({
   PortfolioImportCSVModal: () => null,
 }))
+// Le composant utilise desormais useRouter() (refresh apres TX) — pas
+// monte par defaut en jsdom, on neutralise.
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ refresh: vi.fn(), push: vi.fn(), replace: vi.fn() }),
+}))
+// Modale TX : on ne teste pas son rendu interne ici.
+vi.mock('@/components/portfolio/add-transaction-modal', () => ({
+  AddTransactionModal: () => null,
+}))
 
 import { PortefeuilleActions } from '../portefeuille-actions'
 
