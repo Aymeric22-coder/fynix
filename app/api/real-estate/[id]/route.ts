@@ -74,6 +74,14 @@ export const PUT = withAuth(async (req: Request, user: User, ctx: Ctx) => {
   const body = await parseBody<Record<string, unknown>>(req)
   if (!body) return err('Invalid JSON body')
 
+  // Garde-fou CCA (mig 037) : montant ≥ 0 si présent. Un CCA négatif
+  // n'a aucun sens (solde d'avance, pas une dette de l'associé).
+  if ('cca_amount' in body && body.cca_amount != null) {
+    if (typeof body.cca_amount !== 'number' || body.cca_amount < 0) {
+      return err('cca_amount must be a number ≥ 0', 400)
+    }
+  }
+
   const supabase = await createServerClient()
 
   // Séparer les champs asset et property

@@ -828,6 +828,9 @@ export default async function ImmobilierDetailPage({ params, searchParams }: Pro
                 )
               }
               ccaAmount={propTyped.cca_amount ?? 0}
+              // Trésorerie année 1 = plafond cash du remboursement CCA
+              // (cf. computeDividendDistribution dans lib/real-estate/fiscal/sci-is.ts).
+              availableCashYear={simResult.projection[0].cashFlowAfterTax}
               tmiPct={dbProfile?.tmi_rate ?? 30}
             />
           )}

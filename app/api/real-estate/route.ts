@@ -27,6 +27,8 @@ interface CreatePropertyBody {
   usage_type?:
     | 'primary_residence' | 'secondary_residence'
     | 'long_term_rental' | 'short_term_rental' | 'mixed_use'
+  // Migration 037 — Solde CCA pour SCI à l'IS (≥ 0).
+  cca_amount?: number
 }
 
 // GET /api/real-estate — liste les biens immobiliers avec leur valorisation courante
@@ -62,6 +64,12 @@ export const POST = withAuth(async (req: Request, user: User) => {
 
   if (!body.name || !body.property_type) {
     return err('name and property_type are required')
+  }
+
+  // Garde-fou CCA : montant ≥ 0 si présent (mig 037 ; un CCA négatif
+  // n'a aucun sens — c'est un solde d'avance, pas une dette de l'associé).
+  if (body.cca_amount != null && (typeof body.cca_amount !== 'number' || body.cca_amount < 0)) {
+    return err('cca_amount must be a number ≥ 0', 400)
   }
 
   const supabase = await createServerClient()
@@ -111,6 +119,7 @@ export const POST = withAuth(async (req: Request, user: User) => {
       fiscal_regime: body.fiscal_regime ?? null,
       is_multi_lot: body.is_multi_lot ?? false,
       usage_type: body.usage_type ?? 'long_term_rental',
+      cca_amount: body.cca_amount ?? 0,
     })
     .select()
     .single()

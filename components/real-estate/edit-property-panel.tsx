@@ -59,6 +59,7 @@ interface InitialData {
   // Fiscal
   fiscal_regime:     FiscalRegime | null
   lmnp_micro_abattement_pct: number | null
+  cca_amount:        number | null
   // Counts (for sub-resource cards)
   nbLots:            number
   nbCredits:         number
@@ -315,6 +316,7 @@ function FiscalSection({ propertyId, initial }: Props) {
   const [v, setV] = useState({
     fiscal_regime:             (initial.fiscal_regime ?? '') as FiscalRegime | '',
     lmnp_micro_abattement_pct: initial.lmnp_micro_abattement_pct ?? 50,
+    cca_amount:                initial.cca_amount ?? 0,
   })
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -325,11 +327,17 @@ function FiscalSection({ propertyId, initial }: Props) {
   async function save(e: React.FormEvent) {
     e.preventDefault()
     if (!v.fiscal_regime) { setError('Le régime fiscal est requis'); return }
+    if (v.fiscal_regime === 'sci_is' && (v.cca_amount < 0 || !Number.isFinite(v.cca_amount))) {
+      setError('Le solde de CCA doit être un nombre ≥ 0'); return
+    }
     setSaving(true); setError(null); setSaved(false)
     try {
       const payload: Record<string, unknown> = { fiscal_regime: v.fiscal_regime }
       if (v.fiscal_regime === 'lmnp_micro') {
         payload.lmnp_micro_abattement_pct = v.lmnp_micro_abattement_pct
+      }
+      if (v.fiscal_regime === 'sci_is') {
+        payload.cca_amount = v.cca_amount
       }
       const res = await fetch(`/api/real-estate/${propertyId}`, {
         method: 'PATCH',
@@ -370,6 +378,23 @@ function FiscalSection({ propertyId, initial }: Props) {
             <option value="50">50 % (classique / tourisme classé)</option>
             <option value="71">71 % (chambres d&apos;hôtes — historique)</option>
           </Select>
+        </Field>
+      )}
+
+      {v.fiscal_regime === 'sci_is' && (
+        <Field
+          label="Compte courant d'associé (CCA, €)"
+          hint="Apports déjà versés par l'associé à la SCI. Leur remboursement est fiscalement neutre."
+        >
+          <Input
+            type="number" min={0} step={100}
+            value={v.cca_amount}
+            onChange={e => setV({
+              ...v,
+              cca_amount: e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)),
+            })}
+            placeholder="0"
+          />
         </Field>
       )}
 

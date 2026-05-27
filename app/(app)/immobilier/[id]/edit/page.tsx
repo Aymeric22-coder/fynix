@@ -57,6 +57,7 @@ export default async function EditPropertyPage({ params }: Props) {
     acquisition_date:  prop.asset?.acquisition_date ?? null,
     fiscal_regime:     prop.fiscal_regime as FiscalRegime | null,
     lmnp_micro_abattement_pct: prop.lmnp_micro_abattement_pct,
+    cca_amount:        prop.cca_amount,
     nbLots:            (prop.lots ?? []).length,
     nbCredits:         creditsCount ?? 0,
     hasIncentive:      ((prop.incentive ?? []) as unknown[]).length > 0,

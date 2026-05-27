@@ -69,6 +69,7 @@ interface WizardDraft {
 
   // Étape 4
   fiscal_regime:     FiscalRegime
+  cca_amount:        number | undefined   // SCI IS uniquement (mig 037)
 
   // Étape 5
   hasLot:            boolean
@@ -115,6 +116,7 @@ const EMPTY_DRAFT: WizardDraft = {
   insurance_quotite: 100,
 
   fiscal_regime:     '',
+  cca_amount:        undefined,
 
   hasLot:            false,
   lot_name:          '',
@@ -304,6 +306,10 @@ export default function NouveauBienPage() {
           fiscal_regime:     requiresFiscalRegimeStep(draft.usage_type)
                                ? (draft.fiscal_regime || null)
                                : null,
+          // Mig 037 — CCA SCI IS uniquement (sinon 0, default DB).
+          cca_amount:        draft.fiscal_regime === 'sci_is'
+                               ? Math.max(0, draft.cca_amount ?? 0)
+                               : 0,
           is_multi_lot:      false,
           acquisition_date:  draft.acquisition_date || null,
           notes:             draft.notes || null,
@@ -698,6 +704,21 @@ export default function NouveauBienPage() {
                 </p>
                 {FISCAL_REGIME_DESCRIPTIONS[draft.fiscal_regime].help}
               </div>
+            )}
+
+            {/* Mig 037 — Solde CCA (apports de l'associé) uniquement pour SCI à l'IS.
+                Sert ensuite à l'option "remboursement CCA" du bloc Distribution
+                (fiscalement neutre, plafonné au cash de l'année). */}
+            {draft.fiscal_regime === 'sci_is' && (
+              <Field
+                label="Compte courant d'associé (CCA, €)"
+                hint="Apports déjà versés par l'associé à la SCI. Leur remboursement est fiscalement neutre — laissez à 0 si aucun apport."
+              >
+                <Input type="number" min={0} step={100}
+                  value={draft.cca_amount ?? ''}
+                  onChange={(e) => setNum('cca_amount', e.target.value)}
+                  placeholder="0" />
+              </Field>
             )}
           </div>
         )}

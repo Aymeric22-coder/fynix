@@ -82,7 +82,9 @@ export const calculateSciIs: FiscalCalculator = (
  *  - Dividendes : PFU 30 % (12,8 % IR + 17,2 % PS) OU option barème IR
  *    (abattement 40 % + PS 17,2 % sur brut).
  *  - Remboursement Compte Courant d'Associé : fiscalement neutre,
- *    plafonné aux apports effectifs de l'associé.
+ *    plafonné aux apports effectifs de l'associé ET à la trésorerie
+ *    disponible (et NON au bénéfice comptable — une SCI fortement
+ *    amortie peut avoir un bénéfice ≈ 0 et un cash-flow positif).
  *
  * ⚠️ Estimation — consultez un expert-comptable.
  */
@@ -94,6 +96,15 @@ export interface DividendDistributionInput {
   dividendAmount:   number
   /** Solde CCA disponible (apports de l'associé). */
   ccaAmount:        number
+  /**
+   * Trésorerie annuelle disponible pour rembourser le CCA.
+   * Convention : `cashFlowAfterTax` de l'année courante de la projection.
+   * Un remboursement de CCA n'est pas plafonné par le bénéfice comptable
+   * (cf. CGI / pratique comptable) mais par le cash réellement disponible
+   * — une SCI fortement amortie peut avoir `netProfitAfterIS ≈ 0` tout
+   * en dégageant un cash-flow positif qui rembourse l'associé.
+   */
+  availableCashYear: number
   /** TMI du foyer pour comparer PFU et barème. */
   tmiPct:           number
 }
@@ -101,7 +112,7 @@ export interface DividendDistributionInput {
 export interface DividendDistributionResult {
   netProfitAfterIS:    number
   dividendAmount:      number
-  ccaReimbursement:    number   // = min(ccaAmount, netProfitAfterIS)
+  ccaReimbursement:    number   // = min(ccaAmount, max(0, availableCashYear))
 
   // Option A — PFU (Flat Tax 30 %)
   pfuTax:              number
@@ -145,10 +156,14 @@ export function computeDividendDistribution(
   const optimalOption: 'pfu' | 'bareme' =
     netAfterPfu >= netAfterBareme ? 'pfu' : 'bareme'
 
-  // Remboursement CCA : plafonné au solde de CCA et au profit distribuable.
+  // Remboursement CCA : plafonné au solde de CCA et au CASH disponible
+  // (et non au bénéfice comptable — cf. doc de `availableCashYear`).
+  // Une SCI fortement amortie peut avoir un bénéfice ≈ 0 et un
+  // cash-flow positif : le CCA est remboursable sur ce cash.
   const ccaAvailable     = Math.max(0, input.ccaAmount)
-  const ccaReimbursement = Math.min(ccaAvailable, Math.max(0, input.netProfitAfterIS))
-  const ccaCapped        = ccaAvailable > input.netProfitAfterIS
+  const cashCeiling      = Math.max(0, input.availableCashYear)
+  const ccaReimbursement = Math.min(ccaAvailable, cashCeiling)
+  const ccaCapped        = ccaAvailable > cashCeiling
 
   return {
     netProfitAfterIS:    input.netProfitAfterIS,

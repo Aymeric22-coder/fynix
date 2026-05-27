@@ -148,4 +148,50 @@ describe('PATCH/PUT /api/real-estate/[id]', () => {
     expect(json.error).toMatch(/aucun champ valide/i)
     expect(state.updateCalls).toHaveLength(0)
   })
+
+  // ── Mig 037 — CCA (SCI à l'IS) ─────────────────────────────────────
+
+  it('PATCH cca_amount valide (>= 0) => update propage sur properties', async () => {
+    state.propLookup = { data: { asset_id: 'asset-1' } }
+    const res = await PATCH(makeReq({ cca_amount: 5_000 }), makeCtx('prop-1'))
+    expect(res.status).toBe(200)
+    expect(state.updateCalls).toHaveLength(1)
+    expect(state.updateCalls[0]).toEqual({
+      table: 'real_estate_properties',
+      fields: { cca_amount: 5_000 },
+      filterValue: 'prop-1',
+    })
+  })
+
+  it('PATCH cca_amount = 0 (reset) => update OK', async () => {
+    state.propLookup = { data: { asset_id: 'asset-1' } }
+    const res = await PATCH(makeReq({ cca_amount: 0 }), makeCtx('prop-1'))
+    expect(res.status).toBe(200)
+    expect(state.updateCalls[0]!.fields).toEqual({ cca_amount: 0 })
+  })
+
+  it('PATCH cca_amount négatif => 400, aucun update (un CCA négatif n\'a aucun sens)', async () => {
+    state.propLookup = { data: { asset_id: 'asset-1' } }
+    const res = await PATCH(makeReq({ cca_amount: -1 }), makeCtx('prop-1'))
+    expect(res.status).toBe(400)
+    const json = await res.json()
+    expect(json.error).toMatch(/cca_amount.*≥\s*0/i)
+    expect(state.updateCalls).toHaveLength(0)
+  })
+
+  it('PATCH cca_amount = string => 400 (type strict)', async () => {
+    state.propLookup = { data: { asset_id: 'asset-1' } }
+    const res = await PATCH(makeReq({ cca_amount: '5000' }), makeCtx('prop-1'))
+    expect(res.status).toBe(400)
+    expect(state.updateCalls).toHaveLength(0)
+  })
+
+  it('PATCH cca_amount = null (effacement) => passe la validation', async () => {
+    // `cca_amount: null` est légitime (remettre à NULL en DB). On laisse
+    // passer la valeur, c'est la colonne NUMERIC qui acceptera.
+    state.propLookup = { data: { asset_id: 'asset-1' } }
+    const res = await PATCH(makeReq({ cca_amount: null }), makeCtx('prop-1'))
+    expect(res.status).toBe(200)
+    expect(state.updateCalls[0]!.fields).toEqual({ cca_amount: null })
+  })
 })

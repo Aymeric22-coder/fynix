@@ -10,6 +10,14 @@ interface Props {
   netProfitAfterIS: number
   /** Solde CCA déclaré pour ce bien (€). */
   ccaAmount:        number
+  /**
+   * Trésorerie disponible pour rembourser le CCA cette année
+   * (typiquement `simResult.projection[0].cashFlowAfterTax`). Le
+   * remboursement du CCA est plafonné par ce cash, pas par le bénéfice
+   * comptable — une SCI fortement amortie peut avoir un bénéfice ≈ 0
+   * et un cash positif.
+   */
+  availableCashYear: number
   /** TMI du foyer. */
   tmiPct:           number
 }
@@ -18,7 +26,7 @@ interface Props {
  * Bloc "Distribution" pour une SCI à l'IS : compare PFU vs barème
  * et affiche l'option remboursement CCA (non imposable).
  */
-export function SciDistribution({ netProfitAfterIS, ccaAmount, tmiPct }: Props) {
+export function SciDistribution({ netProfitAfterIS, ccaAmount, availableCashYear, tmiPct }: Props) {
   // L'utilisateur peut moduler le montant à distribuer en dividendes
   // (par défaut : tout le profit après IS).
   const [dividendInput, setDividendInput] = useState<number>(
@@ -30,9 +38,10 @@ export function SciDistribution({ netProfitAfterIS, ccaAmount, tmiPct }: Props) 
       netProfitAfterIS,
       dividendAmount: dividendInput,
       ccaAmount,
+      availableCashYear,
       tmiPct,
     }),
-    [netProfitAfterIS, dividendInput, ccaAmount, tmiPct],
+    [netProfitAfterIS, dividendInput, ccaAmount, availableCashYear, tmiPct],
   )
 
   // L'option globale la plus avantageuse en € net dans la poche :
@@ -137,7 +146,7 @@ export function SciDistribution({ netProfitAfterIS, ccaAmount, tmiPct }: Props) 
                 {formatCurrency(result.ccaReimbursement, 'EUR')}
               </p>
               <p className="text-xs text-muted">
-                {result.ccaCapped ? 'plafonné au profit' : 'remboursable'}
+                {result.ccaCapped ? 'plafonné à la trésorerie' : 'remboursable'}
               </p>
             </div>
           </div>
