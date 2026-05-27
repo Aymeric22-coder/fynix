@@ -16,6 +16,8 @@
 import Link from 'next/link'
 import { Sparkles, TrendingUp, Target, Wallet } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils/format'
+import { CibleFoyer } from '@/components/profil/CibleFoyer'
+import type { CibleFoyerDetail } from '@/lib/profil/cibleFamille'
 
 export interface FireHeroData {
   /** Profil incomplet → on affiche un CTA vers /profil. */
@@ -36,7 +38,12 @@ export interface FireHeroData {
   /** Épargne mensuelle qui permettrait d'atteindre l'objectif. Null si déjà OK. */
   epargne_mensuelle_necessaire: number | null
   revenu_passif_actuel:       number    // €/mois
+  /** Cible AJUSTÉE composition foyer (QW9). C'est ce qu'on affiche dans
+   *  le sub "sur X €/m visés" — cohérent avec patrimoine_fire_cible. */
   revenu_passif_cible:        number    // €/mois
+  /** QW9-bis — Détail de l'ajustement foyer. Si !hasAdjustment, le badge
+   *  inline n'est pas rendu (composant retourne null). */
+  cibleFoyerDetail:           CibleFoyerDetail | null
 }
 
 export function FIREProgressHero({ data }: { data: FireHeroData }) {
@@ -147,6 +154,13 @@ export function FIREProgressHero({ data }: { data: FireHeroData }) {
           label="Revenu passif"
           value={`${formatCurrency(data.revenu_passif_actuel, 'EUR', { decimals: 0 })}/m`}
           sub={`sur ${formatCurrency(data.revenu_passif_cible, 'EUR', { decimals: 0 })}/m visés`}
+          // QW9-bis — Badge "Pour ton foyer" + tooltip si ajustement actif.
+          // Composant retourne null si !hasAdjustment → aucun bruit visuel
+          // pour les profils sans ajustement (la valeur data.revenu_passif_cible
+          // est alors == valeur brute saisie, le sub reste cohérent).
+          extra={data.cibleFoyerDetail
+            ? <CibleFoyer detail={data.cibleFoyerDetail} variant="inline" className="mt-1" />
+            : null}
         />
       </div>
 
@@ -165,7 +179,7 @@ export function FIREProgressHero({ data }: { data: FireHeroData }) {
   )
 }
 
-function Row({ icon, label, value, sub, extraSub, accent, tooltip }: {
+function Row({ icon, label, value, sub, extraSub, accent, tooltip, extra }: {
   icon: React.ReactNode
   label: string
   value: string
@@ -173,6 +187,9 @@ function Row({ icon, label, value, sub, extraSub, accent, tooltip }: {
   extraSub?: string | null
   accent?: 'success' | 'warning'
   tooltip?: string
+  /** QW9-bis — slot pour insérer un composant React additionnel sous le sub
+   *  (ex. badge CibleFoyer). Rendu uniquement si non-null. */
+  extra?: React.ReactNode
 }) {
   const color = accent === 'success' ? 'text-accent'
               : accent === 'warning' ? 'text-warning'
@@ -190,6 +207,7 @@ function Row({ icon, label, value, sub, extraSub, accent, tooltip }: {
         <p className={`text-base font-semibold financial-value ${color}`}>{value}</p>
         <p className="text-[11px] text-muted truncate">{sub}</p>
         {extraSub && <p className="text-[10px] text-muted truncate">{extraSub}</p>}
+        {extra}
       </div>
     </div>
   )

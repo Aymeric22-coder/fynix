@@ -11,6 +11,13 @@
  * dans components/profil/). Ici on n'importe pas une seule classe CSS.
  */
 
+// QW9-bis — import du détail famille pour la projection ajustée (computeProfileMetrics).
+// Le cycle est apparent uniquement (cibleFamille.ts importe des helpers et constantes
+// de calculs.ts) : à l'exécution, les fonctions de cibleFamille ne sont appelées
+// QUE depuis l'intérieur de computeProfileMetrics, donc après initialisation du
+// module. Pas de TDZ.
+import { adjustCibleFamilleDetail } from './cibleFamille'
+
 // ───────────────────────────────────────────────────────────────────
 // Constantes — méta des 8 étapes
 // ───────────────────────────────────────────────────────────────────
@@ -486,13 +493,16 @@ export function fireTargetByType(
 // ───────────────────────────────────────────────────────────────────
 
 /** Coût mensuel moyen estimé d'un enfant à charge en France (INSEE 2023,
- *  ~3 600 €/an pour un enfant scolarisé sans frais exceptionnels). */
-const COUT_MENSUEL_PAR_ENFANT_EUR = 300
+ *  ~3 600 €/an pour un enfant scolarisé sans frais exceptionnels).
+ *  QW9-bis : exporté (additivement) pour réutilisation par lib/profil/cibleFamille.ts
+ *  — source unique de constante. */
+export const COUT_MENSUEL_PAR_ENFANT_EUR = 300
 
 /** Quotient appliqué au revenu passif cible si l'utilisateur est en couple
  *  marié/pacsé SANS revenu conjoint déclaré : on suppose qu'il devra
- *  financer pour 2 personnes (+50 % de la cible saisie). */
-const QUOTIENT_COUPLE_SANS_CONJOINT_REVENU = 0.5
+ *  financer pour 2 personnes (+50 % de la cible saisie).
+ *  QW9-bis : exporté (additivement) pour réutilisation par lib/profil/cibleFamille.ts. */
+export const QUOTIENT_COUPLE_SANS_CONJOINT_REVENU = 0.5
 
 /**
  * Delta mensuel à ADDITIONNER au `revenu_passif_cible` saisi pour refléter
@@ -682,9 +692,27 @@ export interface ProfileMetrics {
   globalPct:       number
   profileType:     ProfileType
 
+  /** Cible patrimoine FIRE basée sur le revenu_passif_cible BRUT (legacy QW9).
+   *  Conservée pour non-régression — la carte de profil affiche désormais
+   *  les variantes `*Ajuste` quand `cibleFoyerDetail.hasAdjustment === true`. */
   fireTargetCapital: number
   fireYearsValue:    number   // peut valoir 99 si inatteignable
   fireAge:           number | null
+
+  // ── QW9-bis — Variantes "ajustées composition du foyer" ─────────────
+  // Calculées en REJOUANT la même projection interne (fireTarget + fireYears)
+  // avec la cible AJUSTÉE. Aucune nouvelle logique : helper extrait, appelé 2×.
+  // Si `cibleFoyerDetail.hasAdjustment === false`, les valeurs *Ajuste sont
+  // identiques à leurs équivalents brut (garantie testable).
+
+  /** Décomposition de l'ajustement famille (raisons, brut, ajusté). */
+  cibleFoyerDetail:        import('./cibleFamille').CibleFoyerDetail
+  /** Cible patrimoine FIRE calculée sur la cible €/mois AJUSTÉE. */
+  fireTargetCapitalAjuste: number
+  /** Années nécessaires (composition foyer prise en compte). */
+  fireYearsValueAjuste:    number
+  /** Âge d'indépendance (composition foyer prise en compte). */
+  fireAgeAjuste:           number | null
 
   axes:            Axe[]
 }
@@ -694,6 +722,25 @@ export interface ProfileMetrics {
  
 function n(v: number | null | undefined): number {
   return typeof v === 'number' && isFinite(v) ? v : 0
+}
+
+/**
+ * QW9-bis — Helper privé behavior-preserving : exécute la projection
+ * FIRE interne (fireTarget × fireYears × âge) sur UNE cible €/mois.
+ *
+ * Identique à la séquence inline historique du computeProfileMetrics legacy.
+ * Extrait pour pouvoir l'appeler 2× (brut puis ajusté) SANS dupliquer la
+ * logique. AUCUNE nouvelle règle métier.
+ */
+function _projectFireFromRevenuMensuel(
+  revenuMensuelCible: number,
+  epargne:            number,
+  age:                number,
+): { capital: number; yrs: number; ageFire: number | null } {
+  const capital = fireTarget(revenuMensuelCible)
+  const yrs     = fireYears(epargne, capital)
+  const ageFire = age > 0 ? Math.round(age + yrs) : null
+  return { capital, yrs, ageFire: yrs >= 99 ? null : ageFire }
 }
 
 /**
@@ -722,9 +769,22 @@ export function computeProfileMetrics(p: ProfileInput): ProfileMetrics {
   const risk  = riskScore({ risk_1: p.risk_1, risk_2: p.risk_2, risk_3: p.risk_3, risk_4: p.risk_4 })
   const total = globalScore({ savingsRatePct: sr, riskPct: risk, experiencePct: exp })
 
-  const cible = fireTarget(n(p.revenu_passif_cible))
+  // ── Projection BRUTE — séquence legacy, INCHANGÉE bit pour bit ───────
+  const ageNum  = n(p.age)
+  const brutCible = n(p.revenu_passif_cible)
+  const cible = fireTarget(brutCible)
   const yrs   = fireYears(epargne, cible)
-  const age   = n(p.age) > 0 ? Math.round(n(p.age) + yrs) : null
+  const age   = ageNum > 0 ? Math.round(ageNum + yrs) : null
+
+  // ── QW9-bis — Projection AJUSTÉE (rejoue la même projection interne) ─
+  //    Sur cible AJUSTÉE = brut + adjustCibleFamille(p) (legacy strict).
+  //    `adjustCibleFamilleDetail` est importé en TOP-LEVEL (cf. en haut du
+  //    fichier) — pas de cycle réel : cibleFamille n'utilise calculs que
+  //    pour des constantes et des helpers déjà initialisés au moment où
+  //    sa propre fonction est appelée.
+  //    Helper extrait `_projectFireFromRevenuMensuel` = 0 nouvelle logique.
+  const cibleFoyerDetail = adjustCibleFamilleDetail(p)
+  const projAjuste = _projectFireFromRevenuMensuel(cibleFoyerDetail.ajuste, epargne, ageNum)
 
   return {
     revenusTotal:    revenus,
@@ -745,6 +805,12 @@ export function computeProfileMetrics(p: ProfileInput): ProfileMetrics {
     fireYearsValue:    yrs,
     fireAge:           yrs >= 99 ? null : age,
 
+    // QW9-bis — variantes foyer ajusté (rendues côté ProfilCard quand hasAdjustment)
+    cibleFoyerDetail,
+    fireTargetCapitalAjuste: projAjuste.capital,
+    fireYearsValueAjuste:    projAjuste.yrs,
+    fireAgeAjuste:           projAjuste.ageFire,
+
     axes: computeAxes({
       savingsRatePct: sr,
       bourseLevel:    bourse.level,
@@ -754,3 +820,4 @@ export function computeProfileMetrics(p: ProfileInput): ProfileMetrics {
     }),
   }
 }
+

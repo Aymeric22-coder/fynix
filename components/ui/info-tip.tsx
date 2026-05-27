@@ -19,8 +19,15 @@ import { HelpCircle } from 'lucide-react'
 import { cn } from '@/lib/utils/format'
 
 interface InfoTipProps {
-  /** Définition affichée dans la bulle (1-2 phrases courtes). */
+  /** Définition affichée dans la bulle (1-2 phrases courtes).
+   *  Utilisé pour `aria-label` même si `content` est fourni — garde
+   *  l'accessibilité screen-reader fonctionnelle. */
   text:       string
+  /** QW9-bis — contenu riche optionnel (liste à puces, multi-lignes, etc.).
+   *  Si fourni, remplace `text` dans le rendu visuel de la bulle. `text`
+   *  reste utilisé pour `aria-label`. Additif : aucun appelant existant
+   *  n'est impacté. */
+  content?:   React.ReactNode
   /** Position de la bulle vs l'icône. Défaut : `top`. */
   placement?: 'top' | 'bottom'
   /** Classes additionnelles sur le wrapper. */
@@ -31,6 +38,7 @@ interface InfoTipProps {
 
 export function InfoTip({
   text,
+  content,
   placement = 'top',
   className,
   iconSize  = 12,
@@ -66,7 +74,7 @@ export function InfoTip({
             : 'top-full mt-2',
         )}
       >
-        {text}
+        {content ?? text}
       </span>
     </button>
   )

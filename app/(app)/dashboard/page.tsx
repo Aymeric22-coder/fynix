@@ -196,6 +196,12 @@ export default async function DashboardPage() {
     // QW9 — Cible AJUSTÉE composition foyer (cohérence avec patrimoine_fire_cible
     // qui est calculé sur la même valeur dans computeProjectionSnapshot).
     revenu_passif_cible:          patrimoineComplet.fireInputs.revenu_passif_cible_ajuste,
+    // QW9-bis — Détail de l'ajustement foyer (déjà calculé par loadProfile,
+    // source unique). Si !hasAdjustment, on passe null pour que le composant
+    // CibleFoyer ne s'affiche pas du tout.
+    cibleFoyerDetail:             patrimoineComplet.fireInputs.cibleFoyerDetail.hasAdjustment
+                                    ? patrimoineComplet.fireInputs.cibleFoyerDetail
+                                    : null,
   }
 
   // ── Calculs patrimoine ────────────────────────────────────────────────────

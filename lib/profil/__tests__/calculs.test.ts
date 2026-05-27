@@ -278,6 +278,75 @@ describe('computeProfileMetrics — agrégat complet', () => {
     expect(m.fireYearsValue).toBe(99)
     expect(m.fireAge).toBeNull()
   })
+
+  // QW9-bis — Champs ajustés famille (additifs, non-régression brut)
+  describe('QW9-bis — variantes foyer ajusté', () => {
+    it('célibataire 0 enfant : *Ajuste === *Brut (cohérence), hasAdjustment=false', () => {
+      const m = computeProfileMetrics({
+        age: 35,
+        revenu_mensuel: 5000,
+        epargne_mensuelle: 1000,
+        revenu_passif_cible: 3000,
+        situation_familiale: 'Célibataire',
+        enfants: '0',
+      })
+      // Les champs brut existants restent inchangés bit pour bit
+      expect(m.fireTargetCapital).toBe(3000 * 12 * 25)
+      // Les variantes ajustées sont identiques au brut (pas d'ajustement)
+      expect(m.fireTargetCapitalAjuste).toBe(m.fireTargetCapital)
+      expect(m.fireYearsValueAjuste).toBe(m.fireYearsValue)
+      expect(m.fireAgeAjuste).toBe(m.fireAge)
+      // Detail neutre
+      expect(m.cibleFoyerDetail.hasAdjustment).toBe(false)
+      expect(m.cibleFoyerDetail.ajuste).toBe(m.cibleFoyerDetail.brut)
+    })
+
+    it('couple + 2 enfants sans revenu conjoint : *Ajuste > *Brut, hasAdjustment=true', () => {
+      const m = computeProfileMetrics({
+        age: 35,
+        revenu_mensuel: 5000, revenu_conjoint: 0,
+        epargne_mensuelle: 1000,
+        revenu_passif_cible: 3000,
+        situation_familiale: 'Marié(e) / PACS',
+        enfants: '2',
+      })
+      // BRUT inchangé bit pour bit (non-régression)
+      expect(m.fireTargetCapital).toBe(3000 * 12 * 25)        // 900 000 €
+      // AJUSTÉ : cible 5100 €/mois → capital 5100 × 12 × 25 = 1 530 000 €
+      expect(m.fireTargetCapitalAjuste).toBe(5100 * 12 * 25)
+      // Années / âge ajustés cohérents (plus longs car cible plus grande)
+      expect(m.fireYearsValueAjuste).toBeGreaterThan(m.fireYearsValue)
+      // Detail exposé
+      expect(m.cibleFoyerDetail.hasAdjustment).toBe(true)
+      expect(m.cibleFoyerDetail.brut).toBe(3000)
+      expect(m.cibleFoyerDetail.ajuste).toBe(5100)
+      expect(m.cibleFoyerDetail.raisons).toHaveLength(2)
+    })
+
+    it('non-régression : profil "complet" du test ci-dessus → champs brut inchangés', () => {
+      // Reproduit exactement la fixture de "calcule toutes les métriques (profil complet)"
+      // SANS situation_familiale / enfants (= comportement legacy).
+      const m = computeProfileMetrics({
+        age: 35,
+        revenu_mensuel: 5000, revenu_conjoint: 3000, autres_revenus: 500,
+        loyer: 1200, autres_credits: 0, charges_fixes: 400, depenses_courantes: 1000,
+        epargne_mensuelle: 3000,
+        quiz_bourse: [0, 1, 2, 3],
+        quiz_crypto: [0, 1, 2, 1],
+        quiz_immo:   [1, 2, 3],
+        risk_1: 'Renforcer', risk_2: '>15ans', risk_3: '10-20%', risk_4: '30-60%',
+        revenu_passif_cible: 4000,
+      })
+      // Les champs brut DOIVENT être strictement identiques à l'attendu legacy
+      expect(m.fireTargetCapital).toBe(4000 * 12 * 25)
+      expect(m.fireYearsValue).toBeLessThan(20)
+      expect(m.fireAge).not.toBeNull()
+      // Pas d'ajustement → variantes ajustées identiques
+      expect(m.fireTargetCapitalAjuste).toBe(m.fireTargetCapital)
+      expect(m.fireYearsValueAjuste).toBe(m.fireYearsValue)
+      expect(m.fireAgeAjuste).toBe(m.fireAge)
+    })
+  })
 })
 
 // ─────────────────────────────────────────────────────────────────

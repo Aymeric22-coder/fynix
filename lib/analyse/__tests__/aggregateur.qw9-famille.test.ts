@@ -260,14 +260,22 @@ describe('QW9 — cohérence Snapshot / score Progression FIRE / reco #7', () =>
     expect(snapshot!.patrimoine_fire_cible).toBeGreaterThan(1_500_000)
 
     // 2) Score Progression FIRE : lit revenu_passif_cible_ajuste.
-    //    Inspecte les inputs de l'explication pour confirmer 5100.
+    //    QW9-bis : quand hasAdjustment, le label monolithique
+    //    "Revenu passif cible" est remplacé par "(saisi)" + "(foyer ajusté)".
+    //    On valide la présence de la ligne ajustée avec 5100.
     const sc = p.scores.progression_fire
     expect(sc.value).not.toBeNull()
     const cibleEntry = sc.explanation?.inputs.find(
-      (i) => i.label === 'Revenu passif cible',
+      (i) => i.label === 'Revenu passif cible (foyer ajusté)',
     )
     expect(cibleEntry).toBeDefined()
     expect(cibleEntry!.value).toContain('5100')
+    // La ligne saisie est aussi présente (transparence brut)
+    const saisiEntry = sc.explanation?.inputs.find(
+      (i) => i.label === 'Revenu passif cible (saisi)',
+    )
+    expect(saisiEntry).toBeDefined()
+    expect(saisiEntry!.value).toContain('3000')
 
     // 3) Reco #7 "retard-fire" : la cible utilisée pour `cible = ... * 12 * 25`
     //    et le delta +200 €/mois portent sur revenu_passif_cible_ajuste.
@@ -293,8 +301,9 @@ describe('QW9 — cohérence Snapshot / score Progression FIRE / reco #7', () =>
     expect(p.fireInputs.revenu_passif_cible_ajuste).toBe(5100)
 
     // b) Score Progression FIRE lit l'ajusté (cf. inputs ci-dessus)
+    //    QW9-bis : label "(foyer ajusté)" quand hasAdjustment.
     const cibleScoreText = p.scores.progression_fire.explanation?.inputs
-      .find((i) => i.label === 'Revenu passif cible')?.value as string
+      .find((i) => i.label === 'Revenu passif cible (foyer ajusté)')?.value as string
     expect(cibleScoreText).toContain('5100')
 
     // c) Reco #7 utilise l'ajusté : la cible employée pour le calcul est

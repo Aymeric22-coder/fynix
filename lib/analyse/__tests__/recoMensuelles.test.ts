@@ -36,6 +36,11 @@ function pat(over: Partial<PatrimoineComplet> = {}): PatrimoineComplet {
       epargne_mensuelle: 800,
       revenu_passif_cible: 3000,
       revenu_passif_cible_ajuste: 3000,   // QW9 — pas d'ajustement famille dans cette fixture
+      cibleFoyerDetail: {
+        brut: 3000, ajuste: 3000, enfantsDelta: 0, coupleDelta: 0,
+        hasAdjustment: false, raisons: [], nbEnfants: 0, hasCoupleBonus: false,
+      },
+      revenu_conjoint: 0, situation_familiale: 'Célibataire', enfants: '0',
       revenu_mensuel_total: 5000,
       charges_mensuelles: 2000,
       risk_score: 50,
