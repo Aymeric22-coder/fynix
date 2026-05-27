@@ -32,6 +32,8 @@ const p = (over: Partial<PositionValuation> = {}): PositionValuation => ({
   costBasisRef:     1000,
   marketValueRef:   1100,
   unrealizedPnLRef: 100,
+  // Migration 045 — null par defaut (instrument jamais refresh)
+  lastRefreshAttemptedAt: null,
   ...over,
 })
 

@@ -154,6 +154,8 @@ function valueSinglePosition(
     costBasisRef:     0,
     marketValueRef:   null,
     unrealizedPnLRef: null,
+    // Migration 045 — propagee depuis l'instrument (preuve de vie cron).
+    lastRefreshAttemptedAt: inst.lastRefreshAttemptedAt,
   }
 }
 

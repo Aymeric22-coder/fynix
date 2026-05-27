@@ -35,6 +35,8 @@ function pos(over: Partial<PositionValuation> = {}): PositionValuation {
     costBasisRef:     1000,
     marketValueRef:   1100,
     unrealizedPnLRef: 100,
+    // Migration 045 — null par defaut
+    lastRefreshAttemptedAt: null,
     ...over,
   }
 }

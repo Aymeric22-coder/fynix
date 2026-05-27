@@ -66,6 +66,8 @@ interface InstrumentRow {
   sector:              string | null
   geography:           string | null
   valuation_frequency: ValuationFrequency | null
+  // Migration 045 — preuve de vie du dernier refresh (cron ou manuel).
+  last_refresh_attempted_at: string | null
 }
 
 interface PriceRow {
@@ -341,16 +343,17 @@ export async function buildPortfolioFromDb(
   }))
 
   const instrumentInputs: InstrumentInput[] = instruments.map((i) => ({
-    id:                 i.id,
-    ticker:             i.ticker,
-    isin:               i.isin,
-    name:               i.name,
-    assetClass:         i.asset_class,
-    subclass:           i.asset_subclass,
-    currency:           i.currency,
-    sector:             i.sector,
-    geography:          i.geography,
-    valuationFrequency: i.valuation_frequency ?? 'daily',
+    id:                     i.id,
+    ticker:                 i.ticker,
+    isin:                   i.isin,
+    name:                   i.name,
+    assetClass:             i.asset_class,
+    subclass:               i.asset_subclass,
+    currency:               i.currency,
+    sector:                 i.sector,
+    geography:              i.geography,
+    valuationFrequency:     i.valuation_frequency ?? 'daily',
+    lastRefreshAttemptedAt: i.last_refresh_attempted_at ?? null,
   }))
 
   const priceInputs: PriceInput[] = Array.from(latestByInstrument.values()).map((p) => ({

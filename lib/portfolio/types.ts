@@ -23,6 +23,12 @@ export interface InstrumentInput {
   geography:            string | null
   /** Migration 013 : cadence de valorisation attendue (daily/weekly/monthly/quarterly/manual). */
   valuationFrequency:   ValuationFrequency
+  /**
+   * Migration 045 : horodatage de la derniere TENTATIVE de refresh des prix
+   * (preuve de vie du cron, distinct de la date de validite marche). null
+   * tant qu'aucun refresh n'a tourne depuis la migration.
+   */
+  lastRefreshAttemptedAt: string | null
 }
 
 /** Représentation minimale d'une position utilisateur. */
@@ -90,6 +96,14 @@ export interface PositionValuation {
   marketValueRef:    number | null
   /** PnL latente convertie en devise ref. `null` si pas de prix ou FX KO. */
   unrealizedPnLRef:  number | null
+  /**
+   * Horodatage de la derniere tentative de refresh de prix (migration 045).
+   * Distinct de `priceFreshAt` qui est la date de validite marche. null si
+   * aucun refresh n'a tourne pour cet instrument depuis la migration.
+   * Permet a l'UI d'afficher "vérifié auj." meme quand le prix marche
+   * reste fige (ETF synthétique a NAV lente).
+   */
+  lastRefreshAttemptedAt: string | null
 }
 
 /** Vue agrégée du portefeuille pour le cockpit. */
