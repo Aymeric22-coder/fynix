@@ -134,7 +134,14 @@ export function FIREProgressHero({ data }: { data: FireHeroData }) {
         </div>
         <div className="flex items-baseline justify-between mt-1.5 text-[11px] text-muted financial-value">
           <span>{formatCurrency(data.patrimoine_net_actuel, 'EUR', { compact: true })}</span>
-          <span>{formatCurrency(data.patrimoine_fire_cible, 'EUR', { compact: true })} cible</span>
+          <span>
+            {formatCurrency(data.patrimoine_fire_cible, 'EUR', { compact: true })} cible
+            {/* QW9-bis close-out — Suffixe sobre "· foyer ajusté" quand la
+                cible est foyer-ajustée. Même pattern que le `details` du score
+                Progression FIRE. Pas de tooltip ni badge — la décomposition
+                complète vit sur le badge CibleFoyer plus bas. */}
+            {data.cibleFoyerDetail?.hasAdjustment && ' · foyer ajusté'}
+          </span>
         </div>
       </div>
 
