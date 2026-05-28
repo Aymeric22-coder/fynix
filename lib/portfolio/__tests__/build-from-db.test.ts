@@ -38,6 +38,8 @@ interface TableData {
   financial_envelopes?: unknown[]
   portfolio_snapshots?: unknown[]
   transactions?:        unknown[]
+  // TAX : profil foyer. maybeSingle → 1 ligne ou null.
+  profiles?:            unknown[]
 }
 
 function makeSupabaseStub(data: TableData) {
@@ -50,6 +52,8 @@ function makeSupabaseStub(data: TableData) {
       order:  () => chain,
       not:    () => chain,   // requête R6 (realized_pnl IS NOT NULL)
       gte:    () => chain,   // requête R6 (executed_at >= cutoff)
+      // TAX : maybeSingle (profiles) → 1ère ligne ou null, jamais throw.
+      maybeSingle: () => Promise.resolve({ data: rows[0] ?? null, error: null }),
       then(resolve: (v: { data: unknown[]; error: null }) => void) {
         resolve({ data: rows, error: null })
       },

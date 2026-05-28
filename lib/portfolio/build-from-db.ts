@@ -39,6 +39,12 @@ import {
   type DividendProjection,
   type CalendarMonth,
 } from './dividend-calendar'
+import {
+  estimatePortfolioTax,
+  type EnvelopeTaxEstimate,
+  type EnvelopeTaxInput,
+  type FoyerFiscalContext,
+} from './tax-estimate'
 import type { ValuePoint, CashFlow } from './analytics'
 
 // ─── DB row types (lecture seule, ce qu'on attend du SELECT) ────────────
@@ -141,6 +147,18 @@ export interface PortfolioSummaryWithFx extends PortfolioSummary {
     calendar:                 CalendarMonth[]
     /** SUM des annualProjectionRef de toutes les projections. */
     totalAnnualProjectionRef: number
+  } | null
+  /**
+   * Estimation INDICATIVE de la fiscalité par enveloppe sur les PV réalisées
+   * 12 mois (TAX). `null` si aucune PV réalisée sur la période. Cosmétique —
+   * ne constitue jamais un conseil fiscal (cf. disclaimer UI).
+   */
+  taxEstimate:         {
+    byEnvelope:          EnvelopeTaxEstimate[]
+    /** Somme des `estimatedTax` estimables (PER / type inconnu exclus). */
+    totalEstimatedTax:   number
+    /** Somme des `realizedPnlTtm` (toutes enveloppes estimées). */
+    totalRealizedPnlTtm: number
   } | null
 }
 
@@ -267,10 +285,12 @@ export async function buildPortfolioFromDb(
     { data: envelopeNameRows },
     { data: envelopeSnapshotRows },
     { data: envelopeCashFlowRows },
+    { data: profileRow },
   ] = await Promise.all([
     supabase
       .from('financial_envelopes')
-      .select('id, name')
+      // TAX : on ajoute envelope_type + opening_date pour l'estimation fiscale.
+      .select('id, name, envelope_type, opening_date')
       .eq('user_id', userId),
     supabase
       .from('portfolio_snapshots')
@@ -284,9 +304,16 @@ export async function buildPortfolioFromDb(
       .eq('user_id', userId)
       .in('transaction_type', ['purchase', 'sale'])
       .not('position_id', 'is', null),
+    // TAX : foyer fiscal (lecture seule). maybeSingle → 0 ligne tolérée
+    // (profil pas encore créé) sans planter le summary.
+    supabase
+      .from('profiles')
+      .select('situation_familiale, foyer_fiscal_parts')
+      .eq('id', userId)
+      .maybeSingle(),
   ])
 
-  interface EnvNameRow      { id: string; name: string }
+  interface EnvNameRow      { id: string; name: string; envelope_type: string; opening_date: string | null }
   interface EnvSnapRow      { envelope_id: string; snapshot_date: string; total_market_value: number }
   interface EnvCashFlowRow  {
     transaction_type: 'purchase' | 'sale'
@@ -296,8 +323,11 @@ export async function buildPortfolioFromDb(
   }
 
   const envelopeLabels: Record<string, string> = {}
+  // TAX : meta par enveloppe (type + ancienneté) pour l'estimation fiscale.
+  const envelopeMetaById = new Map<string, { type: string; openingDate: string | null; label: string }>()
   for (const e of (envelopeNameRows ?? []) as EnvNameRow[]) {
     envelopeLabels[e.id] = e.name
+    envelopeMetaById.set(e.id, { type: e.envelope_type, openingDate: e.opening_date, label: e.name })
   }
 
   // Bucket des snapshots par envelope_id
@@ -565,6 +595,43 @@ export async function buildPortfolioFromDb(
     }
   }
 
+  // 12. Estimation fiscale indicative par enveloppe (TAX).
+  //     Source des montants : realizedPnlTtm.byEnvelope (R6), déjà en devise
+  //     ref. On joint type + opening_date via envelopeMetaById. Les positions
+  //     sans enveloppe (NO_ENVELOPE_KEY) sont exclues : sans type d'enveloppe,
+  //     on ne devine pas le régime fiscal (cf. choix "other → null").
+  let taxEstimate: PortfolioSummaryWithFx['taxEstimate'] = null
+  if (realizedPnlTtm) {
+    const taxInputs: EnvelopeTaxInput[] = []
+    for (const [envelopeId, pnl] of Object.entries(realizedPnlTtm.byEnvelope)) {
+      if (envelopeId === NO_ENVELOPE_KEY) continue
+      const meta = envelopeMetaById.get(envelopeId)
+      if (!meta) continue  // enveloppe supprimée entre-temps : on ne l'estime pas
+      taxInputs.push({
+        envelopeId,
+        envelopeType:   meta.type,
+        envelopeLabel:  meta.label,
+        openingDate:    meta.openingDate,
+        realizedPnlTtm: pnl,
+      })
+    }
+    if (taxInputs.length > 0) {
+      // Foyer fiscal — dégradation propre si profil absent ou champs null.
+      const foyer: FoyerFiscalContext = {
+        situationFamiliale: (profileRow?.situation_familiale as string | null) ?? null,
+        foyerFiscalParts:   (profileRow?.foyer_fiscal_parts as number | null) ?? null,
+      }
+      const byEnvelope = estimatePortfolioTax(taxInputs, foyer, nowForTtm)
+      const totalEstimatedTax = byEnvelope.reduce(
+        (s, e) => s + (e.estimatedTax ?? 0), 0,
+      )
+      const totalRealizedPnlTtm = byEnvelope.reduce(
+        (s, e) => s + e.realizedPnlTtm, 0,
+      )
+      taxEstimate = { byEnvelope, totalEstimatedTax, totalRealizedPnlTtm }
+    }
+  }
+
   return {
     positions: result.positions,
     summary:   {
@@ -574,6 +641,7 @@ export async function buildPortfolioFromDb(
       realizedPnlTtm,
       envelopePerformance,
       dividendCalendar,
+      taxEstimate,
     },
   }
 }
@@ -602,6 +670,7 @@ function emptyResult(ref: CurrencyCode): PortfolioResultWithFx {
       realizedPnlTtm:        null,
       envelopePerformance:   [],
       dividendCalendar:      null,
+      taxEstimate:           null,
     },
   }
 }

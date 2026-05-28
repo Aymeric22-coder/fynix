@@ -20,6 +20,7 @@ import { RealizedPnlCard }            from '@/components/portfolio/realized-pnl-
 import { EnvelopePerformanceTable }   from '@/components/portfolio/envelope-performance-table'
 import { DividendProjectionCard }     from '@/components/portfolio/dividend-projection-card'
 import { DividendCalendarStrip }      from '@/components/portfolio/dividend-calendar-strip'
+import { TaxEstimateCard }            from '@/components/portfolio/tax-estimate-card'
 import {
   formatCurrency, formatPercent, formatQuantity,
   ASSET_CLASS_LABELS,
@@ -370,6 +371,19 @@ export default async function PortefeuillePage({ searchParams }: Props) {
             <div className="mb-6">
               <EnvelopePerformanceTable
                 data={fullResult.summary.envelopePerformance}
+                currency={summary.referenceCurrency}
+              />
+            </div>
+          )}
+
+          {/* ── Estimation fiscale par enveloppe (TAX) — Global uniquement.
+              Agrégat portefeuille entier (PV réalisées toutes enveloppes),
+              cohérent avec EPT/DCAL. Le composant gère son rendu conditionnel
+              (null si aucune PV réalisée). */}
+          {activeCategory === 'global' && (
+            <div className="mb-6">
+              <TaxEstimateCard
+                data={fullResult.summary.taxEstimate}
                 currency={summary.referenceCurrency}
               />
             </div>
