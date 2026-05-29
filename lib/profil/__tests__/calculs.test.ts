@@ -5,7 +5,7 @@ import {
   computeAxes, computeProfileMetrics,
   QUIZ_BOURSE,
   normalizeFireType, normalizeStabiliteRevenus, normalizePriorite,
-  normalizeSituationFamiliale, normalizeEnfants,
+  normalizeSituationFamiliale, normalizeEnfants, deriveStabiliteFromStatutPro,
   swrMultiplier, fireTargetByType,
   adjustCibleFamille, revenuPassifCibleAjuste,
 } from '../calculs'
@@ -385,6 +385,28 @@ describe('normalizeStabiliteRevenus', () => {
   it('null si non renseigné', () => {
     expect(normalizeStabiliteRevenus(null)).toBeNull()
     expect(normalizeStabiliteRevenus('autre situation')).toBeNull()
+  })
+})
+
+// QW2 — Fallback stabilité depuis le statut professionnel.
+describe('deriveStabiliteFromStatutPro', () => {
+  it('mappe les statuts non ambigus (1 par chip STATUTS_PRO)', () => {
+    expect(deriveStabiliteFromStatutPro('Salarié')).toBe('cdi')
+    expect(deriveStabiliteFromStatutPro('Indépendant / Freelance')).toBe('independant')
+    expect(deriveStabiliteFromStatutPro('Retraité')).toBe('retraite')
+  })
+  it('cas ambigus → null (pas de devinette)', () => {
+    expect(deriveStabiliteFromStatutPro("Chef d'entreprise")).toBeNull()
+    expect(deriveStabiliteFromStatutPro('Autre')).toBeNull()
+  })
+  it('null / undefined / inconnu → null', () => {
+    expect(deriveStabiliteFromStatutPro(null)).toBeNull()
+    expect(deriveStabiliteFromStatutPro(undefined)).toBeNull()
+    expect(deriveStabiliteFromStatutPro('Astronaute')).toBeNull()
+  })
+  it('tolérant à la casse / sans accent', () => {
+    expect(deriveStabiliteFromStatutPro('salarie')).toBe('cdi')
+    expect(deriveStabiliteFromStatutPro('FREELANCE')).toBe('independant')
   })
 })
 

@@ -214,3 +214,80 @@ describe('getPatrimoineComplet — idempotence (D8 #5)', () => {
       .toBe(p2.projectionFIRESnapshot?.patrimoine_fire_cible)
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────
+// QW2 — Fallback stabilite_revenus depuis statut_pro
+// ─────────────────────────────────────────────────────────────────────
+
+describe('getPatrimoineComplet — QW2 stabilité effective', () => {
+  /** Lit la stabilité effective exposée dans fireInputs (champ étendu via cast). */
+  function stabilite(p: Awaited<ReturnType<typeof getPatrimoineComplet>>): string | null {
+    return (p.fireInputs as unknown as { stabilite_revenus?: string | null }).stabilite_revenus ?? null
+  }
+
+  /** Construit une fixture profil minimale avec statut_pro + stabilite_revenus.
+   *  Inclut un compte cash pour que totalBrut > 0 (sinon calculerSolidite
+   *  retourne insufficientData et n'expose pas le détail de stabilité). */
+  function profilQW2(statut_pro: string | null, stabilite_revenus: string | null) {
+    return {
+      profiles: [{
+        id: 'u-1', tmi_rate: 30, fire_type: 'standard',
+        age: 35, age_cible: 50,
+        epargne_mensuelle: 1000, revenu_passif_cible: 3000,
+        revenu_mensuel: 5000, revenu_mensuel_total: 5000, charges_mensuelles: 2000,
+        enveloppes: [],
+        statut_pro, stabilite_revenus,
+        situation_familiale: 'celibataire', enfants: '0',
+        prenom: null,
+      }],
+      cash_accounts: [{
+        id: 'c1', account_type: 'livret_a', balance: 20000,
+        currency: 'EUR', bank_name: 'Test', asset: null,
+      }],
+    }
+  }
+
+  it('Salarié + stabilite null → fallback cdi', async () => {
+    setupTables(profilQW2('Salarié', null))
+    const p = await getPatrimoineComplet('u-1')
+    expect(stabilite(p)).toBe('cdi')
+  })
+
+  it('Indépendant + stabilite null → fallback independant', async () => {
+    setupTables(profilQW2('Indépendant / Freelance', null))
+    const p = await getPatrimoineComplet('u-1')
+    expect(stabilite(p)).toBe('independant')
+  })
+
+  it('Retraité + stabilite null → fallback retraite', async () => {
+    setupTables(profilQW2('Retraité', null))
+    const p = await getPatrimoineComplet('u-1')
+    expect(stabilite(p)).toBe('retraite')
+  })
+
+  it('saisie explicite NON écrasée : Salarié + stabilite "Chômage" → chomage', async () => {
+    setupTables(profilQW2('Salarié', 'Chômage longue durée'))
+    const p = await getPatrimoineComplet('u-1')
+    expect(stabilite(p)).toBe('chomage')
+  })
+
+  it("Chef d'entreprise + stabilite null → null (pas de fallback ambigu)", async () => {
+    setupTables(profilQW2("Chef d'entreprise", null))
+    const p = await getPatrimoineComplet('u-1')
+    expect(stabilite(p)).toBeNull()
+  })
+
+  it('impact concret score Solidité : Indépendant ayant skippé étape 2 → −5 pts vs neutre', async () => {
+    // AVANT QW2 : stabilite null → 0 pt (neutre). APRÈS : fallback independant → −5 pts.
+    // On vérifie que le fallback est bien pris en compte par calculerSolidite
+    // en comparant le détail "Stabilité des revenus" exposé dans l'explication.
+    setupTables(profilQW2('Indépendant / Freelance', null))
+    const p = await getPatrimoineComplet('u-1')
+    const ligneStab = p.scores.solidite.explanation?.inputs
+      .find((i) => i.label === 'Stabilité des revenus')
+    expect(ligneStab).toBeDefined()
+    // Le libellé doit refléter l'id "independant" et le malus -5 (pas "Non renseignée").
+    expect(ligneStab!.value).toContain('independant')
+    expect(ligneStab!.value).toContain('-5')
+  })
+})

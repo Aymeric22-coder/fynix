@@ -402,6 +402,42 @@ export function normalizeStabiliteRevenus(v: string | null | undefined): Stabili
   return null
 }
 
+/**
+ * QW2 — Dérive une stabilité de revenus DEFAUT depuis le statut professionnel.
+ *
+ * Fallback utilisé UNIQUEMENT quand l'utilisateur n'a pas renseigné
+ * `stabilite_revenus` (l'étape 2 « Revenus » du wizard est skippable). Permet
+ * au score Solidité d'appliquer l'ajustement de stabilité même sans saisie
+ * explicite, à partir du statut_pro (étape 1, obligatoire).
+ *
+ * N'écrase JAMAIS une saisie explicite (le fallback ne s'active que sur null
+ * côté aggregateur). Pure, sans effet de bord.
+ *
+ * Mapping volontairement restreint aux cas NON AMBIGUS :
+ *   - Salarié                 → 'cdi'         (revenu régulier présumé)
+ *   - Indépendant / Freelance → 'independant' (revenu variable présumé)
+ *   - Retraité                → 'retraite'    (pension stable)
+ *   - Chef d'entreprise       → null  (trop variable : dividendes, salaire mixte)
+ *   - Autre / inconnu / vide  → null  (indéterminé)
+ *
+ * On ne devine pas pour les cas ambigus : mieux vaut un score neutre qu'un
+ * ajustement potentiellement faux.
+ */
+export function deriveStabiliteFromStatutPro(
+  statut_pro: string | null | undefined,
+): StabiliteRevenusId | null {
+  if (!statut_pro) return null
+  const s = statut_pro.toLowerCase().trim()
+  // "chef d'entreprise" NE doit PAS matcher independant/salarié → on le laisse
+  // tomber dans le `return null` final (aucune branche ne le capture).
+  if (s.includes('chef'))                                       return null
+  if (s.includes('salarié') || s.includes('salarie'))           return 'cdi'
+  if (s.includes('indépendant') || s.includes('independant')
+   || s.includes('freelance'))                                  return 'independant'
+  if (s.includes('retrait'))                                    return 'retraite'
+  return null
+}
+
 export function normalizePriorite(v: string | null | undefined): PrioriteId | null {
   if (!v) return null
   const s = v.toLowerCase().trim()
@@ -658,7 +694,6 @@ export interface ProfileInput {
   depenses_courantes?:   number | null
 
   epargne_mensuelle?:    number | null
-  invest_mensuel?:       number | null
   enveloppes?:           ReadonlyArray<string> | null
 
   quiz_bourse?:          ReadonlyArray<number> | null

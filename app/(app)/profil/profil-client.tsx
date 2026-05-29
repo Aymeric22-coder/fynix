@@ -169,7 +169,7 @@ function extractInitialValues(p: ReturnType<typeof useUserProfile>['profile']): 
     autres_revenus: p.autres_revenus, stabilite_revenus: p.stabilite_revenus,
     loyer: p.loyer, autres_credits: p.autres_credits,
     charges_fixes: p.charges_fixes, depenses_courantes: p.depenses_courantes,
-    epargne_mensuelle: p.epargne_mensuelle, invest_mensuel: p.invest_mensuel,
+    epargne_mensuelle: p.epargne_mensuelle,
     enveloppes: p.enveloppes ?? [],
     quiz_bourse: p.quiz_bourse ?? [], quiz_crypto: p.quiz_crypto ?? [], quiz_immo: p.quiz_immo ?? [],
     risk_1: p.risk_1, risk_2: p.risk_2, risk_3: p.risk_3, risk_4: p.risk_4,

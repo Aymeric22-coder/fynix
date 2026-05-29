@@ -17,7 +17,7 @@ interface Props {
 }
 
 export function Step4({ values, set }: Props) {
-  const num = (k: 'epargne_mensuelle' | 'invest_mensuel') =>
+  const num = (k: 'epargne_mensuelle') =>
     (e: React.ChangeEvent<HTMLInputElement>) =>
       set(k, e.target.value ? Number(e.target.value) : null)
 
@@ -45,10 +45,6 @@ export function Step4({ values, set }: Props) {
       <Field label="Épargne mensuelle actuelle">
         <Input type="number" min={0} placeholder="500"
                value={values.epargne_mensuelle ?? ''} onChange={num('epargne_mensuelle')} />
-      </Field>
-      <Field label="Capacité mensuelle souhaitée">
-        <Input type="number" min={0} placeholder="800"
-               value={values.invest_mensuel ?? ''} onChange={num('invest_mensuel')} />
       </Field>
 
       <Field label="Enveloppes d'investissement ouvertes" hint="Sélection multiple">

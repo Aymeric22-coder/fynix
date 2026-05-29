@@ -327,6 +327,9 @@ interface ProfileRow {
   fire_type:           string | null
   priorite:            string | null
   stabilite_revenus:   string | null
+  // QW2 — statut_pro sert de fallback pour deriver la stabilite quand
+  // stabilite_revenus est null (etape 2 skippee).
+  statut_pro:          string | null
 }
 
 interface ProfileLoaded {
@@ -376,7 +379,8 @@ async function loadProfile(userId: string): Promise<ProfileLoaded> {
       enveloppes, tmi_rate,
       risk_1, risk_2, risk_3, risk_4,
       quiz_bourse, quiz_crypto, quiz_immo,
-      situation_familiale, enfants, fire_type, priorite, stabilite_revenus
+      situation_familiale, enfants, fire_type, priorite, stabilite_revenus,
+      statut_pro
     `)
     .eq('id', userId)
     .maybeSingle()
@@ -402,7 +406,10 @@ async function loadProfile(userId: string): Promise<ProfileLoaded> {
 
   // Réutilise la lib du module Profil (déjà testée). Import dynamique pour
   // éviter une circularité au boot.
-  const { riskScore, experienceScore, inferProfileType } = await import('@/lib/profil/calculs')
+  const {
+    riskScore, experienceScore, inferProfileType,
+    normalizeStabiliteRevenus, deriveStabiliteFromStatutPro,
+  } = await import('@/lib/profil/calculs')
   const risk = riskScore({ risk_1: p.risk_1, risk_2: p.risk_2, risk_3: p.risk_3, risk_4: p.risk_4 })
   const exp  = experienceScore({
     bourse: { correct: countCorrect(p.quiz_bourse), total: 4 },
@@ -434,6 +441,16 @@ async function loadProfile(userId: string): Promise<ProfileLoaded> {
   // (Identité testée dans cibleFamille.test.ts.)
   const cibleAjustee = cibleFoyerDetail.ajuste
 
+  // QW2 — Stabilité EFFECTIVE : saisie explicite (étape 2, skippable) ou,
+  // à défaut, fallback dérivé du statut_pro (étape 1, obligatoire).
+  // N'écrase jamais une saisie : `??` ne s'applique que si la normalisation
+  // du brut donne null (= non renseigné / non reconnu). On expose l'ID
+  // normalisé (ou null) — le consommateur calculerSolidite re-normalise
+  // (idempotent sur les IDs).
+  const stabiliteEffective =
+    normalizeStabiliteRevenus(p.stabilite_revenus)
+      ?? deriveStabiliteFromStatutPro(p.statut_pro)
+
   return {
     prenom:              p.prenom,
     profilType:          inferProfileType(risk, exp),
@@ -453,7 +470,8 @@ async function loadProfile(userId: string): Promise<ProfileLoaded> {
     enfants:             p.enfants,
     fire_type:           p.fire_type,
     priorite:            p.priorite,
-    stabilite_revenus:   p.stabilite_revenus,
+    // QW2 — valeur EFFECTIVE (saisie ou fallback statut_pro), pas le brut.
+    stabilite_revenus:   stabiliteEffective,
   }
 }
 
