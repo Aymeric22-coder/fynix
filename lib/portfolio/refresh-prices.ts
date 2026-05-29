@@ -27,6 +27,8 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { buildOrchestrator } from './providers'
 import type { InstrumentLookup } from './providers'
 import { YahooFinanceProvider } from '@/lib/providers/market-data/yahoo'
+// TEMP-DEBUG BNCH — retirer apres diagnostic
+import yahooFinanceDebug from 'yahoo-finance2'
 import type { AssetClass } from '@/types/database.types'
 
 /**
@@ -314,7 +316,22 @@ export async function refreshBenchmarkPrices(
 export interface BackfillBenchmarksResult {
   inserted:  number
   errors:    number
-  perBenchmark: Array<{ id: string; name: string; points: number }>
+  // TEMP-DEBUG BNCH — _debug ajoute temporairement pour diagnostic, retirer apres
+  perBenchmark: Array<{
+    id: string; name: string; points: number
+    _debug?: {
+      ticker:             string | null
+      windowStart:        string
+      windowEnd:          string
+      rawResultType:      string
+      rawResultIsArray:   boolean
+      rawResultLength:    number | null
+      rawResultSample:    string | null
+      caughtErrorName:    string | null
+      caughtErrorMessage: string | null
+      caughtErrorStack:   string | null
+    }
+  }>
 }
 
 /**
@@ -336,22 +353,43 @@ export async function backfillBenchmarkHistory(
   if (error) throw new Error(`backfill-benchmarks: load failed: ${error.message}`)
   const rows = (benchmarks ?? []) as BenchmarkRow[]
 
-  const provider = new YahooFinanceProvider()
   let inserted = 0, errors = 0
-  const perBenchmark: Array<{ id: string; name: string; points: number }> = []
+  const perBenchmark: BackfillBenchmarksResult['perBenchmark'] = []
+
+  const windowStart = from.toISOString().slice(0, 10)
+  const windowEnd   = to.toISOString().slice(0, 10)
+
+  // TEMP-DEBUG BNCH — on appelle yf.historical DIRECTEMENT (et non
+  // provider.getHistory qui avale l'erreur en interne) afin de capturer le
+  // retour brut + l'exception reelle dans la reponse JSON. A RETIRER apres.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const yf = yahooFinanceDebug as any
 
   for (const b of rows) {
     if (!b.ticker) { perBenchmark.push({ id: b.id, name: b.name, points: 0 }); continue }
+
+    let rawResult: unknown = undefined
+    let caughtError: Error | null = null
     try {
-      const history = await provider.getHistory(b.ticker, from, to)
-      const inserts: PriceInsertRow[] = history
-        .filter((h) => h.close > 0)
-        .map((h) => ({
+      rawResult = await yf.historical(
+        b.ticker,
+        { period1: from, period2: to, interval: '1d' },
+        { validateResult: false },
+      )
+    } catch (e) {
+      caughtError = e as Error
+    }
+
+    // Construction des inserts uniquement si rawResult est un array exploitable.
+    let pointCount = 0
+    if (Array.isArray(rawResult)) {
+      const inserts: PriceInsertRow[] = rawResult
+        .filter((h: { close?: number }) => typeof h.close === 'number' && h.close > 0)
+        .map((h: { date: string | Date; close: number }) => ({
           instrument_id: b.id,
           price:         h.close,
           currency:      b.currency,
-          // Date de marche a minuit UTC (granularite jour pour l'historique).
-          priced_at:     `${h.date}T00:00:00.000Z`,
+          priced_at:     `${new Date(h.date).toISOString().slice(0, 10)}T00:00:00.000Z`,
           source:        'yahoo',
           confidence:    'high',
         }))
@@ -359,16 +397,34 @@ export async function backfillBenchmarkHistory(
         const { error: upErr } = await admin
           .from('instrument_prices')
           .upsert(inserts, { onConflict: 'instrument_id,priced_at,source', ignoreDuplicates: true })
-        if (upErr) throw new Error(upErr.message)
-        inserted += inserts.length
+        if (upErr) { caughtError = new Error(`upsert: ${upErr.message}`); errors++ }
+        else       { inserted += inserts.length }
       }
-      perBenchmark.push({ id: b.id, name: b.name, points: inserts.length })
-    } catch (e) {
-      console.error(`[backfill-benchmarks] failed for ${b.id} (${b.name}):`, e)
+      pointCount = inserts.length
+    } else if (caughtError) {
       errors++
-      perBenchmark.push({ id: b.id, name: b.name, points: 0 })
     }
+
+    perBenchmark.push({
+      id: b.id, name: b.name, points: pointCount,
+      // TEMP-DEBUG BNCH
+      _debug: {
+        ticker:             b.ticker,
+        windowStart, windowEnd,
+        rawResultType:      typeof rawResult,
+        rawResultIsArray:   Array.isArray(rawResult),
+        rawResultLength:    Array.isArray(rawResult) ? rawResult.length : null,
+        rawResultSample:    Array.isArray(rawResult) ? JSON.stringify(rawResult.slice(0, 2)) : (typeof rawResult === 'string' ? rawResult.slice(0, 200) : null),
+        caughtErrorName:    caughtError?.name ?? null,
+        caughtErrorMessage: caughtError?.message ?? null,
+        caughtErrorStack:   caughtError?.stack?.split('\n').slice(0, 3).join(' | ') ?? null,
+      },
+    })
   }
+
+  // `provider` (getHistory) inutilise pendant le diagnostic ; conserve l'import
+  // pour eviter un retrait/rajout. void pour le lint.
+  void YahooFinanceProvider
 
   return { inserted, errors, perBenchmark }
 }
