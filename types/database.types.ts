@@ -738,6 +738,10 @@ export interface Instrument {
   // marché. Permet à l'UI de distinguer "prix vieux car marché ne bouge pas"
   // (priced_at ancien + last_refresh récent) de "cron cassé" (les deux anciens).
   last_refresh_attempted_at: string | null
+  // ── Migration 046 — Benchmark (indice de référence) ──
+  // TRUE = indice tracké pour comparaison de performance, jamais détenu.
+  // Filtré des listes utilisateur, inclus dans le refresh cron.
+  is_benchmark: boolean
 }
 
 export interface Position {

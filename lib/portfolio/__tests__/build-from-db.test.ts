@@ -51,6 +51,7 @@ function makeSupabaseStub(data: TableData) {
       or:     () => chain,
       order:  () => chain,
       not:    () => chain,   // requête R6 (realized_pnl IS NOT NULL)
+      is:     () => chain,   // BNCH (envelope_id IS NULL)
       gte:    () => chain,   // requête R6 (executed_at >= cutoff)
       // TAX : maybeSingle (profiles) → 1ère ligne ou null, jamais throw.
       maybeSingle: () => Promise.resolve({ data: rows[0] ?? null, error: null }),

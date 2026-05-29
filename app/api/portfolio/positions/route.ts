@@ -95,6 +95,8 @@ export const POST = withAuth(async (req: Request, user: User) => {
     if (!i.name || !i.asset_class) return err('instrument.name and asset_class required')
 
     // Tentative de réconciliation : si ticker/isin déjà existant, on réutilise.
+    // BNCH : on EXCLUT les benchmarks (is_benchmark) — un indice de référence
+    // ne doit jamais devenir le support d'une position utilisateur.
     if (i.ticker || i.isin) {
       const orParts: string[] = []
       if (i.ticker) orParts.push(`ticker.eq.${i.ticker}`)
@@ -103,6 +105,7 @@ export const POST = withAuth(async (req: Request, user: User) => {
         .from('instruments')
         .select('id')
         .or(orParts.join(','))
+        .eq('is_benchmark', false)
         .limit(1)
       if (existing && existing.length > 0) instrumentId = existing[0]!.id as string
     }

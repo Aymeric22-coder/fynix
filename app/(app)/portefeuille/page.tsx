@@ -21,6 +21,7 @@ import { EnvelopePerformanceTable }   from '@/components/portfolio/envelope-perf
 import { DividendProjectionCard }     from '@/components/portfolio/dividend-projection-card'
 import { DividendCalendarStrip }      from '@/components/portfolio/dividend-calendar-strip'
 import { TaxEstimateCard }            from '@/components/portfolio/tax-estimate-card'
+import { BenchmarkComparisonCard }    from '@/components/portfolio/benchmark-comparison-card'
 import {
   formatCurrency, formatPercent, formatQuantity,
   ASSET_CLASS_LABELS,
@@ -385,6 +386,17 @@ export default async function PortefeuillePage({ searchParams }: Props) {
               <TaxEstimateCard
                 data={fullResult.summary.taxEstimate}
                 currency={summary.referenceCurrency}
+              />
+            </div>
+          )}
+
+          {/* ── Performance vs indices (BNCH) — Global uniquement.
+              Compare le TWR global du portefeuille aux benchmarks sur la
+              même fenêtre. Le composant gère son rendu conditionnel. */}
+          {activeCategory === 'global' && (
+            <div className="mb-6">
+              <BenchmarkComparisonCard
+                data={fullResult.summary.benchmarkComparison}
               />
             </div>
           )}

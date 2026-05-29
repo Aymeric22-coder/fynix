@@ -26,6 +26,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { buildOrchestrator } from './providers'
 import type { InstrumentLookup } from './providers'
+import { YahooFinanceProvider } from '@/lib/providers/market-data/yahoo'
 import type { AssetClass } from '@/types/database.types'
 
 /**
@@ -214,4 +215,160 @@ export async function refreshInstrumentPrices(
     refreshed, skipped, errors, protectedManual,
     instrumentsScanned: insts.length,
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// BNCH — Benchmarks (indices de reference)
+// ─────────────────────────────────────────────────────────────────────
+//
+// Les benchmarks (is_benchmark = TRUE) sont traites par un chemin
+// YAHOO-DIRECT (pas l'orchestrateur), pour 2 raisons :
+//   1. Cohérence de source : backfill (getHistory) et forward (getQuote)
+//      stockent tous deux source='yahoo' → une seule serie lisible.
+//   2. ^FCHI (CAC 40, asset_class='other') n'est route par AUCUN provider
+//      de l'orchestrateur ('other' non supporte) ; yahoo-direct le sert.
+//
+// Aucune position n'est rattachee aux benchmarks → ils ne sont PAS
+// inclus dans le refresh standard (base sur positions actives).
+
+interface BenchmarkRow {
+  id:       string
+  name:     string
+  ticker:   string | null
+  currency: string
+}
+
+export interface RefreshBenchmarksResult {
+  refreshed: number
+  skipped:   number
+  errors:    number
+}
+
+/** Tronque une timestamp a la minute (coherent avec refreshInstrumentPrices). */
+function truncMinute(d: Date): string {
+  const t = new Date(d)
+  t.setSeconds(0, 0)
+  return t.toISOString()
+}
+
+/**
+ * Forward-tracking : recupere le QUOTE COURANT de chaque benchmark via
+ * yahoo direct et l'insere (source='yahoo'). Idempotent via la cle unique
+ * (instrument_id, priced_at, source). Appele par le cron quotidien.
+ */
+export async function refreshBenchmarkPrices(
+  admin: SupabaseClient,
+): Promise<RefreshBenchmarksResult> {
+  const { data: benchmarks, error } = await admin
+    .from('instruments')
+    .select('id, name, ticker, currency')
+    .eq('is_benchmark', true)
+  if (error) {
+    throw new Error(`refresh-benchmarks: load failed: ${error.message}`)
+  }
+  const rows = (benchmarks ?? []) as BenchmarkRow[]
+  if (rows.length === 0) return { refreshed: 0, skipped: 0, errors: 0 }
+
+  const provider = new YahooFinanceProvider()
+  const inserts: PriceInsertRow[] = []
+  let refreshed = 0, skipped = 0, errors = 0
+
+  for (const b of rows) {
+    if (!b.ticker) { skipped++; continue }
+    try {
+      const q = await provider.getQuote(b.ticker)
+      if (!q || !(q.price > 0)) { skipped++; continue }
+      inserts.push({
+        instrument_id: b.id,
+        price:         q.price,
+        currency:      q.currency,
+        priced_at:     truncMinute(q.fetchedAt),
+        source:        'yahoo',
+        confidence:    q.confidence,
+      })
+      refreshed++
+    } catch (e) {
+      console.error(`[refresh-benchmarks] failed for ${b.id} (${b.name}):`, e)
+      errors++
+    }
+  }
+
+  if (inserts.length > 0) {
+    const { error: upErr } = await admin
+      .from('instrument_prices')
+      .upsert(inserts, { onConflict: 'instrument_id,priced_at,source', ignoreDuplicates: true })
+    if (upErr) throw new Error(`refresh-benchmarks: upsert failed: ${upErr.message}`)
+  }
+
+  // P2 : tracer la tentative pour les benchmarks aussi.
+  const ids = rows.map((b) => b.id)
+  const { error: updErr } = await admin
+    .from('instruments')
+    .update({ last_refresh_attempted_at: new Date().toISOString() })
+    .in('id', ids)
+  if (updErr) console.warn('[refresh-benchmarks] last_refresh_attempted_at update failed:', updErr.message)
+
+  return { refreshed, skipped, errors }
+}
+
+export interface BackfillBenchmarksResult {
+  inserted:  number
+  errors:    number
+  perBenchmark: Array<{ id: string; name: string; points: number }>
+}
+
+/**
+ * Backfill historique : pour chaque benchmark, fetch l'historique de prix
+ * via yahoo getHistory(ticker, from, to) et insere (source='yahoo').
+ * Idempotent via la cle unique → un re-run n'ajoute aucun doublon.
+ *
+ * Appele par la route one-shot POST /api/cron/backfill-benchmarks.
+ */
+export async function backfillBenchmarkHistory(
+  admin: SupabaseClient,
+  from:  Date,
+  to:    Date = new Date(),
+): Promise<BackfillBenchmarksResult> {
+  const { data: benchmarks, error } = await admin
+    .from('instruments')
+    .select('id, name, ticker, currency')
+    .eq('is_benchmark', true)
+  if (error) throw new Error(`backfill-benchmarks: load failed: ${error.message}`)
+  const rows = (benchmarks ?? []) as BenchmarkRow[]
+
+  const provider = new YahooFinanceProvider()
+  let inserted = 0, errors = 0
+  const perBenchmark: Array<{ id: string; name: string; points: number }> = []
+
+  for (const b of rows) {
+    if (!b.ticker) { perBenchmark.push({ id: b.id, name: b.name, points: 0 }); continue }
+    try {
+      const history = await provider.getHistory(b.ticker, from, to)
+      const inserts: PriceInsertRow[] = history
+        .filter((h) => h.close > 0)
+        .map((h) => ({
+          instrument_id: b.id,
+          price:         h.close,
+          currency:      b.currency,
+          // Date de marche a minuit UTC (granularite jour pour l'historique).
+          priced_at:     `${h.date}T00:00:00.000Z`,
+          source:        'yahoo',
+          confidence:    'high',
+        }))
+      if (inserts.length > 0) {
+        const { error: upErr } = await admin
+          .from('instrument_prices')
+          .upsert(inserts, { onConflict: 'instrument_id,priced_at,source', ignoreDuplicates: true })
+        if (upErr) throw new Error(upErr.message)
+        inserted += inserts.length
+      }
+      perBenchmark.push({ id: b.id, name: b.name, points: inserts.length })
+    } catch (e) {
+      console.error(`[backfill-benchmarks] failed for ${b.id} (${b.name}):`, e)
+      errors++
+      perBenchmark.push({ id: b.id, name: b.name, points: 0 })
+    }
+  }
+
+  return { inserted, errors, perBenchmark }
 }

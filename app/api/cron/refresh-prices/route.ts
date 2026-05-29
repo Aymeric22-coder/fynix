@@ -18,7 +18,7 @@
  */
 
 import { createClient } from '@supabase/supabase-js'
-import { refreshInstrumentPrices } from '@/lib/portfolio/refresh-prices'
+import { refreshInstrumentPrices, refreshBenchmarkPrices } from '@/lib/portfolio/refresh-prices'
 import { persistPortfolioSnapshot } from '@/lib/portfolio/persist-snapshot'
 
 export const dynamic = 'force-dynamic'
@@ -52,6 +52,16 @@ export async function GET(req: Request) {
     auth: { persistSession: false, autoRefreshToken: false },
   })
 
+  // ── 0. Benchmarks (BNCH) — indices de reference, sans position rattachee.
+  //      Forward-tracking via yahoo direct. Tourne TOUJOURS, meme s'il n'y
+  //      a aucune position active (les benchmarks sont independants).
+  let benchmarkResult = { refreshed: 0, skipped: 0, errors: 0 }
+  try {
+    benchmarkResult = await refreshBenchmarkPrices(supabase)
+  } catch (e) {
+    console.warn('[cron] benchmark refresh failed:', (e as Error).message)
+  }
+
   // ── 1. Instruments à rafraîchir (ceux détenus dans au moins une position active) ──
   const { data: held, error: e1 } = await supabase
     .from('positions')
@@ -66,6 +76,7 @@ export async function GET(req: Request) {
   if (ids.length === 0) {
     return Response.json({
       refreshed: 0, skipped: 0, errors: 0, protected_manual: 0,
+      benchmarks: benchmarkResult,
       message: 'no active positions',
     })
   }
@@ -107,5 +118,6 @@ export async function GET(req: Request) {
     protected_manual: protectedManual,
     instrumentsScanned,
     snapshotsCreated,
+    benchmarks: benchmarkResult,
   })
 }

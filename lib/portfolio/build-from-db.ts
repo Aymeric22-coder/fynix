@@ -45,6 +45,12 @@ import {
   type EnvelopeTaxInput,
   type FoyerFiscalContext,
 } from './tax-estimate'
+import {
+  computeBenchmarkReturn,
+  type BenchmarkPerformance,
+  type PricePoint as BenchmarkPricePoint,
+} from './benchmark-comparison'
+import { computeHistoricalAnalytics } from './historical-analytics'
 import type { ValuePoint, CashFlow } from './analytics'
 
 // ─── DB row types (lecture seule, ce qu'on attend du SELECT) ────────────
@@ -159,6 +165,16 @@ export interface PortfolioSummaryWithFx extends PortfolioSummary {
     totalEstimatedTax:   number
     /** Somme des `realizedPnlTtm` (toutes enveloppes estimées). */
     totalRealizedPnlTtm: number
+  } | null
+  /**
+   * Comparaison du TWR global du portefeuille aux indices de référence
+   * (BNCH). `null` si fenêtre < 30 jours OU aucun benchmark calculable.
+   * Toutes les valeurs de rendement sont en POURCENTAGE.
+   */
+  benchmarkComparison: {
+    window:     { start: string; end: string; days: number }
+    portfolio:  { twr: number; annualizedTwr: number | null }
+    benchmarks: BenchmarkPerformance[]
   } | null
 }
 
@@ -632,6 +648,98 @@ export async function buildPortfolioFromDb(
     }
   }
 
+  // 13. Comparaison aux indices de référence (BNCH). Self-contained :
+  //     build-from-db charge ici les snapshots GLOBAUX (envelope_id NULL)
+  //     + cash flows, calcule le TWR global lui-même (computeHistoricalAnalytics),
+  //     puis compare aux benchmarks. ⚠️ computeHistoricalAnalytics renvoie un
+  //     DÉCIMAL (0.125) → on × 100 avant le module benchmark (qui attend des %).
+  let benchmarkComparison: PortfolioSummaryWithFx['benchmarkComparison'] = null
+  {
+    const { data: globalSnapRows } = await supabase
+      .from('portfolio_snapshots')
+      .select('snapshot_date, total_market_value')
+      .eq('user_id', userId)
+      .is('envelope_id', null)
+      .order('snapshot_date', { ascending: true })
+
+    const globalSnaps = (globalSnapRows ?? []).map((r) => ({
+      snapshot_date:      r.snapshot_date as string,
+      total_market_value: Number(r.total_market_value),
+    }))
+
+    if (globalSnaps.length >= 2) {
+      const windowStart = globalSnaps[0]!.snapshot_date
+      const windowEnd   = globalSnaps[globalSnaps.length - 1]!.snapshot_date
+      const windowDays  = Math.round(
+        (new Date(`${windowEnd}T00:00:00Z`).getTime()
+          - new Date(`${windowStart}T00:00:00Z`).getTime()) / (24 * 60 * 60 * 1000),
+      )
+
+      // Seuil minimal : 30 jours (sinon la comparaison n'a pas de sens).
+      if (windowDays >= 30) {
+        // Cash flows globaux : réutilise les transactions purchase/sale déjà
+        // chargées (envelopeCashFlowRows), convention CashFlow (apport positif).
+        const globalCashFlows: CashFlow[] = (envelopeCashFlowRows ?? []).map((t) => {
+          const row = t as { amount: number; executed_at: string }
+          return { date: row.executed_at.slice(0, 10), amount: -Number(row.amount) }
+        })
+
+        const ha = computeHistoricalAnalytics(globalSnaps, globalCashFlows)
+        if (ha.totalReturn !== null) {
+          // Conversion décimal → pourcentage (cf. avertissement ci-dessus).
+          const portfolioTwrPct = ha.totalReturn * 100
+          const portfolioAnnualizedPct =
+            ha.annualizedReturn !== null ? ha.annualizedReturn * 100 : null
+
+          // Benchmarks + leurs prix sur la fenêtre (− tolérance pour la borne start).
+          const { data: benchRows } = await supabase
+            .from('instruments')
+            .select('id, name, ticker')
+            .eq('is_benchmark', true)
+
+          const benchList = (benchRows ?? []) as Array<{ id: string; name: string; ticker: string | null }>
+          if (benchList.length > 0) {
+            const priceCutoff = new Date(
+              new Date(`${windowStart}T00:00:00Z`).getTime() - 7 * 24 * 60 * 60 * 1000,
+            ).toISOString()
+            const { data: benchPriceRows } = await supabase
+              .from('instrument_prices')
+              .select('instrument_id, price, priced_at')
+              .in('instrument_id', benchList.map((b) => b.id))
+              .gte('priced_at', priceCutoff)
+              .order('priced_at', { ascending: true })
+
+            const pricesByBench = new Map<string, BenchmarkPricePoint[]>()
+            for (const p of (benchPriceRows ?? []) as Array<{ instrument_id: string; price: number; priced_at: string }>) {
+              const arr = pricesByBench.get(p.instrument_id) ?? []
+              arr.push({ date: String(p.priced_at).slice(0, 10), price: Number(p.price) })
+              pricesByBench.set(p.instrument_id, arr)
+            }
+
+            const benchmarks: BenchmarkPerformance[] = []
+            for (const b of benchList) {
+              const perf = computeBenchmarkReturn(
+                { benchmarkId: b.id, benchmarkLabel: b.name, ticker: b.ticker ?? '' },
+                pricesByBench.get(b.id) ?? [],
+                windowStart,
+                windowEnd,
+              )
+              if (perf) benchmarks.push(perf)
+            }
+
+            if (benchmarks.length > 0) {
+              benchmarkComparison = {
+                window:     { start: windowStart, end: windowEnd, days: windowDays },
+                portfolio:  { twr: portfolioTwrPct, annualizedTwr: portfolioAnnualizedPct },
+                benchmarks,
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
   return {
     positions: result.positions,
     summary:   {
@@ -642,6 +750,7 @@ export async function buildPortfolioFromDb(
       envelopePerformance,
       dividendCalendar,
       taxEstimate,
+      benchmarkComparison,
     },
   }
 }
@@ -671,6 +780,7 @@ function emptyResult(ref: CurrencyCode): PortfolioResultWithFx {
       envelopePerformance:   [],
       dividendCalendar:      null,
       taxEstimate:           null,
+      benchmarkComparison:   null,
     },
   }
 }
