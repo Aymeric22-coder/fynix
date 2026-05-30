@@ -65,13 +65,13 @@ export function BenchmarkComparisonCard({ data, className }: Props) {
               <th className="text-right py-2 font-medium hidden md:table-cell">
                 <span className="inline-flex items-center justify-end gap-1">
                   Annualisé
-                  <InfoTip text="Performance annualisée — équivalent annuel composé du rendement réalisé sur la fenêtre, pour comparer des périodes de durées différentes." />
+                  <InfoTip placement="bottom" text="Performance annualisée — équivalent annuel composé du rendement réalisé sur la fenêtre, pour comparer des périodes de durées différentes." />
                 </span>
               </th>
               <th className="text-right py-2 font-medium">
                 <span className="inline-flex items-center justify-end gap-1">
                   Écart vs portef.
-                  <InfoTip text="Différence en points de pourcentage entre la performance de ton portefeuille et celle de l'indice sur la même fenêtre. Positif = surperformance." />
+                  <InfoTip placement="bottom" text="Différence en points de pourcentage entre la performance de ton portefeuille et celle de l'indice sur la même fenêtre. Positif = surperformance." />
                 </span>
               </th>
             </tr>

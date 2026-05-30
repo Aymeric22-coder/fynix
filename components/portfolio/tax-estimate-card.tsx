@@ -69,13 +69,13 @@ export function TaxEstimateCard({ data, currency, className }: Props) {
               <th className="text-right py-2 font-medium">
                 <span className="inline-flex items-center justify-end gap-1">
                   Impôt estimé
-                  <InfoTip text="Prélèvement Forfaitaire Unique (PFU 30 %) : 12,8 % d'impôt sur le revenu + 17,2 % de prélèvements sociaux. Régime par défaut des plus-values mobilières." />
+                  <InfoTip placement="bottom" text="Prélèvement Forfaitaire Unique (PFU 30 %) : 12,8 % d'impôt sur le revenu + 17,2 % de prélèvements sociaux. Régime par défaut des plus-values mobilières." />
                 </span>
               </th>
               <th className="text-left  py-2 font-medium hidden lg:table-cell pl-4">
                 <span className="inline-flex items-center gap-1">
                   Régime
-                  <InfoTip text="Régime fiscal appliqué selon l'enveloppe. Cas particulier : sur les assurances-vie de plus de 8 ans, les gains bénéficient d'un abattement annuel (4 600 € seul, 9 200 € couple marié ou pacsé) avant imposition." />
+                  <InfoTip placement="bottom" text="Régime fiscal appliqué selon l'enveloppe. Cas particulier : sur les assurances-vie de plus de 8 ans, les gains bénéficient d'un abattement annuel (4 600 € seul, 9 200 € couple marié ou pacsé) avant imposition." />
                 </span>
               </th>
             </tr>

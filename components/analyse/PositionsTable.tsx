@@ -243,7 +243,7 @@ export function PositionsTable({ positions }: Props) {
               <th className="text-right py-2 font-medium hidden lg:table-cell">
                 <span className="inline-flex items-center justify-end gap-1">
                   PRU
-                  <InfoTip text="Coût Unitaire Moyen Pondéré (PRU / CUMP) : prix de revient moyen de tes parts, recalculé à chaque achat." />
+                  <InfoTip placement="bottom" text="Coût Unitaire Moyen Pondéré (PRU / CUMP) : prix de revient moyen de tes parts, recalculé à chaque achat." />
                 </span>
               </th>
               <th className="text-right py-2 font-medium">Prix</th>
