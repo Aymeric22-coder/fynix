@@ -1,0 +1,98 @@
+feat(profil): CS5 — Evenements de vie dans la projection FIRE (wizard Step 10)
+
+Personnalise la projection FIRE selon les inflexions reelles d une vie :
+retraite, capital exceptionnel attendu (heritage / vente d entreprise),
+achat de RP, naissance future. Repond aux personas Annie (retraitee),
+Famille Bernard (achat RP + enfants), Marc (heritage).
+
+Architecture : pattern beta (wrapper + vecteurs injectes) plutot que
+refacto du moteur. simulerFinancier accepte 2 nouveaux vecteurs
+optionnels (revenuPassifExceptionnelParAnnee, epargneDeltaParAnnee).
+Vecteurs absents ou tous-zero = comportement bit-pour-bit identique
+a pre-CS5 (invariant non-regression critique verifie par tests).
+
+Sous-taches (a-h) :
+
+(a) Source de verite UNIQUE — lib/profil/lifeEventsConstants.ts.
+    LIFE_EVENT_TYPES, LIFE_EVENT_LABELS, LIFE_EVENT_EMOJI,
+    CAPITAL_EXCEPTIONNEL_PRESETS, PROPRIETAIRE_RP_STATUS_VALUES,
+    constantes business (NAISSANCE_COUT_MENSUEL_EUR=300,
+    NAISSANCE_DUREE_PRISE_EN_CHARGE_ANS=22,
+    PENSION_TAUX_REMPLACEMENT_FALLBACK=0.5), helpers de date.
+    Tout consommateur DOIT importer d ici — plus de string magique.
+
+(b) Migration DB 049 — table dediee `life_events`. Cardinalite variable
+    (1-N par user), edition unitaire propre, RLS standard. Pattern
+    miroir de real_estate_properties. Champs : id, user_id, type
+    (CHECK enum), is_active, occurrence_date (YYYY-MM-01), montant
+    (NULL), label (libre pour capital_exceptionnel), meta (JSONB).
+    Trigger updated_at reutilise. ON DELETE CASCADE sur profiles.
+
+(c) Migration DB 050 — CHECK wizard_step_completed <= 10 + ADD COLUMN
+    profiles.proprietaire_rp_status (NULL | oui_actuel | non_prevu |
+    non_pas_prevu). Pattern miroir de 047 (CS1 Step9).
+
+(d) Builder vecteurs `lib/profil/lifeEvents.ts:buildLifeEventVectors` —
+    pure, testable. Pour chaque evenement actif :
+      retraite              -> epargneDelta = (pension - charges) - epargne_actuelle
+                               fallback pension = 50 % revenu si non saisie (#1)
+      capital_exceptionnel  -> revenuPassifExceptionnel[y] += montant
+      naissance             -> epargneDelta = -300 EUR/m x N pendant 22 ans
+      achat_rp              -> AcquisitionFuture type=RP (reutilise moteur)
+    Cumulatif (retraite + naissance sommes). Conversion MM/AAAA UI ->
+    AAAA engine via Math.round((y + m/12) - now) (#6).
+
+(e) Wizard Step 10 « Tes projets de vie » — components/profil/steps/Step10.tsx.
+    4 blocs toggle on/off, 1 seul capital exceptionnel autorise MVP (#7).
+    Question 3 options « Es-tu deja proprietaire ? » pilote la visibilite
+    du bloc Achat RP. Skip naissance si age >= 50 (#4) avec override
+    1-clic. InfoTip pension avec lien externe info-retraite.fr (#1).
+    State local LifeEventDraft[] propage au parent ; sync wholesale a
+    la soumission finale via POST /api/profile/life-events/sync.
+    Skippable au sens validation (SKIPPABLE_STEPS += 10).
+
+(f) Branchement moteur — types/analyse.ts:ProjectionInputs etendu avec
+    2 vecteurs optionnels. lib/analyse/projectionFIRE.ts:simulerFinancier
+    consomme via idiome `[y] ?? 0` (meme pattern que cashflowImmoParAnnee
+    et apportsParAnnee existants). lib/analyse/aggregateur.ts charge
+    life_events en parallele dans getPatrimoineComplet et appelle le
+    builder dans computeProjectionSnapshot.
+
+(g) Transparence aval — lib/profil/lifeEventsExplain.ts (pattern QW9-bis,
+    cf. lib/profil/cibleFamille.ts). summarizeEventShort/Medium,
+    buildLifeEventAriaLabel (Hero), buildLifeEventEmailLabel (rapport
+    mensuel sans emoji), buildLifeEventBreakdown (modal detail).
+    Instrumente sur ProjectionFIRE.tsx (bandeau actif + ReferenceLine
+    par evenement) et ProfilCard (sous-texte « ton analyse en tient
+    compte » + lien /analyse — decision #5 : ProfilCard reste sur le
+    moteur naif sans events).
+
+(h) Reset profil etendu — DELETE life_events WHERE user_id apres
+    UPDATE profiles. Test couvre tablesHit=['profiles','life_events']
+    et delete WHERE user_id=user.id.
+
+Note : decision #3 acte la dette « cibleFamille time-bounded ». Les
+enfants existants gonflent encore la cible a vie via adjustCibleFamille,
+alors que les enfants futurs (Step10) ne le font pas — l ajustement
+naissance se limite aux 22 ans de prise en charge. A harmoniser
+ulterieurement.
+
+Garanties testees :
+- Non-regression bit-pour-bit : 47/47 tests projectionFIRE.test.ts
+  passent, vecteurs vides = chiffres identiques (+ test dedie).
+- 16 tests buildLifeEventVectors (toutes branches + cumulatif + 3
+  personas Annie/Bernard/Marc avec matrice avant/apres).
+- 9 tests lifeEventsExplain (single source of truth labels prouvee).
+- Tests routing/wizardValidation/reset mis a jour pour Step 10.
+- 1867/1867 tests verts (vs 1841 pre-CS5, +26 ajoutes).
+- tsc + Next build + Vercel deploy.
+
+Matrice 3 personas (snapshot tests) :
+| Persona  | Capital age cible avant -> apres   | Age FIRE avant -> apres |
+| Annie    | 331 k EUR -> 224 k EUR (-107 k EUR)| 77 -> null              |
+| Bernard  | 812 k EUR -> 392 k EUR (-420 k EUR)| 65 -> null              |
+| Marc     | 888 k EUR -> 1009 k EUR (+122 k)   | 64 -> 63                |
+
+Migrations appliquees en prod via Supabase MCP avant le commit.
+
+Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>

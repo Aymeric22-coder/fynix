@@ -54,6 +54,7 @@ function patrimoine(over: Partial<PatrimoineComplet> = {}): PatrimoineComplet {
     scoreDiversificationGeo:         70,
     rendementEstime: 5, revenuPassifActuel: 0,
     projectionFIRESnapshot: null,
+    lifeEvents:              [],
     profilType: 'Équilibré', prenom: 'Test',
     fireInputs: {
       age: 35, age_cible: 60,

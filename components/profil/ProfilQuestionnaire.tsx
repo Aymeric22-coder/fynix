@@ -30,6 +30,7 @@ import {
   END, type StepId,
 } from '@/lib/profil/routing'
 import { EMPTY_VALUES, type QuestionnaireValues } from './questionnaire-types'
+import type { LifeEventDraft } from './lifeEventsDraft'
 import { Step1 } from './steps/Step1'
 import { Step2 } from './steps/Step2'
 import { Step3 } from './steps/Step3'
@@ -39,22 +40,25 @@ import { Step6 } from './steps/Step6'
 import { Step7 } from './steps/Step7'
 import { Step8 } from './steps/Step8'
 import { Step9 } from './steps/Step9'
+import { Step10 } from './steps/Step10'
 
 interface Props {
   initialValues?: Partial<QuestionnaireValues>
   /** Étape à laquelle ouvrir le wizard (par défaut 1). Permet la reprise
    *  après abandon : si l'utilisateur avait validé l'étape 4, on l'ouvre à 5. */
   initialStep?:   number
-  onSubmit:       (v: QuestionnaireValues) => Promise<{ error?: string }>
+  onSubmit:       (v: QuestionnaireValues, lifeEvents: LifeEventDraft[]) => Promise<{ error?: string }>
   /** Sauvegarde intermédiaire : appelée à chaque changement d'étape pour
    *  persister la progression. Optionnelle : si absente, pas de save auto. */
   onStepSave?:    (step: number, partial: Partial<QuestionnaireValues>) => Promise<{ error?: string }>
   /** Pour les profils déjà complétés : permet de revenir en arrière. */
   onCancel?:      () => void
+  /** CS5 — Évènements de vie pré-chargés depuis la table life_events. */
+  initialLifeEvents?: LifeEventDraft[]
 }
 
 export function ProfilQuestionnaire({
-  initialValues, initialStep = 1, onSubmit, onStepSave, onCancel,
+  initialValues, initialStep = 1, onSubmit, onStepSave, onCancel, initialLifeEvents = [],
 }: Props) {
   // CS1 — dernière étape absolue = STEPS.length (9). Inchangé.
   const LAST_STEP = STEPS.length as StepId
@@ -62,6 +66,7 @@ export function ProfilQuestionnaire({
     Math.min(LAST_STEP, Math.max(1, initialStep)) as StepId,
   )
   const [values,  setValues]  = useState<QuestionnaireValues>({ ...EMPTY_VALUES, ...initialValues })
+  const [lifeEvents, setLifeEvents] = useState<LifeEventDraft[]>(initialLifeEvents)
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState<string | null>(null)
   /** Vrai si le user a tenté de continuer en laissant des champs vides.
@@ -136,7 +141,7 @@ export function ProfilQuestionnaire({
 
     // Dernière étape → submit définitif (marque profile_completed_at)
     setLoading(true)
-    const res = await onSubmit(values)
+    const res = await onSubmit(values, lifeEvents)
     setLoading(false)
     if (res.error) { setError(res.error); return }
   }
@@ -187,7 +192,6 @@ export function ProfilQuestionnaire({
   }
 
   const meta = STEPS[step - 1]!
-  const StepComp = [Step1, Step2, Step3, Step4, Step5, Step6, Step7, Step8, Step9][step - 1]!
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -254,7 +258,16 @@ export function ProfilQuestionnaire({
           </div>
         )}
 
-        <StepComp values={values} set={set} />
+        {step === 1  && <Step1  values={values} set={set} />}
+        {step === 2  && <Step2  values={values} set={set} />}
+        {step === 3  && <Step3  values={values} set={set} />}
+        {step === 4  && <Step4  values={values} set={set} />}
+        {step === 5  && <Step5  values={values} set={set} />}
+        {step === 6  && <Step6  values={values} set={set} />}
+        {step === 7  && <Step7  values={values} set={set} />}
+        {step === 8  && <Step8  values={values} set={set} />}
+        {step === 9  && <Step9  values={values} set={set} />}
+        {step === 10 && <Step10 values={values} set={set} lifeEvents={lifeEvents} setLifeEvents={setLifeEvents} />}
 
         {touched && !stepValid && (
           <p className="text-xs text-warning bg-warning-muted px-3 py-2 rounded-lg mt-4">

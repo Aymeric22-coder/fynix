@@ -30,9 +30,9 @@
 import type { QuestionnaireValues } from '@/components/profil/questionnaire-types'
 
 /** IDs des étapes du wizard. Aligne sur STEPS dans lib/profil/calculs.ts. */
-export type StepId = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9
+export type StepId = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10
 
-export const ALL_STEPS: readonly StepId[] = [1, 2, 3, 4, 5, 6, 7, 8, 9] as const
+export const ALL_STEPS: readonly StepId[] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const
 
 // ────────────────────────────────────────────────────────────────────
 // Helpers de prédicats purs (testables individuellement)

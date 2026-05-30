@@ -33,6 +33,10 @@ import { AcquisitionFutureForm } from './AcquisitionFutureForm'
 import { StressTestPanel } from './StressTestPanel'
 import { useFutureAcquisitions } from '@/hooks/use-future-acquisitions'
 import type { PatrimoineComplet, AcquisitionFuture, JalonFIRE } from '@/types/analyse'
+import {
+  buildLifeEventAriaLabel, buildLifeEventBreakdown, hasActiveLifeEvents,
+} from '@/lib/profil/lifeEventsExplain'
+import { lifeEventDateToYearMonth } from '@/lib/profil/lifeEventsConstants'
 
 interface Props {
   patrimoine: PatrimoineComplet
@@ -316,6 +320,28 @@ function ProjectionFIREInner({ patrimoine, lastUpdatedAt }: Props) {
         </span>
       </div>
 
+      {/* CS5 — Bandeau évènements de vie pris en compte par le snapshot
+            serveur. La projection LOCALE (sliders) ne les recompute pas
+            en live ; les ReferenceLine ci-dessous matérialisent leur date.  */}
+      {hasActiveLifeEvents(patrimoine.lifeEvents) && (
+        <div className="mb-3 rounded-lg border border-accent/30 bg-accent-muted/30 p-3">
+          <p className="text-xs text-secondary leading-relaxed">
+            <span className="text-primary font-medium">Ta projection FIRE </span>
+            {buildLifeEventAriaLabel(patrimoine.lifeEvents)}.
+          </p>
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {buildLifeEventBreakdown(patrimoine.lifeEvents).map((b) => (
+              <span
+                key={b.text}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-surface-2 border border-border text-[11px] text-secondary"
+              >
+                {b.text}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* ─── Graphique stacked area ─── */}
       <div style={{ width: '100%', height: 320 }}>
         <ResponsiveContainer width="100%" height="100%">
@@ -370,6 +396,27 @@ function ProjectionFIREInner({ patrimoine, lastUpdatedAt }: Props) {
                 }}
               />
             ))}
+            {/* CS5 — ReferenceLine pour chaque évènement de vie actif. */}
+            {patrimoine.lifeEvents.filter((e) => e.is_active).map((e) => {
+              const { year } = lifeEventDateToYearMonth(e.occurrence_date)
+              if (year === null || fi.age === null) return null
+              const age = (fi.age) + (year - new Date().getFullYear())
+              return (
+                <ReferenceLine
+                  key={`lev-${e.id}`}
+                  x={age}
+                  stroke="#a78bfa"
+                  strokeDasharray="2 4"
+                  strokeWidth={1}
+                  label={{
+                    value: e.type === 'capital_exceptionnel' ? '💰' :
+                           e.type === 'retraite' ? '🏖' :
+                           e.type === 'achat_rp' ? '🏠' : '👶',
+                    fill: '#a78bfa', fontSize: 12, position: 'insideBottomLeft',
+                  }}
+                />
+              )
+            })}
           </AreaChart>
         </ResponsiveContainer>
       </div>

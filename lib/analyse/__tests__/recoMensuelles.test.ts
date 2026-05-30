@@ -30,6 +30,7 @@ function pat(over: Partial<PatrimoineComplet> = {}): PatrimoineComplet {
     rendementEstime: 5,
     revenuPassifActuel: 0,
     projectionFIRESnapshot: null,
+    lifeEvents:              [],
     profilType: 'Équilibré', prenom: 'Test',
     fireInputs: {
       age: 35, age_cible: 50,

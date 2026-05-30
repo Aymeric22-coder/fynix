@@ -40,6 +40,9 @@ export const STEPS: ReadonlyArray<StepMeta> = [
   // CS1 — Nouvelle étape ajoutée en FIN pour préserver wizard_step_completed
   // des profils existants (pas de renumérotation des 8 premières étapes).
   { id: 9, title: 'Ta fiscalité',              sub: 'Une dernière info pour calibrer précisément tes recos fiscales. Étape skippable.' },
+  // CS5 — Étape 10 ajoutée en fin également. Skippable. Capture les
+  // évènements de vie (retraite, capital exceptionnel, achat RP, naissance).
+  { id: 10, title: 'Tes projets de vie',       sub: 'Quelques dates futures pour personnaliser ta trajectoire FIRE. Étape skippable.' },
 ] as const
 
 // ───────────────────────────────────────────────────────────────────

@@ -153,6 +153,7 @@ export function makePatrimoineFixture(overrides?: Partial<PatrimoineComplet>): P
       patrimoine_fire_cible:      900_000,
       epargne_mensuelle_necessaire: 1200,
     },
+    lifeEvents:              [],
     profilType: 'Equilibre',
     prenom:     'Aymeric',
     fireInputs: {

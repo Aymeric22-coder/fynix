@@ -58,12 +58,13 @@ describe('prédicats purs', () => {
 describe('R1/R2 garde-fou — enveloppes=[]', () => {
   it('enveloppes=[] (Step 4 sauté) → AUCUN skip auto', () => {
     const path = computeActivePath(mk({ enveloppes: [] }))
-    expect(path).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9])
+    // CS5 — Step 10 « Projets de vie » ajoutée au path.
+    expect(path).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
   })
 
   it('enveloppes=["PEA"] (Step 4 touché, sans crypto/immo) → skip 6+7', () => {
     const path = computeActivePath(mk({ enveloppes: ['PEA'] }))
-    expect(path).toEqual([1, 2, 3, 4, 5, 8, 9])
+    expect(path).toEqual([1, 2, 3, 4, 5, 8, 9, 10])
   })
 })
 
@@ -103,53 +104,54 @@ describe('computeActivePath — 8 personas du plan', () => {
     expect: { length: number; skips: StepId[] }
   }
 
+  // CS5 — Toutes les longueurs +1 par rapport à CS3 (ajout Step 10).
   const personas: Persona[] = [
     {
       nom: 'a. Thomas — primo-investisseur 28 ans, locataire',
       values: { age: 28, statut_pro: 'Salarié', enveloppes: ['Livret A'] },
-      expect: { length: 7, skips: [6, 7] },  // pas crypto, pas immo
+      expect: { length: 8, skips: [6, 7] },  // pas crypto, pas immo
     },
     {
       nom: 'b. Sophie — multi-biens, SCI',
       values: { age: 45, statut_pro: 'Indépendant / Freelance',
                 enveloppes: ['PEA', 'CTO', 'Crypto', 'Immobilier'] },
-      expect: { length: 9, skips: [] },
+      expect: { length: 10, skips: [] },
     },
     {
       nom: 'c. Marc — cadre TMI 41 %',
       values: { age: 52, statut_pro: 'Salarié',
                 enveloppes: ['PEA', 'Assurance-vie'] },
-      expect: { length: 7, skips: [6, 7] },
+      expect: { length: 8, skips: [6, 7] },
     },
     {
       nom: 'd. Léo — aspirant FIRE',
       values: { age: 35, statut_pro: 'Salarié',
                 enveloppes: ['PEA', 'CTO', 'Crypto'] },
-      expect: { length: 8, skips: [7] },
+      expect: { length: 9, skips: [7] },
     },
     {
       nom: 'e. Famille Bernard — couple + enfants',
       values: { age: 40, statut_pro: 'Salarié',
                 enveloppes: ['Assurance-vie', 'PEA', 'SCPI'] },
-      expect: { length: 8, skips: [6] },   // pas crypto, immo OK (SCPI)
+      expect: { length: 9, skips: [6] },   // pas crypto, immo OK (SCPI)
     },
     {
       nom: 'f. Annie — proche retraite',
       values: { age: 60, statut_pro: 'Retraité',
                 enveloppes: ['Assurance-vie', 'Livret A'] },
-      expect: { length: 7, skips: [6, 7] },
+      expect: { length: 8, skips: [6, 7] },
     },
     {
       nom: 'g. Karim — freelance revenus irréguliers',
       values: { age: 33, statut_pro: 'Indépendant / Freelance',
                 enveloppes: ['PEA'] },
-      expect: { length: 7, skips: [6, 7] },
+      expect: { length: 8, skips: [6, 7] },
     },
     {
       nom: 'h. Hélène — prudente, averse au risque',
       values: { age: 48, statut_pro: 'Salarié',
                 enveloppes: ['Livret A', 'LDDS', 'Assurance-vie'] },
-      expect: { length: 7, skips: [6, 7] },
+      expect: { length: 8, skips: [6, 7] },
     },
   ]
 
@@ -180,8 +182,9 @@ describe('getNextStep — saute correctement', () => {
   })
 
   it('dernière étape du path → END', () => {
-    const v = mk({ enveloppes: ['Livret A'] })  // path 7 étapes, dernière = 9
-    expect(getNextStep(9, v)).toBe(END)
+    // CS5 — path 8 étapes pour ['Livret A'] (skip 6+7), dernière = 10.
+    const v = mk({ enveloppes: ['Livret A'] })
+    expect(getNextStep(10, v)).toBe(END)
   })
 })
 

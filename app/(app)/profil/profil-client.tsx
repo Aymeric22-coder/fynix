@@ -20,7 +20,7 @@
  */
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { PlayCircle, RotateCcw, Sparkles, ArrowLeft } from 'lucide-react'
 import { PageHeader } from '@/components/shared/page-header'
@@ -31,6 +31,7 @@ import { STEPS } from '@/lib/profil/calculs'
 import { computeActivePath, type StepId } from '@/lib/profil/routing'
 import { useUserProfile } from '@/hooks/use-user-profile'
 import { EMPTY_VALUES, type QuestionnaireValues } from '@/components/profil/questionnaire-types'
+import type { LifeEventDraft } from '@/components/profil/lifeEventsDraft'
 
 export function ProfilClient() {
   const { profile, loading, error, save, saveStep } = useUserProfile()
@@ -40,6 +41,25 @@ export function ProfilClient() {
    *  wizard utiliser profile.wizard_step_completed + 1 (comportement par
    *  défaut, ouverture sur la prochaine étape à compléter). */
   const [resumeStep, setResumeStep] = useState<number | null>(null)
+  /** CS5 — Évènements de vie chargés depuis la table life_events au mount. */
+  const [initialLifeEvents, setInitialLifeEvents] = useState<LifeEventDraft[]>([])
+
+  // Charge les évènements de vie au mount (un seul fetch, pas dans le hook
+  // useUserProfile qui reste centré sur la table profiles).
+  useEffect(() => {
+    let cancelled = false
+    async function load() {
+      try {
+        const res  = await fetch('/api/profile/life-events')
+        const json = await res.json().catch(() => ({}))
+        if (!cancelled && Array.isArray(json?.data?.events)) {
+          setInitialLifeEvents(json.data.events as LifeEventDraft[])
+        }
+      } catch { /* silent : pas d'events = comportement vide identique */ }
+    }
+    load()
+    return () => { cancelled = true }
+  }, [])
 
   if (loading) {
     return (
@@ -76,13 +96,29 @@ export function ProfilClient() {
   // Étape d'ouverture du wizard : choix utilisateur > reprise auto > 1.
   const wizardInitialStep = resumeStep ?? (hasPartial ? lastStep + 1 : 1)
 
-  async function handleSubmit(v: QuestionnaireValues) {
+  async function handleSubmit(v: QuestionnaireValues, lifeEvents: LifeEventDraft[]) {
     const res = await save(v)
-    if (!res.error) {
-      setEditing(false)
-      setResumeStep(null)
-      setStartFresh(false)
+    if (res.error) return res
+    // CS5 — Sync wholesale des évènements après save profil. Échec non
+    // bloquant : on logue mais on bascule quand même sur la carte profil
+    // (les events seront re-tentables via le bouton Modifier).
+    try {
+      const r = await fetch('/api/profile/life-events/sync', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ events: lifeEvents }),
+      })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok || j.error) {
+        // Sync échouée mais profile sauvegardé : on prévient.
+        return { error: `Profil enregistré, mais synchro évènements échouée : ${j.error ?? 'erreur inconnue'}` }
+      }
+    } catch (e) {
+      return { error: `Profil enregistré, synchro évènements indisponible : ${String(e)}` }
     }
+    setEditing(false)
+    setResumeStep(null)
+    setStartFresh(false)
     return res
   }
 
@@ -165,6 +201,7 @@ export function ProfilClient() {
           onSubmit={handleSubmit}
           onStepSave={handleStepSave}
           onCancel={isComplete ? () => setEditing(false) : undefined}
+          initialLifeEvents={initialLifeEvents}
         />
       ) : (
         <ProfilCard profile={profile} onEdit={() => { setEditing(true); setResumeStep(1) }} />
@@ -197,5 +234,7 @@ function extractInitialValues(p: ReturnType<typeof useUserProfile>['profile']): 
     age_cible: p.age_cible, priorite: p.priorite,
     // CS1 — TMI (étape 9). Pré-rempli depuis /parametres si déjà saisi.
     tmi_rate: p.tmi_rate,
+    // CS5 — statut propriétaire RP (étape 10).
+    proprietaire_rp_status: p.proprietaire_rp_status,
   }
 }

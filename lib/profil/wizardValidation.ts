@@ -13,8 +13,9 @@ import { normalizeFireType } from './calculs'
 export const REQUIRED_STEPS: ReadonlyArray<number> = [1, 8]
 
 /** Étapes non critiques : bouton "Passer cette étape" disponible.
- *  CS1 — ajout de l'étape 9 « Ta fiscalité » (skippable, fallback 30 % aval). */
-export const SKIPPABLE_STEPS: ReadonlyArray<number> = [2, 3, 6, 7, 9]
+ *  CS1 — ajout de l'étape 9 « Ta fiscalité » (skippable, fallback 30 % aval).
+ *  CS5 — ajout de l'étape 10 « Tes projets de vie » (skippable, no-op aval). */
+export const SKIPPABLE_STEPS: ReadonlyArray<number> = [2, 3, 6, 7, 9, 10]
 
 /**
  * Liste des champs manquants pour l'étape donnée. Vide = étape valide.

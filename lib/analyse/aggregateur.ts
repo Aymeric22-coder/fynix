@@ -39,7 +39,8 @@ import type {
   ClasseAlloc, SecteurAlloc, GeoAlloc, EnrichedPosition, AnalyseAssetType,
   AnalyseFiabilite,
 } from '@/types/analyse'
-import type { CurrencyCode } from '@/types/database.types'
+import type { CurrencyCode, LifeEventRow } from '@/types/database.types'
+import { buildLifeEventVectors } from '@/lib/profil/lifeEvents'
 import { CLASSE_COLOR } from '@/types/analyse'
 
 const num = (v: unknown): number => {
@@ -368,6 +369,31 @@ interface ProfileLoaded {
   fire_type:            string | null
   priorite:             string | null
   stabilite_revenus:    string | null
+}
+
+/**
+ * CS5 — Charge les évènements de vie actifs de l'utilisateur. Triés par
+ * occurrence ASC. RLS appliquée côté DB. Tolère l'absence de la table
+ * (TypeError silencieux → tableau vide) pour préserver les environnements
+ * où la migration 049 n'aurait pas encore tourné — défense en profondeur.
+ */
+async function loadLifeEvents(userId: string): Promise<LifeEventRow[]> {
+  try {
+    const supabase = await createServerClient()
+    const { data, error } = await supabase
+      .from('life_events')
+      .select('id, user_id, type, is_active, occurrence_date, montant, label, meta, created_at, updated_at')
+      .eq('user_id', userId)
+      .order('occurrence_date', { ascending: true })
+    if (error) {
+      devWarn(`[aggregateur] loadLifeEvents fail: ${error.message}`)
+      return []
+    }
+    return (data ?? []) as LifeEventRow[]
+  } catch (e) {
+    devWarn(`[aggregateur] loadLifeEvents crash: ${String(e)}`)
+    return []
+  }
 }
 
 async function loadProfile(userId: string): Promise<ProfileLoaded> {
@@ -717,11 +743,13 @@ export async function getPatrimoineComplet(userId: string): Promise<PatrimoineCo
     immoData,
     { comptes, totalCash },
     profile,
+    lifeEvents,
   ] = await Promise.all([
     getEnrichedPositions(userId),
     loadImmo(userId),
     loadCash(userId),
     loadProfile(userId),
+    loadLifeEvents(userId),
   ])
   const {
     biens, totalImmo, totalDettes,
@@ -828,7 +856,16 @@ export async function getPatrimoineComplet(userId: string): Promise<PatrimoineCo
       totalNet,
       fireType:              profile.fire_type,
       inflationPct:          INFLATION_DEFAUT_PCT,
+      // CS5 — vecteurs life events. Liste vide = comportement bit-pour-bit
+      // pré-CS5 (cf. invariant non-régression dans buildLifeEventVectors).
+      lifeEvents,
+      lifeEventProfileSlice: {
+        age:                  profile.age,
+        revenu_mensuel_total: profile.revenu_mensuel_total,
+        epargne_mensuelle:    profile.epargne_mensuelle,
+      },
     }),
+    lifeEvents,
     profilType,
     prenom,
     fireInputs,
@@ -875,6 +912,10 @@ interface ProjectionSnapshotInputs {
   totalNet:            number
   fireType:            string | null
   inflationPct:        number       // %, aligne sur projection /analyse
+  // CS5 — Vecteurs life events optionnels. Liste vide ou absent =
+  // comportement bit-pour-bit pré-CS5.
+  lifeEvents?:           ReadonlyArray<LifeEventRow>
+  lifeEventProfileSlice?: import('@/lib/profil/lifeEvents').LifeEventProfileSlice
 }
 
 /**
@@ -893,6 +934,13 @@ function computeProjectionSnapshot(i: ProjectionSnapshotInputs): import('@/types
   // page Analyse affichent desormais la meme cible et le meme pourcentage.
   const swrPct = swrPctFromFireType(i.fireType)
 
+  // CS5 — Construction des vecteurs life events (pattern β). Si la liste
+  // est vide ou absente, les vecteurs retournés sont tous-zéro et le
+  // comportement du moteur est strictement identique à pré-CS5.
+  const lifeEventVectors = (i.lifeEvents && i.lifeEvents.length > 0 && i.lifeEventProfileSlice)
+    ? buildLifeEventVectors(i.lifeEvents, i.lifeEventProfileSlice)
+    : null
+
   const baseInputs = {
     ageActuel:                 i.ageActuel,
     ageCible:                  i.ageCible,
@@ -906,7 +954,9 @@ function computeProjectionSnapshot(i: ProjectionSnapshotInputs): import('@/types
     patrimoineFinancierActuel: i.patrimoineFinancier,
     cashActuel:                i.cashActuel,
     biensExistants:            i.biens,
-    acquisitionsFutures:       [],
+    acquisitionsFutures:       lifeEventVectors?.acquisitionsFuturesFromEvents ?? [],
+    revenuPassifExceptionnelParAnnee: lifeEventVectors?.revenuPassifExceptionnelParAnnee,
+    epargneDeltaParAnnee:             lifeEventVectors?.epargneDeltaParAnnee,
   }
 
   const interval = projectionFIREIntervalle(baseInputs)

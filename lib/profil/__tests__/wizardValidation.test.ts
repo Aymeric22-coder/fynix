@@ -18,8 +18,9 @@ describe('constantes wizard', () => {
     expect([...REQUIRED_STEPS]).toEqual([1, 8])
   })
   // CS1 — ajout de l'étape 9 « Ta fiscalité » (skippable, tmi_rate null-OK).
-  it('SKIPPABLE_STEPS = [2, 3, 6, 7, 9]', () => {
-    expect([...SKIPPABLE_STEPS]).toEqual([2, 3, 6, 7, 9])
+  // CS5 — ajout de l'étape 10 « Projets de vie » (skippable, no-op aval).
+  it('SKIPPABLE_STEPS = [2, 3, 6, 7, 9, 10]', () => {
+    expect([...SKIPPABLE_STEPS]).toEqual([2, 3, 6, 7, 9, 10])
   })
   it('aucune étape n\'est à la fois requise et skippable', () => {
     for (const r of REQUIRED_STEPS) expect(SKIPPABLE_STEPS).not.toContain(r)

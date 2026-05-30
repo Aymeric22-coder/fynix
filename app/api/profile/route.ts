@@ -58,6 +58,8 @@ export const PUT = withAuth(async (req: Request, user: User) => {
     'risk_1', 'risk_2', 'risk_3', 'risk_4',
     'fire_type', 'revenu_passif_cible', 'age_cible', 'priorite',
     'tmi_rate',
+    // CS5 — statut propriétaire RP saisi en Step10.
+    'proprietaire_rp_status',
     'wizard_step_completed',
   ]
 
@@ -68,8 +70,8 @@ export const PUT = withAuth(async (req: Request, user: User) => {
 
   // Marqueur de complétion : timestamp de la dernière soumission.
   update['profile_completed_at'] = new Date().toISOString()
-  // CS1 — wizard final = étape 9 atteinte (« Ta fiscalité » ajoutée).
-  update['wizard_step_completed'] = 9
+  // CS5 — wizard final = étape 10 atteinte (« Tes projets de vie » ajoutée).
+  update['wizard_step_completed'] = 10
 
   const { data, error } = await supabase
     .from('profiles')
@@ -109,6 +111,8 @@ export const PATCH = withAuth(async (req: Request, user: User) => {
     'risk_1', 'risk_2', 'risk_3', 'risk_4',
     'fire_type', 'revenu_passif_cible', 'age_cible', 'priorite',
     'tmi_rate',
+    // CS5 — statut propriétaire RP saisi en Step10.
+    'proprietaire_rp_status',
     'wizard_step_completed',
   ]
 

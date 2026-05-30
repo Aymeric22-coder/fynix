@@ -125,6 +125,15 @@ export function ProfilCard({ profile, onEdit }: Props) {
               <FireLine icon={<Lightbulb size={14} className="text-secondary" />} label="Priorité" value={profile.priorite} />
             )}
           </ul>
+          {/* CS5 — Décision arbitrée #5 : ProfilCard reste sur la projection
+              SANS évènements de vie (moteur naïf lib/profil/calculs.ts).
+              Le lien vers /analyse expose la projection enrichie. */}
+          <p className="text-[11px] text-muted mt-3 leading-relaxed">
+            Cette projection n&apos;inclut pas tes projets de vie déclarés.{' '}
+            <a href="/analyse" className="underline text-accent hover:text-accent-hover">
+              Ton analyse en tient compte
+            </a>.
+          </p>
         </div>
       </div>
 

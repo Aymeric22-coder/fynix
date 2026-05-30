@@ -64,6 +64,8 @@ export const RESET_WIPE_PAYLOAD = {
   priorite:            null,
   // ── Wizard Step 9 (CS1) ─────────────────────────────────────────────
   tmi_rate:            null,
+  // ── Wizard Step 10 (CS5) ────────────────────────────────────────────
+  proprietaire_rp_status: null,
   // ── Legacy /parametres CS1 (UI retirée, colonne DB conservée) ───────
   fiscal_situation:        null,
   professional_income_eur: 0,         // ramené au défaut DB

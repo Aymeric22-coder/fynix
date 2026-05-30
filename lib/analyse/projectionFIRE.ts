@@ -347,6 +347,12 @@ function simulerFinancier(
   apportsParAnnee: number[],              // index = année (montant sorti à cette année)
   horizon: number,
   epargneCroissanceAnnuellePct: number = 0,
+  // ── CS5 — Évènements de vie injectés (pattern β) ──────────────────
+  // Default = tableaux vides → idiome `?? 0` garde le comportement
+  // bit-pour-bit identique au moteur pré-CS5 quand aucun évènement
+  // n'est déclaré. C'est l'invariant de non-régression critique.
+  revenuPassifExceptionnelParAnnee: number[] = [],
+  epargneDeltaParAnnee:             number[] = [],
 ): number[] {
   const r = rendementAnnuelPct / 100 / 12
   const g = epargneCroissanceAnnuellePct / 100
@@ -357,13 +363,20 @@ function simulerFinancier(
   for (let y = 1; y <= horizon; y++) {
     // Apport sorti à l'année y (acquisition future)
     capital -= apportsParAnnee[y] ?? 0
+    // CS5 — Capital exceptionnel attendu (héritage / vente entreprise).
+    // Inflow ponctuel ajouté EN DÉBUT d'année y (avant composition),
+    // pour qu'il participe au rendement annuel dès la première année.
+    capital += revenuPassifExceptionnelParAnnee[y] ?? 0
     capital = Math.max(0, capital)
 
     // Cashflow immo annuel injecté (positif = renfort, négatif = effort)
     const cfAnn = cryptoSafe(cashflowImmoAnnuelParAnnee[y]) ?? 0
     // Épargne mensuelle ajustée pour la croissance annuelle (carrière).
     // À y=1 : épargne × (1 + g)^1, à y=2 : épargne × (1 + g)^2, etc.
-    const epargneAjustee = epargneMensuelle * Math.pow(1 + g, y)
+    // CS5 — `epargneDeltaParAnnee[y]` modifie cette épargne pour modéliser
+    // la bascule retraite (pension - charges - epargne_base) et le coût
+    // d'une naissance future (-300 €/m × N pendant 22 ans). Cumulatif.
+    const epargneAjustee = epargneMensuelle * Math.pow(1 + g, y) + (epargneDeltaParAnnee[y] ?? 0)
     const epargneEffectiveMensuelle = epargneAjustee + cfAnn / 12
 
     // 12 mois de composition
@@ -455,6 +468,7 @@ export function projectionGlobale(inputs: ProjectionInputs): ProjectionGlobaleRe
   }
 
   // 5. Simulation du patrimoine financier (avec croissance d'épargne — Tâche 4)
+  //    + CS5 : vecteurs life events (héritage ponctuel + delta épargne).
   const trajFinancier = simulerFinancier(
     inputs.patrimoineFinancierActuel,
     inputs.epargneMensuelle,
@@ -463,6 +477,8 @@ export function projectionGlobale(inputs: ProjectionInputs): ProjectionGlobaleRe
     apportsParAnnee,
     horizon,
     inputs.epargneCroissanceAnnuellePct ?? 0,
+    inputs.revenuPassifExceptionnelParAnnee ?? [],
+    inputs.epargneDeltaParAnnee             ?? [],
   )
 
   // 6. Simulation cash

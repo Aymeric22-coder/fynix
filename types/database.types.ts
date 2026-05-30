@@ -211,11 +211,19 @@ export interface Profile {
   /** Sentinel : si null, le wizard n'a jamais ete soumis. */
   profile_completed_at: string | null
 
-  // ── Migration 019 ────────────────────────────────────────────────
-  /** Numero de la derniere etape (0..8) completee dans le wizard.
-   *  0 = jamais commence, 8 = wizard termine. Utilise pour proposer
-   *  "Reprendre a l etape X" quand l utilisateur revient sans avoir fini. */
+  // ── Migration 019 / 047 / 050 ────────────────────────────────────
+  /** Numero de la derniere etape (0..10) completee dans le wizard.
+   *  0 = jamais commence, 10 = wizard termine. Utilise pour proposer
+   *  "Reprendre a l etape X" quand l utilisateur revient sans avoir fini.
+   *  - CHECK <= 8 en 019
+   *  - CHECK <= 9 en 047 (CS1 ajout Step9 fiscalité)
+   *  - CHECK <= 10 en 050 (CS5 ajout Step10 projets de vie) */
   wizard_step_completed: number
+
+  // ── Migration 050 — CS5 statut propriétaire RP ────────────────────
+  /** Pilote l'affichage du bloc Achat RP dans Step10. NULL = pas encore
+   *  répondu. Cf. PROPRIETAIRE_RP_STATUS_VALUES dans lifeEventsConstants. */
+  proprietaire_rp_status: 'oui_actuel' | 'non_prevu' | 'non_pas_prevu' | null
 
   // ── Migration 031 — Onboarding 60 secondes ────────────────────────
   /** Sentinel : true dès la première soumission de /bienvenue
@@ -924,3 +932,34 @@ export interface ImportHistory {
   broker_hint:  string | null
 }
 export type ImportHistoryInsert = Omit<ImportHistory, 'id' | 'imported_at'> & { imported_at?: string }
+
+// ─── Migration 049 — CS5 évènements de vie ───────────────────────────────────
+//
+// Cf. lib/profil/lifeEventsConstants.ts pour la source unique des types et
+// libellés.
+
+export type LifeEventType = 'retraite' | 'capital_exceptionnel' | 'achat_rp' | 'naissance'
+
+/** Payload `meta` par type — typé par sous-interface pour discriminer. */
+export type LifeEventMeta =
+  | { /* retraite */              [k: string]: never }
+  | { /* capital_exceptionnel */  preset?: 'heritage' | 'vente_entreprise' | 'autre' }
+  | { /* achat_rp */              apport?: number; mensualite?: number; duree_credit_annees?: number }
+  | { /* naissance */             nb_enfants?: number }
+  | Record<string, never>
+
+export interface LifeEventRow {
+  id:              string
+  user_id:         string
+  type:            LifeEventType
+  is_active:       boolean
+  occurrence_date: string            // 'YYYY-MM-01'
+  montant:         number | null
+  label:           string | null
+  meta:            Json
+  created_at:      string
+  updated_at:      string
+}
+
+export type LifeEventInsert = Omit<LifeEventRow, 'id' | 'created_at' | 'updated_at'>
+export type LifeEventUpdate = Partial<Omit<LifeEventInsert, 'user_id'>>

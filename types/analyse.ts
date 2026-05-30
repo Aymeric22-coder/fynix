@@ -225,6 +225,19 @@ export interface ProjectionInputs {
   biensExistants:           BienImmo[]
   acquisitionsFutures:      AcquisitionFuture[]
   horizonAnnees?:           number      // defaut 35
+
+  // ── CS5 — Évènements de vie injectés (pattern β wrapper) ──────────
+  // Vecteurs indexés par année (index 0..horizon). Absents ou tous-zéro
+  // → comportement bit-pour-bit identique au moteur pré-CS5.
+  // Construit par `lib/profil/lifeEvents.ts:buildLifeEventVectors`.
+  /** Capital ponctuel ajouté au patrimoine financier à l'année y
+   *  (héritage / vente d'entreprise). En €. Positif = inflow. */
+  revenuPassifExceptionnelParAnnee?: number[]
+  /** Delta sur l'épargne mensuelle de base à l'année y (€/mois).
+   *  - Retraite : (pension - charges) - epargne_base_growth(y), souvent négatif.
+   *  - Naissance : -300 €/m × nb_enfants pendant 22 ans à partir de l'année.
+   *  Cumulatif : si retraite + naissance se chevauchent, sommé. */
+  epargneDeltaParAnnee?:    number[]
 }
 
 /** Compte cash / livret consolidé. */
@@ -326,8 +339,19 @@ export interface PatrimoineComplet {
   /** Snapshot de projection FIRE pré-calculé côté serveur (Sprint 1).
    *  Permet aux composants serveur (Dashboard Hero) d'afficher la
    *  trajectoire sans rejouer la projection eux-mêmes. Null si profil
-   *  incomplet (age / age_cible / revenu_passif_cible manquants). */
+   *  incomplet (age / age_cible / revenu_passif_cible manquants).
+   *
+   *  CS5 — Ce snapshot tient compte des évènements de vie actifs
+   *  (`lifeEvents` ci-dessous) via le pattern β (vecteurs injectés).
+   *  Le moteur naïf de ProfilCard (`lib/profil/calculs.ts:fireYears`)
+   *  reste hors-events (cf. décision arbitrée #5). */
   projectionFIRESnapshot: ProjectionFIRESnapshot | null
+
+  /** CS5 — Évènements de vie actifs de l'utilisateur. Exposés ici pour
+   *  les composants UI de transparence aval (lifeEventsExplain, Hero
+   *  /analyse, ProjectionFIRE ReferenceLine, email mensuel). Liste vide
+   *  si aucun ou si la migration 049 n'a pas tourné. */
+  lifeEvents: import('@/types/database.types').LifeEventRow[]
 
   /** Sentinel : 'Conservateur' | 'Équilibré' | 'Dynamique' | 'Offensif' | 'Stratège' | null */
   profilType:    string | null

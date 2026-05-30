@@ -16,7 +16,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 const updates:    Array<Record<string, unknown>> = []
 const tablesHit:  string[] = []
 const whereChain: Array<{ col: string; val: unknown }> = []
+const deletes:    Array<{ table: string; col: string; val: unknown }> = []
 let mockUpdateError: { message: string } | null = null
+let mockDeleteError: { message: string } | null = null
 
 vi.mock('@/lib/supabase/server', () => ({
   createServerClient: vi.fn(async () => ({
@@ -32,6 +34,12 @@ vi.mock('@/lib/supabase/server', () => ({
             },
           }
         },
+        delete: () => ({
+          eq: (col: string, val: unknown) => {
+            deletes.push({ table, col, val })
+            return Promise.resolve({ error: mockDeleteError })
+          },
+        }),
       }
     },
   })),
@@ -52,7 +60,9 @@ beforeEach(() => {
   updates.length = 0
   tablesHit.length = 0
   whereChain.length = 0
+  deletes.length = 0
   mockUpdateError = null
+  mockDeleteError = null
 })
 
 function req(): Request {
@@ -68,14 +78,19 @@ describe('POST /api/profile/reset', () => {
     expect(json.data.redirect).toBe('/bienvenue')
   })
 
-  it('touche UNIQUEMENT la table profiles (aucune autre table)', async () => {
+  it('touche UNIQUEMENT profiles + life_events (CS5)', async () => {
     await POST(req(), {} as never)
-    expect(tablesHit).toEqual(['profiles'])
+    expect(tablesHit).toEqual(['profiles', 'life_events'])
   })
 
   it('UPDATE WHERE id = user.id (RLS ceinture-bretelles)', async () => {
     await POST(req(), {} as never)
     expect(whereChain).toEqual([{ col: 'id', val: 'user-reset' }])
+  })
+
+  it('DELETE life_events WHERE user_id = user.id (CS5)', async () => {
+    await POST(req(), {} as never)
+    expect(deletes).toEqual([{ table: 'life_events', col: 'user_id', val: 'user-reset' }])
   })
 
   it('wipe tous les champs wizard (Step 1 à 9)', async () => {
