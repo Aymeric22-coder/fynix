@@ -12,6 +12,7 @@ build/
 .env
 .env.local
 .env.*.local
+secret.txt
 
 # Debug
 npm-debug.log*
