@@ -22,6 +22,7 @@ import { DividendProjectionCard }     from '@/components/portfolio/dividend-proj
 import { DividendCalendarStrip }      from '@/components/portfolio/dividend-calendar-strip'
 import { TaxEstimateCard }            from '@/components/portfolio/tax-estimate-card'
 import { BenchmarkComparisonCard }    from '@/components/portfolio/benchmark-comparison-card'
+import { InfoTip }                    from '@/components/ui/info-tip'
 import {
   formatCurrency, formatPercent, formatQuantity,
   ASSET_CLASS_LABELS,
@@ -251,6 +252,7 @@ export default async function PortefeuillePage({ searchParams }: Props) {
             <div className="card p-5 border-accent/20">
               <p className="text-xs text-secondary uppercase tracking-widest flex items-center gap-1">
                 <TrendingUp size={11} /> Plus-value latente
+                <InfoTip text="Plus-value calculée si tu vendais aux prix actuels. Non imposable tant que tu ne vends pas." />
               </p>
               {summary.totalUnrealizedPnL === null ? (
                 <>
@@ -276,6 +278,7 @@ export default async function PortefeuillePage({ searchParams }: Props) {
             <div className="card p-5">
               <p className="text-xs text-secondary uppercase tracking-widest flex items-center gap-1">
                 <Activity size={11} /> Fraîcheur prix
+                <InfoTip text="Part des positions dont le prix a été rafraîchi dans les dernières 24 heures." />
               </p>
               <p className={`text-xl font-semibold financial-value mt-2 ${summary.freshnessRatio >= 0.8 ? 'text-accent' : summary.freshnessRatio >= 0.5 ? 'text-warning' : 'text-danger'}`}>
                 {formatPercent(summary.freshnessRatio * 100, { decimals: 0 })}
@@ -292,6 +295,7 @@ export default async function PortefeuillePage({ searchParams }: Props) {
               <div className="card p-5">
                 <p className="text-xs text-secondary uppercase tracking-widest flex items-center gap-1">
                   <Coins size={11} /> Dividendes 12 mois
+                  <InfoTip text="Trailing Twelve Months — cumul sur les 12 derniers mois glissants." />
                 </p>
                 <p className="text-xl font-semibold financial-value text-accent mt-2">
                   {formatCurrency(fullResult.summary.dividends.ttmTotal, summary.referenceCurrency, { compact: true })}
@@ -301,6 +305,7 @@ export default async function PortefeuillePage({ searchParams }: Props) {
               <div className="card p-5">
                 <p className="text-xs text-secondary uppercase tracking-widest flex items-center gap-1">
                   <Percent size={11} /> Yield on Cost
+                  <InfoTip text="Rendement annuel des dividendes rapporté au capital initialement investi (PRU)." />
                 </p>
                 <p className="text-xl font-semibold financial-value text-primary mt-2">
                   {fullResult.summary.dividends.yieldOnCost !== null
@@ -312,6 +317,7 @@ export default async function PortefeuillePage({ searchParams }: Props) {
               <div className="card p-5">
                 <p className="text-xs text-secondary uppercase tracking-widest flex items-center gap-1">
                   <Percent size={11} /> Yield on Market
+                  <InfoTip text="Rendement annuel des dividendes rapporté à la valeur actuelle de la position." />
                 </p>
                 <p className="text-xl font-semibold financial-value text-primary mt-2">
                   {fullResult.summary.dividends.yieldOnMarket !== null

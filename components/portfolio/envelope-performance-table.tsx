@@ -14,6 +14,7 @@
  */
 
 import { formatCurrency, formatPercent } from '@/lib/utils/format'
+import { InfoTip } from '@/components/ui/info-tip'
 import type { EnvelopePerformance } from '@/lib/portfolio/envelope-performance'
 
 interface Props {
@@ -55,10 +56,30 @@ export function EnvelopePerformanceTable({ data, currency, className }: Props) {
               <th className="text-left  py-2 font-medium">Enveloppe</th>
               <th className="text-right py-2 font-medium">Valeur</th>
               <th className="text-right py-2 font-medium hidden md:table-cell">Investi</th>
-              <th className="text-right py-2 font-medium">+/− Latente</th>
-              <th className="text-right py-2 font-medium hidden md:table-cell" title="Plus-value réalisée 12 mois glissants">PV réalisée 12 m</th>
-              <th className="text-right py-2 font-medium" title="Time-Weighted Return — performance neutre cash-flows">TWR</th>
-              <th className="text-right py-2 font-medium hidden sm:table-cell" title="Money-Weighted Return — IRR annualisé">MWR</th>
+              <th className="text-right py-2 font-medium">
+                <span className="inline-flex items-center justify-end gap-1">
+                  +/− Latente
+                  <InfoTip text="Plus-value calculée si tu vendais aux prix actuels. Non imposable tant que tu ne vends pas." />
+                </span>
+              </th>
+              <th className="text-right py-2 font-medium hidden md:table-cell">
+                <span className="inline-flex items-center justify-end gap-1">
+                  PV réalisée 12 m
+                  <InfoTip text="Plus-value effectivement encaissée lors de ventes. Cumul des 12 derniers mois glissants." />
+                </span>
+              </th>
+              <th className="text-right py-2 font-medium">
+                <span className="inline-flex items-center justify-end gap-1">
+                  TWR
+                  <InfoTip text="Performance pure du portefeuille, indépendamment du timing de tes apports. C'est l'indicateur à comparer à un indice de référence." />
+                </span>
+              </th>
+              <th className="text-right py-2 font-medium hidden sm:table-cell">
+                <span className="inline-flex items-center justify-end gap-1">
+                  MWR
+                  <InfoTip text="Performance annualisée incluant le timing et le montant de tes apports. Sur des fenêtres courtes avec apports récents, les valeurs peuvent paraître extrêmes — c'est mathématiquement normal." />
+                </span>
+              </th>
               <th className="text-right py-2 font-medium hidden lg:table-cell">Poids</th>
             </tr>
           </thead>

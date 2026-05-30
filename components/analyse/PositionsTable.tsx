@@ -16,6 +16,7 @@
 import { useState, useMemo } from 'react'
 import { CheckCircle2, AlertCircle, XCircle } from 'lucide-react'
 import { Field, Select } from '@/components/ui/field'
+import { InfoTip } from '@/components/ui/info-tip'
 import { Chip } from '@/components/profil/Chip'
 import { formatCurrency, formatPercent, formatQuantity, cn } from '@/lib/utils/format'
 import { translateSector } from '@/lib/analyse/sectorMapping'
@@ -239,7 +240,12 @@ export function PositionsTable({ positions }: Props) {
               <th className="text-left  py-2 font-medium hidden md:table-cell">ISIN</th>
               <th className="text-left  py-2 font-medium">Exposition principale</th>
               <th className="text-right py-2 font-medium hidden md:table-cell">Quantité</th>
-              <th className="text-right py-2 font-medium hidden lg:table-cell">PRU</th>
+              <th className="text-right py-2 font-medium hidden lg:table-cell">
+                <span className="inline-flex items-center justify-end gap-1">
+                  PRU
+                  <InfoTip text="Coût Unitaire Moyen Pondéré (PRU / CUMP) : prix de revient moyen de tes parts, recalculé à chaque achat." />
+                </span>
+              </th>
               <th className="text-right py-2 font-medium">Prix</th>
               <th className="text-right py-2 font-medium">Valeur</th>
               <th className="text-right py-2 font-medium">+/−</th>

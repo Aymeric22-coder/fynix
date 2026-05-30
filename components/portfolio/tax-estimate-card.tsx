@@ -13,6 +13,7 @@
 
 import { Landmark } from 'lucide-react'
 import { formatCurrency, formatPercent } from '@/lib/utils/format'
+import { InfoTip } from '@/components/ui/info-tip'
 import type { EnvelopeTaxEstimate } from '@/lib/portfolio/tax-estimate'
 
 interface Props {
@@ -39,6 +40,7 @@ export function TaxEstimateCard({ data, currency, className }: Props) {
       <div className="mb-4 flex items-center justify-between flex-wrap gap-2">
         <p className="text-xs text-secondary uppercase tracking-widest flex items-center gap-1">
           <Landmark size={11} /> Impôt estimé · PV réalisées 12 mois
+          <InfoTip text="Plus-value effectivement encaissée lors de ventes. Cumul des 12 derniers mois glissants." />
         </p>
         <p className="text-xs text-muted">{data.byEnvelope.length} enveloppe{data.byEnvelope.length > 1 ? 's' : ''}</p>
       </div>
@@ -64,8 +66,18 @@ export function TaxEstimateCard({ data, currency, className }: Props) {
               <th className="text-left  py-2 font-medium">Enveloppe</th>
               <th className="text-right py-2 font-medium">PV réalisée</th>
               <th className="text-right py-2 font-medium hidden md:table-cell">Base imposable</th>
-              <th className="text-right py-2 font-medium">Impôt estimé</th>
-              <th className="text-left  py-2 font-medium hidden lg:table-cell pl-4">Régime</th>
+              <th className="text-right py-2 font-medium">
+                <span className="inline-flex items-center justify-end gap-1">
+                  Impôt estimé
+                  <InfoTip text="Prélèvement Forfaitaire Unique (PFU 30 %) : 12,8 % d'impôt sur le revenu + 17,2 % de prélèvements sociaux. Régime par défaut des plus-values mobilières." />
+                </span>
+              </th>
+              <th className="text-left  py-2 font-medium hidden lg:table-cell pl-4">
+                <span className="inline-flex items-center gap-1">
+                  Régime
+                  <InfoTip text="Régime fiscal appliqué selon l'enveloppe. Cas particulier : sur les assurances-vie de plus de 8 ans, les gains bénéficient d'un abattement annuel (4 600 € seul, 9 200 € couple marié ou pacsé) avant imposition." />
+                </span>
+              </th>
             </tr>
           </thead>
           <tbody>

@@ -14,6 +14,7 @@
 
 import { Receipt } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils/format'
+import { InfoTip } from '@/components/ui/info-tip'
 import { NO_ENVELOPE_KEY } from '@/lib/portfolio/build-from-db'
 
 interface Props {
@@ -50,11 +51,15 @@ export function RealizedPnlCard({ data, currency, envelopeLabels = {}, className
     <div className={['card p-5', className ?? ''].join(' ')}>
       <p className="text-xs text-secondary uppercase tracking-widest flex items-center gap-1">
         <Receipt size={11} /> PV réalisée 12 mois
+        <InfoTip text="Plus-value effectivement encaissée lors de ventes. Cumul des 12 derniers mois glissants." />
       </p>
       <p className={`text-xl font-semibold financial-value mt-2 ${valueColor}`}>
         {formatCurrency(data.total, currency, { compact: true, sign: true })}
       </p>
-      <p className="text-xs text-secondary mt-1">TTM glissant · ventes uniquement</p>
+      <p className="text-xs text-secondary mt-1 inline-flex items-center gap-1">
+        TTM glissant · ventes uniquement
+        <InfoTip text="Trailing Twelve Months — cumul sur les 12 derniers mois glissants." />
+      </p>
 
       {rows.length > 0 && (
         <ul className="mt-3 space-y-1 border-t border-border pt-2">

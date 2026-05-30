@@ -15,6 +15,7 @@
 
 import { BarChart3 } from 'lucide-react'
 import { formatPercent } from '@/lib/utils/format'
+import { InfoTip } from '@/components/ui/info-tip'
 import type { BenchmarkPerformance } from '@/lib/portfolio/benchmark-comparison'
 
 interface Props {
@@ -50,6 +51,7 @@ export function BenchmarkComparisonCard({ data, className }: Props) {
       <div className="mb-4 flex items-center justify-between flex-wrap gap-2">
         <p className="text-xs text-secondary uppercase tracking-widest flex items-center gap-1">
           <BarChart3 size={11} /> Performance vs indices
+          <InfoTip text="Comparaison de ton portefeuille avec des indices de référence (MSCI World, S&P 500, CAC 40) sur la même fenêtre temporelle." />
         </p>
         <p className="text-xs text-muted">{periodLabel(window.days)}</p>
       </div>
@@ -60,8 +62,18 @@ export function BenchmarkComparisonCard({ data, className }: Props) {
             <tr>
               <th className="text-left  py-2 font-medium">Indice</th>
               <th className="text-right py-2 font-medium">Période</th>
-              <th className="text-right py-2 font-medium hidden md:table-cell">Annualisé</th>
-              <th className="text-right py-2 font-medium">Écart vs portef.</th>
+              <th className="text-right py-2 font-medium hidden md:table-cell">
+                <span className="inline-flex items-center justify-end gap-1">
+                  Annualisé
+                  <InfoTip text="Performance annualisée — équivalent annuel composé du rendement réalisé sur la fenêtre, pour comparer des périodes de durées différentes." />
+                </span>
+              </th>
+              <th className="text-right py-2 font-medium">
+                <span className="inline-flex items-center justify-end gap-1">
+                  Écart vs portef.
+                  <InfoTip text="Différence en points de pourcentage entre la performance de ton portefeuille et celle de l'indice sur la même fenêtre. Positif = surperformance." />
+                </span>
+              </th>
             </tr>
           </thead>
           <tbody>

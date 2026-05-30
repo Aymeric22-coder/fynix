@@ -34,6 +34,7 @@ import { useState, useEffect } from 'react'
 import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
 import { Field, Input, Select, FormGrid } from '@/components/ui/field'
+import { InfoTip } from '@/components/ui/info-tip'
 import { formatCurrency } from '@/lib/utils/format'
 
 export type TransactionType = 'buy' | 'sell' | 'dividend'
@@ -282,7 +283,10 @@ export function AddTransactionModal({
               <span className="financial-value text-primary">{selectedPosition.currentQty}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-secondary">PRU actuel</span>
+              <span className="text-secondary inline-flex items-center gap-1">
+                PRU actuel
+                <InfoTip text="Coût Unitaire Moyen Pondéré (PRU / CUMP) : prix de revient moyen de tes parts, recalculé à chaque achat." />
+              </span>
               <span className="financial-value text-primary">
                 {formatCurrency(selectedPosition.averagePrice, selectedPosition.currency, { decimals: 4 })}
               </span>
