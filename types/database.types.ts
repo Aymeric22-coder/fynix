@@ -196,6 +196,8 @@ export interface Profile {
   quiz_bourse:          number[] | null
   quiz_crypto:          number[] | null
   quiz_immo:            number[] | null
+  /** CS3 — Domaines auto-déclarés expert (bouton "Je connais déjà"). */
+  quiz_self_declared_domains: string[] | null
 
   risk_1:               string | null
   risk_2:               string | null

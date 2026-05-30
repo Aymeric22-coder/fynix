@@ -84,6 +84,60 @@ describe('experienceScore', () => {
       immo:   { correct: 0, total: 3 },
     })).toBe(18)
   })
+
+  // CS3 R5 — boost domaines auto-déclarés expert.
+  describe('CS3 R5 — boost auto-déclaré', () => {
+    it('domaine auto-déclaré → pct = 67 (≈ 70 % du niveau Expert)', () => {
+      // Bourse auto-déclarée Expert (sans quiz), Crypto/Immo Débutant.
+      // → (67 + 18 + 18) / 3 = 34
+      const score = experienceScore({
+        bourse: { correct: 0, total: 4 },
+        crypto: { correct: 0, total: 4 },
+        immo:   { correct: 0, total: 3 },
+      }, ['bourse'])
+      expect(score).toBe(Math.round((67 + 18 + 18) / 3))   // 34
+    })
+
+    it('2 domaines auto-déclarés (Bourse + Crypto) → score nettement remonté', () => {
+      const sansDeclaration = experienceScore({
+        bourse: { correct: 0, total: 4 },
+        crypto: { correct: 0, total: 4 },
+        immo:   { correct: 0, total: 3 },
+      })
+      const avecDeclaration = experienceScore({
+        bourse: { correct: 0, total: 4 },
+        crypto: { correct: 0, total: 4 },
+        immo:   { correct: 0, total: 3 },
+      }, ['bourse', 'crypto'])
+      // (67 + 67 + 18) / 3 = 51 vs 18.
+      expect(avecDeclaration).toBe(Math.round((67 + 67 + 18) / 3))
+      expect(avecDeclaration).toBeGreaterThan(sansDeclaration)
+    })
+
+    it('domaine auto-déclaré strictement < Expert pur (96)', () => {
+      const auto = experienceScore({
+        bourse: { correct: 0, total: 4 },
+        crypto: { correct: 0, total: 4 },
+        immo:   { correct: 0, total: 3 },
+      }, ['bourse', 'crypto', 'immo'])
+      expect(auto).toBe(67)   // 3 × 67 / 3
+      expect(auto).toBeLessThan(96)
+    })
+
+    it('non-régression : sans selfDeclaredDomains, comportement identique', () => {
+      const legacy = experienceScore({
+        bourse: { correct: 2, total: 4 },
+        crypto: { correct: 1, total: 4 },
+        immo:   { correct: 2, total: 3 },
+      })
+      const explicit = experienceScore({
+        bourse: { correct: 2, total: 4 },
+        crypto: { correct: 1, total: 4 },
+        immo:   { correct: 2, total: 3 },
+      }, [])
+      expect(explicit).toBe(legacy)
+    })
+  })
 })
 
 describe('savingsRate', () => {

@@ -15,7 +15,7 @@ import { useState } from 'react'
 import { cn, formatCurrency } from '@/lib/utils/format'
 import { Field, Input, FormGrid } from '@/components/ui/field'
 import { Chip } from '../Chip'
-import { FIRE_TYPES, PRIORITES, RISK_QUESTIONS } from '@/lib/profil/calculs'
+import { FIRE_TYPES, PRIORITES, RISK_QUESTIONS, normalizeFireType } from '@/lib/profil/calculs'
 import { QUICK_HYPOTHESES } from '@/lib/onboarding/quickProjection'
 import type { QuestionnaireValues } from '../questionnaire-types'
 
@@ -181,8 +181,21 @@ function RevenuPassifCibleInput({ values, set }: RevenuPassifCibleInputProps) {
 
   const cibleCalcule = Math.round((percent / 100) * revenuTotal)
 
+  // CS3 R4 — mention contextuelle si fire_type est coast ou barista.
+  const fireId = normalizeFireType(values.fire_type)
+  const isCoastOrBarista = fireId === 'coast' || fireId === 'barista'
+
   return (
     <div className="space-y-2">
+      {/* CS3 R4 — Mention coast/barista : la cible devient optionnelle. */}
+      {isCoastOrBarista && (
+        <p className="text-[11px] text-muted leading-relaxed">
+          Ton FIRE «&nbsp;{fireId === 'coast' ? 'Indépendance autonome' : 'Indépendance partielle'}&nbsp;»
+          vise une capitalisation qui produit ton revenu sans nouvel effort
+          d&apos;épargne. Tu peux laisser ce champ vide — l&apos;app calibrera
+          autrement.
+        </p>
+      )}
       {/* Header : label + segmented control */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <label className="text-sm text-secondary">Revenu passif mensuel cible</label>

@@ -7,6 +7,7 @@
  */
 
 import type { QuestionnaireValues } from '@/components/profil/questionnaire-types'
+import { normalizeFireType } from './calculs'
 
 /** Étapes critiques : impossible de passer sans remplir les champs requis. */
 export const REQUIRED_STEPS: ReadonlyArray<number> = [1, 8]
@@ -38,8 +39,17 @@ export function missingFields(step: number, v: QuestionnaireValues): string[] {
     if (!v.statut_pro)                                                  out.push('statut professionnel')
   } else if (step === 8) {
     if (!v.fire_type)                                                   out.push('type de FIRE')
-    if (v.revenu_passif_cible === null
-        || v.revenu_passif_cible === undefined)                         out.push('revenu passif cible')
+    // CS3 R4 — revenu_passif_cible devient OPTIONNEL si fire_type est
+    // coast ou barista. Justification : coast vise une capitalisation qui
+    // produit le revenu seule, barista est une semi-retraite avec
+    // complément d'activité plaisir. Dans les deux cas, l'objectif de
+    // revenu passif final est une projection théorique, pas un objectif
+    // d'épargne directe — on peut laisser vide sans casser la calibration.
+    const fireId = normalizeFireType(v.fire_type)
+    const revenuOptional = fireId === 'coast' || fireId === 'barista'
+    if (!revenuOptional
+        && (v.revenu_passif_cible === null
+            || v.revenu_passif_cible === undefined))                    out.push('revenu passif cible')
     if (v.age_cible === null || v.age_cible === undefined)              out.push('âge cible FIRE')
   }
   return out

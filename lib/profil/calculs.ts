@@ -319,19 +319,40 @@ export function riskScore(answers: {
   return Math.round((r1 + r2 + r3 + r4) / 4)
 }
 
+/** CS3 R5 — pct attribué à un domaine quand l'utilisateur a cliqué
+ *  « Je connais déjà — Expert » sur ce quiz.
+ *
+ *  Valeur = 67 ≈ round(96 × 0.7) où 96 est le pct du niveau Expert dans
+ *  `quizLevel`. Strictement < 100 % (on ne déclare pas l'utilisateur Expert
+ *  pur sans audit) ET > moyenne Débutant (18) / Intermédiaire (45) / Avancé
+ *  (72) borderline — choix conservateur qui place l'utilisateur entre
+ *  Avancé et Expert sans le ranker comme Expert pur.
+ *
+ *  → Tombe dans la fourchette "Avancé" du `quizLevel` (51-75 %), ce qui est
+ *    sémantiquement correct : on lui accorde un bon niveau sans le sacrer. */
+export const EXPERT_SELF_DECLARED_PCT = 67
+
 /**
  * Score d'expérience (0-100) = moyenne pondérée des 3 quiz selon le pct
  * de niveau de chacun. Aligné sur la mécanique d'origine (ProfilePreview).
+ *
+ * CS3 R5 — Si `selfDeclaredDomains` contient le domaine, son pct est
+ * remplacé par `EXPERT_SELF_DECLARED_PCT` (67). Permet à un utilisateur
+ * de cliquer « Je connais déjà » sans répondre, et de voir son score
+ * d'expérience refléter cette expertise auto-déclarée.
  */
 export function experienceScore(quizzes: {
   bourse: { correct: number; total: number }
   crypto: { correct: number; total: number }
   immo:   { correct: number; total: number }
-}): number {
+}, selfDeclaredDomains: ReadonlyArray<string> = []): number {
+  const has = (d: ExpertDomain) => selfDeclaredDomains.includes(d)
+  const pctOf = (d: ExpertDomain, lvl: QuizLevelResult): number =>
+    has(d) ? EXPERT_SELF_DECLARED_PCT : lvl.pct
   const lB = quizLevel(quizzes.bourse.correct, quizzes.bourse.total)
   const lC = quizLevel(quizzes.crypto.correct, quizzes.crypto.total)
   const lI = quizLevel(quizzes.immo.correct,   quizzes.immo.total)
-  return Math.round((lB.pct + lC.pct + lI.pct) / 3)
+  return Math.round((pctOf('bourse', lB) + pctOf('crypto', lC) + pctOf('immo', lI)) / 3)
 }
 
 /**
@@ -374,6 +395,10 @@ export function fireTarget(revenuPassifMensuelCible: number): number {
 // famille", "Marié(e) / PACS"...). Les calculs ont besoin d'ids stables.
 // Ces normalizers font le mapping et tolèrent les deux formes (libellé UI
 // ou id direct si la valeur a été persistée autrement).
+
+/** CS3 R5 — Domaines disponibles pour l'auto-déclaration expert
+ *  (bouton « Je connais déjà » sur Step 5/6/7). Aligne sur les 3 quiz. */
+export type ExpertDomain        = 'bourse' | 'crypto' | 'immo'
 
 export type FireTypeId          = 'lean' | 'classic' | 'fat' | 'coast' | 'barista'
 export type StabiliteRevenusId  = 'cdi' | 'independant' | 'chomage' | 'retraite'
@@ -723,6 +748,8 @@ export interface ProfileInput {
   revenu_passif_cible?:  number | null
   age_cible?:            number | null
   priorite?:             string | null
+  /** CS3 R5 — Domaines auto-déclarés expert (Step 5/6/7 bouton « Je connais déjà »). */
+  quiz_self_declared_domains?: ReadonlyArray<string> | null
 }
 
 export interface ProfileMetrics {
@@ -815,7 +842,7 @@ export function computeProfileMetrics(p: ProfileInput): ProfileMetrics {
     bourse: { correct: bCorrect, total: QUIZ_BOURSE.length },
     crypto: { correct: cCorrect, total: QUIZ_CRYPTO.length },
     immo:   { correct: iCorrect, total: QUIZ_IMMO.length },
-  })
+  }, p.quiz_self_declared_domains ?? [])
   const risk  = riskScore({ risk_1: p.risk_1, risk_2: p.risk_2, risk_3: p.risk_3, risk_4: p.risk_4 })
   const total = globalScore({ savingsRatePct: sr, riskPct: risk, experiencePct: exp })
 

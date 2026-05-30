@@ -61,6 +61,33 @@ describe('missingFields — étape 8 (FIRE)', () => {
       fire_type: 'lean', revenu_passif_cible: 0, age_cible: 60,
     }))).toEqual([])
   })
+
+  // CS3 R4 — revenu_passif_cible OPTIONNEL si fire_type = coast ou barista.
+  describe('CS3 R4 — coast/barista → revenu_passif_cible optionnel', () => {
+    it('fire_type=coast + revenu_passif_cible null → valide', () => {
+      expect(missingFields(8, mk({
+        fire_type: 'Coast FIRE', revenu_passif_cible: null, age_cible: 50,
+      }))).toEqual([])
+    })
+
+    it('fire_type=barista + revenu_passif_cible null → valide', () => {
+      expect(missingFields(8, mk({
+        fire_type: 'Barista FIRE', revenu_passif_cible: null, age_cible: 50,
+      }))).toEqual([])
+    })
+
+    it('fire_type=classic + revenu_passif_cible null → requis (legacy)', () => {
+      expect(missingFields(8, mk({
+        fire_type: 'classic', revenu_passif_cible: null, age_cible: 50,
+      }))).toEqual(['revenu passif cible'])
+    })
+
+    it('fire_type=lean + revenu_passif_cible null → requis (legacy)', () => {
+      expect(missingFields(8, mk({
+        fire_type: 'Lean FIRE', revenu_passif_cible: null, age_cible: 50,
+      }))).toEqual(['revenu passif cible'])
+    })
+  })
 })
 
 describe('missingFields — étapes non critiques', () => {

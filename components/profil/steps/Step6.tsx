@@ -18,6 +18,9 @@ export function Step6({ values, set }: Props) {
       quiz={QUIZ_CRYPTO}
       answers={values.quiz_crypto ?? []}
       onChange={(a) => set('quiz_crypto', a)}
+      domain="crypto"
+      selfDeclared={values.quiz_self_declared_domains ?? []}
+      onExpertToggle={(next) => set('quiz_self_declared_domains', next)}
     />
   )
 }

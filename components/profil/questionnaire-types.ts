@@ -24,6 +24,7 @@ export type QuestionnaireValues = Pick<
   | 'loyer' | 'autres_credits' | 'charges_fixes' | 'depenses_courantes'
   | 'epargne_mensuelle' | 'enveloppes'
   | 'quiz_bourse' | 'quiz_crypto' | 'quiz_immo'
+  | 'quiz_self_declared_domains'
   | 'risk_1' | 'risk_2' | 'risk_3' | 'risk_4'
   | 'fire_type' | 'revenu_passif_cible' | 'age_cible' | 'priorite'
   | 'tmi_rate'
@@ -36,6 +37,7 @@ export const EMPTY_VALUES: QuestionnaireValues = {
   loyer: null, autres_credits: null, charges_fixes: null, depenses_courantes: null,
   epargne_mensuelle: null, enveloppes: [],
   quiz_bourse: [], quiz_crypto: [], quiz_immo: [],
+  quiz_self_declared_domains: [],
   risk_1: null, risk_2: null, risk_3: null, risk_4: null,
   fire_type: null, revenu_passif_cible: null, age_cible: null, priorite: null,
   tmi_rate: null,

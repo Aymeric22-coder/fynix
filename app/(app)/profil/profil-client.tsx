@@ -28,8 +28,9 @@ import { Button } from '@/components/ui/button'
 import { ProfilQuestionnaire } from '@/components/profil/ProfilQuestionnaire'
 import { ProfilCard } from '@/components/profil/ProfilCard'
 import { STEPS } from '@/lib/profil/calculs'
+import { computeActivePath, type StepId } from '@/lib/profil/routing'
 import { useUserProfile } from '@/hooks/use-user-profile'
-import type { QuestionnaireValues } from '@/components/profil/questionnaire-types'
+import { EMPTY_VALUES, type QuestionnaireValues } from '@/components/profil/questionnaire-types'
 
 export function ProfilClient() {
   const { profile, loading, error, save, saveStep } = useUserProfile()
@@ -124,18 +125,32 @@ export function ProfilClient() {
         </div>
       )}
 
-      {showResumeBanner ? (
+      {showResumeBanner ? ((() => {
+        // CS3 — Sémantique E1 amendée. Plus de "X sur 9" trompeur :
+        // on affiche le TITRE de la prochaine étape + nombre d'étapes
+        // restantes dans le parcours ACTIF de cet utilisateur. Si le
+        // moteur skippe Step 6 (pas de crypto), il verra "encore 2 étapes"
+        // au lieu de "encore 3".
+        const initialValues = extractInitialValues(profile)
+        const activePath = computeActivePath({ ...EMPTY_VALUES, ...initialValues })
+        const resumeAt = (lastStep + 1) as StepId
+        const positionInPath = activePath.indexOf(resumeAt)
+        const remaining = positionInPath >= 0
+          ? activePath.length - positionInPath
+          : activePath.length // fallback : étape de reprise sautée ? on prend la longueur totale
+        const stepTitle = STEPS[resumeAt - 1]?.title ?? 'la suite'
+        return (
         <div className="max-w-2xl mx-auto">
           <div className="card p-6 sm:p-8 text-center">
             <p className="text-base text-primary font-medium">
-              Tu as complété {lastStep} étape{lastStep > 1 ? 's' : ''} sur {LAST_STEP}.
+              Tu en es à l&apos;étape «&nbsp;{stepTitle}&nbsp;».
             </p>
             <p className="text-sm text-secondary mt-2">
-              Reprends à l&apos;étape {lastStep + 1} ou recommence depuis le début.
+              Encore {remaining} étape{remaining > 1 ? 's' : ''} pour finaliser ton profil.
             </p>
             <div className="mt-6 flex items-center justify-center gap-3 flex-wrap">
               <Button icon={PlayCircle} onClick={() => setResumeStep(lastStep + 1)}>
-                Reprendre à l&apos;étape {lastStep + 1}
+                Reprendre
               </Button>
               <Button variant="secondary" icon={RotateCcw} onClick={() => setStartFresh(true)}>
                 Recommencer
@@ -143,7 +158,7 @@ export function ProfilClient() {
             </div>
           </div>
         </div>
-      ) : showWizard ? (
+      )})()) : showWizard ? (
         <ProfilQuestionnaire
           initialValues={extractInitialValues(profile)}
           initialStep={wizardInitialStep}
@@ -175,6 +190,8 @@ function extractInitialValues(p: ReturnType<typeof useUserProfile>['profile']): 
     epargne_mensuelle: p.epargne_mensuelle,
     enveloppes: p.enveloppes ?? [],
     quiz_bourse: p.quiz_bourse ?? [], quiz_crypto: p.quiz_crypto ?? [], quiz_immo: p.quiz_immo ?? [],
+    // CS3 R5 — domaines auto-déclarés expert.
+    quiz_self_declared_domains: p.quiz_self_declared_domains ?? [],
     risk_1: p.risk_1, risk_2: p.risk_2, risk_3: p.risk_3, risk_4: p.risk_4,
     fire_type: p.fire_type, revenu_passif_cible: p.revenu_passif_cible,
     age_cible: p.age_cible, priorite: p.priorite,

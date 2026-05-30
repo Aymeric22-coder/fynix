@@ -330,6 +330,8 @@ interface ProfileRow {
   // QW2 — statut_pro sert de fallback pour deriver la stabilite quand
   // stabilite_revenus est null (etape 2 skippee).
   statut_pro:          string | null
+  // CS3 R5 — domaines auto-déclarés expert sur les quiz.
+  quiz_self_declared_domains: string[] | null
 }
 
 interface ProfileLoaded {
@@ -378,7 +380,7 @@ async function loadProfile(userId: string): Promise<ProfileLoaded> {
       loyer, autres_credits, charges_fixes, depenses_courantes,
       enveloppes, tmi_rate,
       risk_1, risk_2, risk_3, risk_4,
-      quiz_bourse, quiz_crypto, quiz_immo,
+      quiz_bourse, quiz_crypto, quiz_immo, quiz_self_declared_domains,
       situation_familiale, enfants, fire_type, priorite, stabilite_revenus,
       statut_pro
     `)
@@ -415,7 +417,7 @@ async function loadProfile(userId: string): Promise<ProfileLoaded> {
     bourse: { correct: countCorrect(p.quiz_bourse), total: 4 },
     crypto: { correct: countCorrect(p.quiz_crypto), total: 4 },
     immo:   { correct: countCorrect(p.quiz_immo),   total: 3 },
-  })
+  }, p.quiz_self_declared_domains ?? [])
   const charges       = num(p.loyer) + num(p.autres_credits) + num(p.charges_fixes) + num(p.depenses_courantes)
   const revenuMensuel = num(p.revenu_mensuel) + num(p.revenu_conjoint) + num(p.autres_revenus)
 

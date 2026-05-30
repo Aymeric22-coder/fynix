@@ -18,13 +18,17 @@
  */
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, ArrowRight, Flame, Info, SkipForward } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils/format'
 import { STEPS } from '@/lib/profil/calculs'
 import { REQUIRED_STEPS, SKIPPABLE_STEPS, missingFields } from '@/lib/profil/wizardValidation'
+import {
+  computeActivePath, getNextStep, getPrevStep, findSkipReason,
+  END, type StepId,
+} from '@/lib/profil/routing'
 import { EMPTY_VALUES, type QuestionnaireValues } from './questionnaire-types'
 import { Step1 } from './steps/Step1'
 import { Step2 } from './steps/Step2'
@@ -52,19 +56,50 @@ interface Props {
 export function ProfilQuestionnaire({
   initialValues, initialStep = 1, onSubmit, onStepSave, onCancel,
 }: Props) {
-  // CS1 — dernière étape = STEPS.length (9 après CS1, ne plus hardcoder).
-  const LAST_STEP = STEPS.length
-  const [step,    setStep]    = useState(Math.min(LAST_STEP, Math.max(1, initialStep)))
+  // CS1 — dernière étape absolue = STEPS.length (9). Inchangé.
+  const LAST_STEP = STEPS.length as StepId
+  const [step,    setStep]    = useState<StepId>(
+    Math.min(LAST_STEP, Math.max(1, initialStep)) as StepId,
+  )
   const [values,  setValues]  = useState<QuestionnaireValues>({ ...EMPTY_VALUES, ...initialValues })
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState<string | null>(null)
   /** Vrai si le user a tenté de continuer en laissant des champs vides.
    *  Affiche les messages d'erreur uniquement après cette tentative. */
   const [touched, setTouched] = useState(false)
+  /** CS3 — Étapes que l'utilisateur a explicitement choisi de visiter via
+   *  le bouton « Je veux quand même y répondre » du skip transparent.
+   *  Session-locale (non persistée). Reload = re-propose le skip. */
+  const [overrides, setOverrides] = useState<ReadonlySet<StepId>>(new Set())
 
   function set<K extends keyof QuestionnaireValues>(k: K, v: QuestionnaireValues[K]) {
     setValues((prev) => ({ ...prev, [k]: v }))
   }
+
+  // CS3 — Parcours actif recalculé à CHAQUE changement de state. Si
+  // l'utilisateur revient cocher une enveloppe crypto, Step 6 réapparaît
+  // dans le path au prochain transition.
+  const activePath = useMemo(
+    () => computeActivePath(values, overrides),
+    [values, overrides],
+  )
+  const positionInPath = Math.max(0, activePath.indexOf(step))   // 0-based
+  const lastStepInPath = activePath[activePath.length - 1] ?? LAST_STEP
+  const isLastInPath   = step === lastStepInPath
+
+  // CS3 — Skip transparent : si le PROCHAIN step en ordre absolu serait
+  // sauté par le moteur, on affiche le message + bouton override sur
+  // l'étape COURANTE, juste au-dessus des boutons Continuer/Skip.
+  const upcomingSkipped: { step: StepId; reason: string } | null = useMemo(() => {
+    for (let s = (step + 1) as number; s <= LAST_STEP; s++) {
+      const sid = s as StepId
+      const reason = findSkipReason(sid, values, overrides)
+      if (reason) return { step: sid, reason }
+      // Si pas sauté, on s'arrête : c'est la prochaine étape effective.
+      if (!findSkipReason(sid, values, overrides)) break
+    }
+    return null
+  }, [step, values, overrides, LAST_STEP])
 
   const missing  = missingFields(step, values)
   const stepValid = missing.length === 0
@@ -78,11 +113,14 @@ export function ProfilQuestionnaire({
       return
     }
 
+    // CS3 — Prochaine étape via le routeur (pas s+1).
+    const next = getNextStep(step, values, overrides)
+
     // Sauvegarde intermédiaire de l'étape complétée (fire & forget : on
     // n'attend pas pour passer à la suite, mais on remonte l'erreur dans
     // le state pour que l'utilisateur sache que sa progression n'est pas
     // garantie — sinon il croit avoir sauve et perd ses donnees au refresh).
-    if (onStepSave && step < LAST_STEP) {
+    if (onStepSave && next !== END) {
       onStepSave(step, values).then((res) => {
         if (res.error) {
           setError(`Sauvegarde echouee : ${res.error}. Reessaie ou rafraichis la page.`)
@@ -90,8 +128,8 @@ export function ProfilQuestionnaire({
       })
     }
 
-    if (step < LAST_STEP) {
-      setStep((s) => s + 1)
+    if (next !== END) {
+      setStep(next)
       setTouched(false)
       return
     }
@@ -113,12 +151,38 @@ export function ProfilQuestionnaire({
         }
       })
     }
-    setStep((s) => s + 1)
+    // CS3 — Saut explicite suit aussi le parcours actif.
+    const next = getNextStep(step, values, overrides)
+    if (next !== END) setStep(next)
     setTouched(false)
   }
 
+  /** CS3 — POINT CRITIQUE : Back doit utiliser getPrevStep, PAS s-1.
+   *  Sinon l'utilisateur revient sur une étape sautée → confusion. */
   function handleBack() {
-    setStep((s) => Math.max(1, s - 1))
+    const prev = getPrevStep(step, values, overrides)
+    if (prev !== null) setStep(prev)
+    setTouched(false)
+  }
+
+  /** CS3 — Bouton « Je veux quand même y répondre » sur le skip transparent.
+   *  Ajoute l'étape sautée aux overrides session, ce qui la réactive dans
+   *  le parcours actif. */
+  function handleOverrideSkip(target: StepId) {
+    setOverrides((prev) => new Set([...prev, target]))
+  }
+
+  /** CS3 — Clic sur un dot (mini-barre de progression). Navigation directe
+   *  vers une étape du parcours actif ; si l'étape est actuellement sautée,
+   *  cliquer dessus la réactive via override + s'y rend. */
+  function handleDotClick(target: StepId) {
+    if (target === step) return
+    const inPath = activePath.includes(target)
+    if (!inPath) {
+      // Étape sautée → l'utilisateur veut la voir explicitement.
+      setOverrides((prev) => new Set([...prev, target]))
+    }
+    setStep(target)
     setTouched(false)
   }
 
@@ -127,30 +191,47 @@ export function ProfilQuestionnaire({
 
   return (
     <div className="max-w-2xl mx-auto">
-      {/* Barre de progression */}
+      {/* Barre de progression — CS3 : position dans le parcours ACTIF. */}
       <div className="mb-8">
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs text-accent uppercase tracking-widest font-medium">{meta.title}</span>
-          <span className="text-xs text-muted financial-value">{step} / {LAST_STEP}</span>
+          <span className="text-xs text-muted financial-value">
+            {positionInPath + 1} / {activePath.length}
+          </span>
         </div>
         <div className="h-0.5 bg-border rounded overflow-hidden">
           <div
             className="h-full bg-accent rounded transition-all duration-500"
-            style={{ width: `${(step / LAST_STEP) * 100}%` }}
+            style={{ width: `${((positionInPath + 1) / activePath.length) * 100}%` }}
           />
         </div>
+        {/* CS3 — Dots : on garde TOUS les STEPS visibles, mais ceux sautés
+            par le moteur (et non override) sont mutés (opacity-40), pour
+            que l'utilisateur SACHE qu'ils existent et puisse cliquer. */}
         <div className="flex justify-center gap-1.5 mt-3">
-          {STEPS.map((s) => (
-            <div
-              key={s.id}
-              className={cn(
-                'w-1.5 h-1.5 rounded-full transition-all',
-                s.id === step ? 'bg-accent scale-150' :
-                s.id  <  step ? 'bg-accent-hover' :
-                'bg-border',
-              )}
-            />
-          ))}
+          {STEPS.map((s) => {
+            const sid = s.id as StepId
+            const isSkipped = !activePath.includes(sid)
+            const isCurrent = sid === step
+            const isPast    = positionInPath > activePath.indexOf(sid) && !isSkipped
+            return (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => handleDotClick(sid)}
+                title={isSkipped
+                  ? `${s.title} (sautée — clique pour y aller)`
+                  : s.title}
+                className={cn(
+                  'w-1.5 h-1.5 rounded-full transition-all cursor-pointer hover:scale-150',
+                  isCurrent  ? 'bg-accent scale-150' :
+                  isPast     ? 'bg-accent-hover' :
+                  isSkipped  ? 'bg-muted opacity-40' :
+                               'bg-border',
+                )}
+              />
+            )
+          })}
         </div>
       </div>
 
@@ -185,8 +266,31 @@ export function ProfilQuestionnaire({
           <p className="text-sm text-danger bg-danger-muted px-3 py-2 rounded-lg mt-4">{error}</p>
         )}
 
+        {/* CS3 — Skip transparent : si la prochaine étape va être sautée par
+            le moteur, on l'annonce et on offre l'override en bouton secondary
+            VISIBLE (pas un lien discret). */}
+        {upcomingSkipped && (
+          <div className="mt-5 rounded-lg border border-border bg-surface-2 p-3.5 flex items-start gap-3">
+            <Info size={16} className="text-accent flex-shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-secondary leading-relaxed">
+                On te fait passer l&apos;étape «&nbsp;{STEPS[upcomingSkipped.step - 1]!.title}&nbsp;» :{' '}
+                {upcomingSkipped.reason}
+              </p>
+              <Button
+                variant="secondary"
+                type="button"
+                onClick={() => handleOverrideSkip(upcomingSkipped.step)}
+                className="mt-2.5"
+              >
+                Je veux quand même y répondre
+              </Button>
+            </div>
+          </div>
+        )}
+
         <div className="flex items-center gap-3 mt-7 pt-5 border-t border-border flex-wrap">
-          {step > 1 ? (
+          {positionInPath > 0 ? (
             <Button variant="secondary" type="button" icon={ArrowLeft} onClick={handleBack}>
               Retour
             </Button>
@@ -210,10 +314,10 @@ export function ProfilQuestionnaire({
               type="button"
               onClick={handleNext}
               loading={loading}
-              icon={step === LAST_STEP ? Flame : ArrowRight}
+              icon={isLastInPath ? Flame : ArrowRight}
               disabled={!stepValid && REQUIRED_STEPS.includes(step)}
             >
-              {step === LAST_STEP ? 'Voir mon profil' : 'Continuer'}
+              {isLastInPath ? 'Voir mon profil' : 'Continuer'}
             </Button>
           </div>
         </div>
