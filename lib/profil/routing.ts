@@ -30,10 +30,30 @@
 import type { QuestionnaireValues } from '@/components/profil/questionnaire-types'
 import { anyEnvelopeHasClass } from './enveloppesConstants'
 
-/** IDs des étapes du wizard. Aligne sur STEPS dans lib/profil/calculs.ts. */
+/** IDs des étapes du wizard. Aligne sur STEPS dans lib/profil/calculs.ts.
+ *  Note : les IDs sont des numéros stables (référencés en DB via
+ *  `wizard_step_completed`). NE PAS renuméroter — réordonner uniquement
+ *  l'ordre d'affichage via `ALL_STEPS`. */
 export type StepId = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10
 
-export const ALL_STEPS: readonly StepId[] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const
+/**
+ * Ordre d'AFFICHAGE du wizard (≠ ordre numérique des IDs).
+ *
+ * CS10 (Phase 6) — Step 9 « Ta fiscalité » est intercalée entre Step 3 et
+ * Step 4 pour conserver la cohérence narrative des chapitres :
+ *   « Toi »          = [1, 2, 3, 9]   (identité, revenus, charges, fiscalité)
+ *   « Tes savoirs »  = [4, 5, 6, 7]   (enveloppes, quizzes)
+ *   « Tes ambitions »= [8, 10]        (FIRE goal, projets de vie)
+ *
+ * Sans ce réordonnement, l'utilisateur faisait Toi → Savoirs → Toi (9) →
+ * Ambitions : le chapitre « Toi » était interrompu par les quizzes.
+ *
+ * IMPORTANT — `wizard_step_completed` reste un compteur par ID (pas par
+ * position). Le helper `getNextStep` est la source de vérité pour calculer
+ * la prochaine étape : il consomme `ALL_STEPS` et donne l'étape suivante
+ * dans l'ordre VISUEL, pas `lastStep + 1`. Cf. profil-client.tsx.
+ */
+export const ALL_STEPS: readonly StepId[] = [1, 2, 3, 9, 4, 5, 6, 7, 8, 10] as const
 
 // ────────────────────────────────────────────────────────────────────
 // Helpers de prédicats purs (testables individuellement)

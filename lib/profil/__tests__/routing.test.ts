@@ -86,13 +86,14 @@ describe('prédicats purs', () => {
 describe('R1/R2 garde-fou — enveloppes=[]', () => {
   it('enveloppes=[] (Step 4 sauté) → AUCUN skip auto', () => {
     const path = computeActivePath(mk({ enveloppes: [] }))
-    // CS5 — Step 10 « Projets de vie » ajoutée au path.
-    expect(path).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+    // CS10 — Ordre réordonné : Step 9 (Fiscalité) intercalée entre 3 et 4
+    // pour préserver la continuité narrative du chapitre « Toi ».
+    expect(path).toEqual([1, 2, 3, 9, 4, 5, 6, 7, 8, 10])
   })
 
   it('enveloppes=[PEA] (Step 4 touché, sans crypto/immo) → skip 6+7', () => {
     const path = computeActivePath(mk({ enveloppes: [PEA] }))
-    expect(path).toEqual([1, 2, 3, 4, 5, 8, 9, 10])
+    expect(path).toEqual([1, 2, 3, 9, 4, 5, 8, 10])
   })
 })
 

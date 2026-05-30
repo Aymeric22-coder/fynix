@@ -28,7 +28,8 @@ import { Button } from '@/components/ui/button'
 import { ProfilQuestionnaire } from '@/components/profil/ProfilQuestionnaire'
 import { ProfilCard } from '@/components/profil/ProfilCard'
 import { STEPS } from '@/lib/profil/calculs'
-import { computeActivePath, type StepId } from '@/lib/profil/routing'
+import { computeActivePath, getNextStep, END, type StepId } from '@/lib/profil/routing'
+import { getChapterForStep, getChapterIndex, CHAPTERS } from '@/lib/profil/chaptersConstants'
 import { useUserProfile } from '@/hooks/use-user-profile'
 import { EMPTY_VALUES, type QuestionnaireValues } from '@/components/profil/questionnaire-types'
 import type { LifeEventDraft } from '@/components/profil/lifeEventsDraft'
@@ -85,7 +86,18 @@ export function ProfilClient() {
   // CS1 — utiliser STEPS.length (= 9 après CS1) plutôt que hardcoder.
   const LAST_STEP  = STEPS.length
   const lastStep   = Math.min(LAST_STEP, Math.max(0, profile.wizard_step_completed ?? 0))
-  const hasPartial = !isComplete && lastStep > 0 && lastStep < LAST_STEP
+
+  // CS10 — La reprise utilise `getNextStep` (path-aware) au lieu de
+  // `lastStep + 1` (broken depuis le réordonnement de ALL_STEPS qui
+  // intercale Step 9 entre 3 et 4).
+  const _initialValues = extractInitialValues(profile)
+  const _activeValues  = { ...EMPTY_VALUES, ..._initialValues }
+  const _resumeCursor  = lastStep > 0
+    ? getNextStep(lastStep as StepId, _activeValues)
+    : (1 as StepId)
+  const _resumeAt: StepId | null = _resumeCursor === END ? null : (_resumeCursor as StepId)
+
+  const hasPartial = !isComplete && lastStep > 0 && _resumeAt !== null
   // Affiche le bandeau « tu affines » si l'utilisateur arrive du nouvel
   // onboarding 60s (quick_done = true) et n'a pas encore terminé le wizard.
   const showQuickAffinerBanner = profile.onboarding_quick_done && !isComplete
@@ -94,7 +106,7 @@ export function ProfilClient() {
   const showResumeBanner = hasPartial && resumeStep === null && !startFresh
   const showWizard       = (!isComplete || editing) && !showResumeBanner
   // Étape d'ouverture du wizard : choix utilisateur > reprise auto > 1.
-  const wizardInitialStep = resumeStep ?? (hasPartial ? lastStep + 1 : 1)
+  const wizardInitialStep = resumeStep ?? (_resumeAt ?? 1)
 
   async function handleSubmit(v: QuestionnaireValues, lifeEvents: LifeEventDraft[]) {
     const res = await save(v)
@@ -161,31 +173,39 @@ export function ProfilClient() {
         </div>
       )}
 
-      {showResumeBanner ? ((() => {
+      {showResumeBanner && _resumeAt ? ((() => {
         // CS3 — Sémantique E1 amendée. Plus de "X sur 9" trompeur :
         // on affiche le TITRE de la prochaine étape + nombre d'étapes
-        // restantes dans le parcours ACTIF de cet utilisateur. Si le
-        // moteur skippe Step 6 (pas de crypto), il verra "encore 2 étapes"
-        // au lieu de "encore 3".
-        const initialValues = extractInitialValues(profile)
-        const activePath = computeActivePath({ ...EMPTY_VALUES, ...initialValues })
-        const resumeAt = (lastStep + 1) as StepId
-        const positionInPath = activePath.indexOf(resumeAt)
+        // restantes dans le parcours ACTIF de cet utilisateur.
+        // CS10 — Enrichi avec le chapitre courant ("Chapitre 2 « Tes
+        // savoirs »"). Pluriel adaptatif.
+        const activePath = computeActivePath(_activeValues)
+        const positionInPath = activePath.indexOf(_resumeAt)
         const remaining = positionInPath >= 0
           ? activePath.length - positionInPath
           : activePath.length // fallback : étape de reprise sautée ? on prend la longueur totale
-        const stepTitle = STEPS[resumeAt - 1]?.title ?? 'la suite'
+        const stepTitle = STEPS[_resumeAt - 1]?.title ?? 'la suite'
+        const chapter   = getChapterForStep(_resumeAt)
+        const chapterNo = getChapterIndex(chapter) + 1
+        // Détecte si on COMMENCE un nouveau chapitre (resume est la 1re step
+        // du chapitre) → libellé "tu commences" au lieu de "tu en es".
+        const isFirstOfChapter = chapter.stepIds[0] === _resumeAt
         return (
         <div className="max-w-2xl mx-auto">
           <div className="card p-6 sm:p-8 text-center">
+            <p className="text-xs text-accent uppercase tracking-widest mb-2">
+              Chapitre {chapterNo} / {CHAPTERS.length} — {chapter.title}
+            </p>
             <p className="text-base text-primary font-medium">
-              Tu en es à l&apos;étape «&nbsp;{stepTitle}&nbsp;».
+              {isFirstOfChapter
+                ? <>Tu commences le chapitre «&nbsp;{chapter.title}&nbsp;» — étape «&nbsp;{stepTitle}&nbsp;».</>
+                : <>Tu en es à l&apos;étape «&nbsp;{stepTitle}&nbsp;».</>}
             </p>
             <p className="text-sm text-secondary mt-2">
               Encore {remaining} étape{remaining > 1 ? 's' : ''} pour finaliser ton profil.
             </p>
             <div className="mt-6 flex items-center justify-center gap-3 flex-wrap">
-              <Button icon={PlayCircle} onClick={() => setResumeStep(lastStep + 1)}>
+              <Button icon={PlayCircle} onClick={() => setResumeStep(_resumeAt)}>
                 Reprendre
               </Button>
               <Button variant="secondary" icon={RotateCcw} onClick={() => setStartFresh(true)}>

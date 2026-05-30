@@ -29,6 +29,7 @@ import {
   computeActivePath, getNextStep, getPrevStep, findSkipReason,
   END, type StepId,
 } from '@/lib/profil/routing'
+import { getChapterProgress } from '@/lib/profil/chaptersConstants'
 import { EMPTY_VALUES, type QuestionnaireValues } from './questionnaire-types'
 import type { LifeEventDraft } from './lifeEventsDraft'
 import { Step1 } from './steps/Step1'
@@ -192,13 +193,21 @@ export function ProfilQuestionnaire({
   }
 
   const meta = STEPS[step - 1]!
+  // CS10 — header narratif inline : chapitre + sous-titre.
+  const chapterProgress = getChapterProgress(step)
 
   return (
     <div className="max-w-2xl mx-auto">
-      {/* Barre de progression — CS3 : position dans le parcours ACTIF. */}
+      {/* CS10 — Header chapitre + barre de progression CS3.
+          Le label remplace l'ancien `meta.title` du header (le titre de
+          l'étape reste affiché en h2 dans la carte ci-dessous). */}
       <div className="mb-8">
         <div className="flex items-center justify-between mb-2">
-          <span className="text-xs text-accent uppercase tracking-widest font-medium">{meta.title}</span>
+          <span className="text-xs text-accent uppercase tracking-widest font-medium transition-colors">
+            Chapitre {chapterProgress.chapterIndex + 1} / {chapterProgress.chapterCount}
+            <span className="text-secondary"> — </span>
+            {chapterProgress.chapter.title}
+          </span>
           <span className="text-xs text-muted financial-value">
             {positionInPath + 1} / {activePath.length}
           </span>
@@ -238,6 +247,17 @@ export function ProfilQuestionnaire({
           })}
         </div>
       </div>
+
+      {/* CS10 — Subtitle du chapitre : affiché UNIQUEMENT à la 1re étape
+          du chapitre, pour faire respirer la transition. Sur les autres
+          étapes, on conserve le `meta.sub` de l'étape. */}
+      {chapterProgress.isFirstStepInChapter && (
+        <div className="mb-5 -mt-3 rounded-lg border border-accent/20 bg-accent-muted/30 p-3.5 animate-in fade-in slide-in-from-top-2 duration-500">
+          <p className="text-xs text-secondary leading-relaxed">
+            {chapterProgress.chapter.subtitle}
+          </p>
+        </div>
+      )}
 
       {/* Carte de l'étape courante */}
       <div className="card p-6 sm:p-8">
