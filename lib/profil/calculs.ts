@@ -37,6 +37,9 @@ export const STEPS: ReadonlyArray<StepMeta> = [
   { id: 6, title: 'Quiz Crypto',               sub: '4 questions pour mesurer vos connaissances en cryptomonnaies.' },
   { id: 7, title: 'Quiz Immobilier',           sub: '3 questions pour évaluer vos bases en investissement immobilier.' },
   { id: 8, title: 'Profil de risque & FIRE',   sub: 'Comment réagissez-vous face à la volatilité, et quelle est votre vision de l\'indépendance financière ?' },
+  // CS1 — Nouvelle étape ajoutée en FIN pour préserver wizard_step_completed
+  // des profils existants (pas de renumérotation des 8 premières étapes).
+  { id: 9, title: 'Ta fiscalité',              sub: 'Une dernière info pour calibrer précisément tes recos fiscales. Étape skippable.' },
 ] as const
 
 // ───────────────────────────────────────────────────────────────────

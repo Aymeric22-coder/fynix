@@ -17,8 +17,9 @@ describe('constantes wizard', () => {
   it('REQUIRED_STEPS = [1, 8]', () => {
     expect([...REQUIRED_STEPS]).toEqual([1, 8])
   })
-  it('SKIPPABLE_STEPS = [2, 3, 6, 7]', () => {
-    expect([...SKIPPABLE_STEPS]).toEqual([2, 3, 6, 7])
+  // CS1 — ajout de l'étape 9 « Ta fiscalité » (skippable, tmi_rate null-OK).
+  it('SKIPPABLE_STEPS = [2, 3, 6, 7, 9]', () => {
+    expect([...SKIPPABLE_STEPS]).toEqual([2, 3, 6, 7, 9])
   })
   it('aucune étape n\'est à la fois requise et skippable', () => {
     for (const r of REQUIRED_STEPS) expect(SKIPPABLE_STEPS).not.toContain(r)
@@ -70,5 +71,13 @@ describe('missingFields — étapes non critiques', () => {
     for (const step of [3, 4, 5, 6, 7]) {
       expect(missingFields(step, mk())).toEqual([])
     }
+  })
+  // CS1 — Étape 9 « Ta fiscalité » est toujours valide (tmi_rate null-OK,
+  // fallback 30 % aval). Permet le skip et la non-régression sur les
+  // profils existants qui n'ont jamais vu cette étape.
+  it('étape 9 (fiscalité) → toujours vide (skippable, tmi_rate null-OK)', () => {
+    expect(missingFields(9, mk())).toEqual([])
+    expect(missingFields(9, mk({ tmi_rate: 41 }))).toEqual([])
+    expect(missingFields(9, mk({ tmi_rate: null }))).toEqual([])
   })
 })

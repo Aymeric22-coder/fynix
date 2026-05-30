@@ -8,7 +8,7 @@
  *  - sinon → affiche la carte de profil
  *
  * Tâche B :
- *  - Si le wizard a été abandonné (wizard_step_completed > 0 et < 8 sans
+ *  - Si le wizard a été abandonné (wizard_step_completed > 0 et < STEPS.length sans
  *    profile_completed_at), propose une bannière "Reprendre à l'étape X"
  *    avec deux CTA : reprendre où l'utilisateur en était, ou recommencer.
  *  - L'étape initiale du wizard est lue depuis profile.wizard_step_completed.
@@ -27,6 +27,7 @@ import { PageHeader } from '@/components/shared/page-header'
 import { Button } from '@/components/ui/button'
 import { ProfilQuestionnaire } from '@/components/profil/ProfilQuestionnaire'
 import { ProfilCard } from '@/components/profil/ProfilCard'
+import { STEPS } from '@/lib/profil/calculs'
 import { useUserProfile } from '@/hooks/use-user-profile'
 import type { QuestionnaireValues } from '@/components/profil/questionnaire-types'
 
@@ -60,8 +61,10 @@ export function ProfilClient() {
   }
 
   const isComplete = !!profile.profile_completed_at
-  const lastStep   = Math.min(8, Math.max(0, profile.wizard_step_completed ?? 0))
-  const hasPartial = !isComplete && lastStep > 0 && lastStep < 8
+  // CS1 — utiliser STEPS.length (= 9 après CS1) plutôt que hardcoder.
+  const LAST_STEP  = STEPS.length
+  const lastStep   = Math.min(LAST_STEP, Math.max(0, profile.wizard_step_completed ?? 0))
+  const hasPartial = !isComplete && lastStep > 0 && lastStep < LAST_STEP
   // Affiche le bandeau « tu affines » si l'utilisateur arrive du nouvel
   // onboarding 60s (quick_done = true) et n'a pas encore terminé le wizard.
   const showQuickAffinerBanner = profile.onboarding_quick_done && !isComplete
@@ -125,7 +128,7 @@ export function ProfilClient() {
         <div className="max-w-2xl mx-auto">
           <div className="card p-6 sm:p-8 text-center">
             <p className="text-base text-primary font-medium">
-              Tu as complété {lastStep} étape{lastStep > 1 ? 's' : ''} sur 8.
+              Tu as complété {lastStep} étape{lastStep > 1 ? 's' : ''} sur {LAST_STEP}.
             </p>
             <p className="text-sm text-secondary mt-2">
               Reprends à l&apos;étape {lastStep + 1} ou recommence depuis le début.
@@ -175,5 +178,7 @@ function extractInitialValues(p: ReturnType<typeof useUserProfile>['profile']): 
     risk_1: p.risk_1, risk_2: p.risk_2, risk_3: p.risk_3, risk_4: p.risk_4,
     fire_type: p.fire_type, revenu_passif_cible: p.revenu_passif_cible,
     age_cible: p.age_cible, priorite: p.priorite,
+    // CS1 — TMI (étape 9). Pré-rempli depuis /parametres si déjà saisi.
+    tmi_rate: p.tmi_rate,
   }
 }

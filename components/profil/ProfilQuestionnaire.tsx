@@ -1,5 +1,5 @@
 /**
- * Orchestrateur du questionnaire en 8 étapes.
+ * Orchestrateur du questionnaire en N étapes (cf. STEPS).
  *
  * - Maintient le state local des réponses (initialisé depuis le profil
  *   existant en DB si rechargement / modification).
@@ -11,6 +11,7 @@
  * Tâche B :
  * - Validation réactive : bouton "Continuer" désactivé tant que les
  *   champs obligatoires de l'étape ne sont pas remplis (étapes 1 et 8).
+ *   CS1 a ajouté une étape 9 « Ta fiscalité » (skippable).
  * - "Passer cette étape" sur les étapes non-critiques (2, 3, 6, 7).
  * - Persistance intermédiaire via `saveStep` à chaque changement
  *   d'étape, pour permettre la reprise.
@@ -33,6 +34,7 @@ import { Step5 } from './steps/Step5'
 import { Step6 } from './steps/Step6'
 import { Step7 } from './steps/Step7'
 import { Step8 } from './steps/Step8'
+import { Step9 } from './steps/Step9'
 
 interface Props {
   initialValues?: Partial<QuestionnaireValues>
@@ -50,7 +52,9 @@ interface Props {
 export function ProfilQuestionnaire({
   initialValues, initialStep = 1, onSubmit, onStepSave, onCancel,
 }: Props) {
-  const [step,    setStep]    = useState(Math.min(8, Math.max(1, initialStep)))
+  // CS1 — dernière étape = STEPS.length (9 après CS1, ne plus hardcoder).
+  const LAST_STEP = STEPS.length
+  const [step,    setStep]    = useState(Math.min(LAST_STEP, Math.max(1, initialStep)))
   const [values,  setValues]  = useState<QuestionnaireValues>({ ...EMPTY_VALUES, ...initialValues })
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState<string | null>(null)
@@ -78,7 +82,7 @@ export function ProfilQuestionnaire({
     // n'attend pas pour passer à la suite, mais on remonte l'erreur dans
     // le state pour que l'utilisateur sache que sa progression n'est pas
     // garantie — sinon il croit avoir sauve et perd ses donnees au refresh).
-    if (onStepSave && step < 8) {
+    if (onStepSave && step < LAST_STEP) {
       onStepSave(step, values).then((res) => {
         if (res.error) {
           setError(`Sauvegarde echouee : ${res.error}. Reessaie ou rafraichis la page.`)
@@ -86,13 +90,13 @@ export function ProfilQuestionnaire({
       })
     }
 
-    if (step < 8) {
+    if (step < LAST_STEP) {
       setStep((s) => s + 1)
       setTouched(false)
       return
     }
 
-    // Étape 8 → submit définitif (marque profile_completed_at)
+    // Dernière étape → submit définitif (marque profile_completed_at)
     setLoading(true)
     const res = await onSubmit(values)
     setLoading(false)
@@ -119,7 +123,7 @@ export function ProfilQuestionnaire({
   }
 
   const meta = STEPS[step - 1]!
-  const StepComp = [Step1, Step2, Step3, Step4, Step5, Step6, Step7, Step8][step - 1]!
+  const StepComp = [Step1, Step2, Step3, Step4, Step5, Step6, Step7, Step8, Step9][step - 1]!
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -127,12 +131,12 @@ export function ProfilQuestionnaire({
       <div className="mb-8">
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs text-accent uppercase tracking-widest font-medium">{meta.title}</span>
-          <span className="text-xs text-muted financial-value">{step} / 8</span>
+          <span className="text-xs text-muted financial-value">{step} / {LAST_STEP}</span>
         </div>
         <div className="h-0.5 bg-border rounded overflow-hidden">
           <div
             className="h-full bg-accent rounded transition-all duration-500"
-            style={{ width: `${(step / 8) * 100}%` }}
+            style={{ width: `${(step / LAST_STEP) * 100}%` }}
           />
         </div>
         <div className="flex justify-center gap-1.5 mt-3">
@@ -206,10 +210,10 @@ export function ProfilQuestionnaire({
               type="button"
               onClick={handleNext}
               loading={loading}
-              icon={step === 8 ? Flame : ArrowRight}
+              icon={step === LAST_STEP ? Flame : ArrowRight}
               disabled={!stepValid && REQUIRED_STEPS.includes(step)}
             >
-              {step === 8 ? 'Voir mon profil' : 'Continuer'}
+              {step === LAST_STEP ? 'Voir mon profil' : 'Continuer'}
             </Button>
           </div>
         </div>

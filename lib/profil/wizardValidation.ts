@@ -11,8 +11,9 @@ import type { QuestionnaireValues } from '@/components/profil/questionnaire-type
 /** Étapes critiques : impossible de passer sans remplir les champs requis. */
 export const REQUIRED_STEPS: ReadonlyArray<number> = [1, 8]
 
-/** Étapes non critiques : bouton "Passer cette étape" disponible. */
-export const SKIPPABLE_STEPS: ReadonlyArray<number> = [2, 3, 6, 7]
+/** Étapes non critiques : bouton "Passer cette étape" disponible.
+ *  CS1 — ajout de l'étape 9 « Ta fiscalité » (skippable, fallback 30 % aval). */
+export const SKIPPABLE_STEPS: ReadonlyArray<number> = [2, 3, 6, 7, 9]
 
 /**
  * Liste des champs manquants pour l'étape donnée. Vide = étape valide.
@@ -20,11 +21,14 @@ export const SKIPPABLE_STEPS: ReadonlyArray<number> = [2, 3, 6, 7]
  * Critères par étape :
  *  - 1 (identité)    : âge, situation_familiale, statut_pro
  *  - 8 (FIRE)        : fire_type, revenu_passif_cible, age_cible
- *  - 2/3/4/5/6/7     : aucun champ obligatoire (skippable ou facultatif)
+ *  - 2/3/4/5/6/7/9   : aucun champ obligatoire (skippable ou facultatif)
  *
  * Les valeurs 0 sont considérées comme "remplies" : si l'utilisateur a
  * saisi un revenu de 0 ou un âge de 0, on respecte ce choix explicite et
  * on ne demande pas de le re-remplir.
+ *
+ * CS1 — étape 9 (« Ta fiscalité ») : tmi_rate est null-OK (fallback 30 %
+ * appliqué côté optimiseur/fiscaliteImmo). Aucune validation requise.
  */
 export function missingFields(step: number, v: QuestionnaireValues): string[] {
   const out: string[] = []

@@ -7,12 +7,9 @@ import { createClient } from '@/lib/supabase/client'
 import type { Profile } from '@/types/database.types'
 
 // `null` = "Non renseigné" → fallback TMI 30 % côté fiscaliteImmo / optimiseur.
+// CS1 — Le même champ est désormais saisissable via le wizard (Step9). Les
+// deux surfaces écrivent dans la même colonne `profiles.tmi_rate`.
 const TMI_OPTIONS: Array<number | null> = [null, 0, 11, 30, 41, 45]
-const FISCAL_SITUATIONS = [
-  { value: 'single',   label: 'Célibataire / Divorcé(e)' },
-  { value: 'married',  label: 'Marié(e)' },
-  { value: 'pacs',     label: 'Pacsé(e)' },
-]
 
 interface Props { profile: Profile | null; userEmail: string }
 
@@ -20,14 +17,11 @@ export default function ParametresForm({ profile, userEmail }: Props) {
   const [displayName,     setDisplayName]     = useState(profile?.display_name ?? '')
   // U11 — null = TMI non renseigné (fallback 30 % côté calcul, badge "estimée" affiché).
   const [tmiRate,         setTmiRate]         = useState<number | null>(profile?.tmi_rate ?? null)
-  const [fiscalSituation, setFiscalSituation] = useState(profile?.fiscal_situation ?? 'single')
-  // Migration 036 — revenus pro foyer (LMP detection) + parts fiscales
-  const [proIncomeEur,    setProIncomeEur]    = useState<number | ''>(
-    profile?.professional_income_eur ?? '',
-  )
-  const [foyerParts,      setFoyerParts]      = useState<number | ''>(
-    profile?.foyer_fiscal_parts ?? '',
-  )
+  // CS1 — Champs RETIRÉS de l'UI : fiscal_situation, professional_income_eur,
+  // foyer_fiscal_parts. Tous étaient morts en aval (0 consommateur réel pour
+  // les 2 premiers, fallback secondaire pour le 3e qui n'est utilisé que si
+  // situation_familiale est null — or le wizard l'a toujours). Les colonnes
+  // DB sont conservées (pattern QW1 invest_mensuel) — DROP COLUMN différé.
   const [saving,          setSaving]          = useState(false)
   const [saved,           setSaved]           = useState(false)
 
@@ -100,10 +94,9 @@ export default function ParametresForm({ profile, userEmail }: Props) {
       display_name: displayName || null,
       // U11 — `null` accepté côté DB (colonne nullable) ; fallback 30 % côté calculs.
       tmi_rate: tmiRate,
-      fiscal_situation: fiscalSituation,
-      // Migration 036 — contexte foyer pour détection LMP
-      professional_income_eur: proIncomeEur === '' ? 0 : proIncomeEur,
-      foyer_fiscal_parts:      foyerParts   === '' ? 1 : foyerParts,
+      // CS1 — fiscal_situation / professional_income_eur / foyer_fiscal_parts
+      // retirés du payload (champs morts en aval, UI supprimée). Colonnes DB
+      // conservées pour rétrocompat.
     }).eq('id', (await supabase.auth.getUser()).data.user!.id)
     setSaving(false)
     setSaved(true)
@@ -173,49 +166,11 @@ export default function ParametresForm({ profile, userEmail }: Props) {
           )}
         </div>
 
-        <div>
-          <label className={LABEL}>Situation familiale</label>
-          <select
-            value={fiscalSituation}
-            onChange={(e) => setFiscalSituation(e.target.value)}
-            className={INPUT}
-          >
-            {FISCAL_SITUATIONS.map((s) => (
-              <option key={s.value} value={s.value}>{s.label}</option>
-            ))}
-          </select>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className={LABEL}>
-              Revenus professionnels du foyer (€/an)
-              <span className="text-muted ml-1">(facultatif)</span>
-            </label>
-            <input
-              type="number" min={0} step={100}
-              value={proIncomeEur === '' ? '' : proIncomeEur}
-              onChange={(e) => setProIncomeEur(e.target.value === '' ? '' : Number(e.target.value))}
-              placeholder="35 000"
-              className={INPUT}
-            />
-            <p className="text-xs text-muted mt-1.5">
-              Salaires + BNC + BIC pro + pensions. Hors loyers. Sert à détecter
-              automatiquement si vous êtes LMP (recettes meublées &gt; revenus pro).
-            </p>
-          </div>
-          <div>
-            <label className={LABEL}>Parts fiscales du foyer</label>
-            <input
-              type="number" min={0.5} step={0.5}
-              value={foyerParts === '' ? '' : foyerParts}
-              onChange={(e) => setFoyerParts(e.target.value === '' ? '' : Number(e.target.value))}
-              placeholder="2"
-              className={INPUT}
-            />
-            <p className="text-xs text-muted mt-1.5">Quotient familial.</p>
-          </div>
-        </div>
+        {/* CS1 — Bloc « Situation familiale + Revenus pro foyer + Parts
+            fiscales » RETIRÉ. Ces 3 champs étaient saisis ici mais morts en
+            aval. La situation familiale est captée à l'étape 1 du wizard
+            (libellé FR), source unique de vérité côté code. Colonnes DB
+            préservées pour rétrocompat. */}
 
         {/* Flat tax / PFU info */}
         <div className="bg-surface-2 rounded-lg p-4 text-xs text-secondary space-y-1">

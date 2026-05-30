@@ -39,6 +39,7 @@ import { WhatIfSimulator }         from '@/components/analyse/WhatIfSimulator'
 import { OptimiseurHero }          from '@/components/analyse/OptimiseurHero'
 import { OptimiseurFiscal }        from '@/components/analyse/OptimiseurFiscal'
 import { Recommandations }         from '@/components/analyse/Recommandations'
+import { TmiMissingBanner }        from '@/components/analyse/TmiMissingBanner'
 import { calculerOpportunitesFiscales } from '@/lib/analyse/optimiseurFiscal'
 
 export function AnalyseClient() {
@@ -186,6 +187,9 @@ export function AnalyseClient() {
           ⚠ {error} (les données affichées peuvent être anciennes)
         </p>
       )}
+
+      {/* CS1 — Bandeau « Renseigne ta TMI » (s'affiche conditionnellement). */}
+      <TmiMissingBanner />
 
       {isEmpty && (
         <div className="card p-4 mb-4 border-l-4 border-l-accent">

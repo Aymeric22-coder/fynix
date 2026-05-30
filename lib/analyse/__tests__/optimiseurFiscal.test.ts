@@ -199,6 +199,71 @@ describe('OPP_2 — PER', () => {
     expect(opp.priorite).toBe(1)  // TMI ≥ 30 = priorité 1
   })
 
+  // CS1 — Cas concret « persona Marc » : cadre TMI 41 %.
+  // AVANT CS1 : Marc n'avait pas vu /parametres, tmi_rate=null,
+  //             fallback 30 % → gain PER affiché = 1 000 € × 30 % = 300 €.
+  // APRÈS CS1 : Marc remplit Step9 « Ta fiscalité » → tmi_rate=41,
+  //             gain PER réel = 1 000 € × 41 % = 410 €.
+  // L'écart 300 → 410 prouve que l'internalisation TMI dans le wizard
+  // débloque la promesse fiscale du produit.
+  describe('CS1 — cas concret persona Marc (TMI 41 %)', () => {
+    // revenu_mensuel_total = 833 → revenus annuels = 9 996 ≈ 10 000
+    // → capacité PER = 10 % × 10 000 = ~1 000 €, plafonnée bien en dessous des 35 194 € absolus.
+    const revenuMarc = 833
+
+    it('AVANT CS1 (TMI null → fallback 30 %) : gain PER = 300 €', () => {
+      const r = calculerOpportunitesFiscales({
+        patrimoine: patrimoine({
+          fireInputs: {
+            ...patrimoine().fireInputs,
+            tmi_rate: null,                // utilisateur n'a jamais visité /parametres
+            revenu_mensuel_total: revenuMarc,
+          },
+        }),
+      })
+      const opp = r.opportunites.find((o) => o.id === 'opp_per')!
+      expect(opp.applicable).toBe(true)
+      // Versement = min(~999.6, 10 000) ≈ 1 000 € ; gain = 1 000 × 30 % = 300 €
+      expect(opp.gain_annuel_eur).toBeGreaterThanOrEqual(298)
+      expect(opp.gain_annuel_eur).toBeLessThanOrEqual(300)
+    })
+
+    it('APRÈS CS1 (TMI 41 % renseignée via Step9) : gain PER = 410 €', () => {
+      const r = calculerOpportunitesFiscales({
+        patrimoine: patrimoine({
+          fireInputs: {
+            ...patrimoine().fireInputs,
+            tmi_rate: 41,                  // saisi via Step9 du wizard
+            revenu_mensuel_total: revenuMarc,
+          },
+        }),
+      })
+      const opp = r.opportunites.find((o) => o.id === 'opp_per')!
+      expect(opp.applicable).toBe(true)
+      // Versement ≈ 1 000 € ; gain = 1 000 × 41 % = 410 €
+      expect(opp.gain_annuel_eur).toBeGreaterThanOrEqual(407)
+      expect(opp.gain_annuel_eur).toBeLessThanOrEqual(410)
+    })
+
+    it('écart concret 300 → 410 € : +36,7 % sur le gain PER affiché', () => {
+      const fixt = (tmi: number | null) =>
+        patrimoine({
+          fireInputs: {
+            ...patrimoine().fireInputs,
+            tmi_rate: tmi,
+            revenu_mensuel_total: revenuMarc,
+          },
+        })
+      const gainAvant = calculerOpportunitesFiscales({ patrimoine: fixt(null) })
+        .opportunites.find((o) => o.id === 'opp_per')!.gain_annuel_eur
+      const gainApres = calculerOpportunitesFiscales({ patrimoine: fixt(41) })
+        .opportunites.find((o) => o.id === 'opp_per')!.gain_annuel_eur
+      expect(gainApres).toBeGreaterThan(gainAvant)
+      // Le ratio doit être proche de 41 / 30 = 1.366
+      expect(gainApres / gainAvant).toBeCloseTo(41 / 30, 1)
+    })
+  })
+
   it('TMI 11 % → priorité 2 (moins urgent)', () => {
     const r = calculerOpportunitesFiscales({
       patrimoine: patrimoine({

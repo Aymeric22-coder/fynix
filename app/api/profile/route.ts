@@ -18,9 +18,13 @@ import { ok, err, withAuth, parseBody } from '@/lib/utils/api'
 import type { User } from '@supabase/supabase-js'
 import type { Profile } from '@/types/database.types'
 
+// CS1 — `tmi_rate` est désormais saisissable via wizard (Step9) ET /parametres.
+// Retiré de l'Omit pour autoriser l'écriture via cette route. Les autres
+// champs « gérés ailleurs » (display_name, reference_currency, fiscal_situation)
+// restent exclus.
 type WritableFields = Omit<Profile,
   | 'id' | 'created_at' | 'updated_at' | 'profile_completed_at'
-  | 'display_name' | 'reference_currency' | 'tmi_rate' | 'fiscal_situation'
+  | 'display_name' | 'reference_currency' | 'fiscal_situation'
 >
 
 export const GET = withAuth(async (_req: Request, user: User) => {
@@ -42,8 +46,9 @@ export const PUT = withAuth(async (req: Request, user: User) => {
   const supabase = await createServerClient()
 
   // Liste blanche stricte : on ne laisse passer QUE les champs du questionnaire.
-  // Évite qu'un client puisse écrire display_name / tmi_rate / fiscal_situation
+  // Évite qu'un client puisse écrire display_name / fiscal_situation
   // (gérés ailleurs) ou créer/modifier id/timestamps.
+  // CS1 — tmi_rate est désormais saisissable via wizard (Step9) ET /parametres.
   const allowed: (keyof WritableFields)[] = [
     'prenom', 'age', 'situation_familiale', 'enfants', 'statut_pro',
     'revenu_mensuel', 'revenu_conjoint', 'autres_revenus', 'stabilite_revenus',
@@ -52,6 +57,7 @@ export const PUT = withAuth(async (req: Request, user: User) => {
     'quiz_bourse', 'quiz_crypto', 'quiz_immo',
     'risk_1', 'risk_2', 'risk_3', 'risk_4',
     'fire_type', 'revenu_passif_cible', 'age_cible', 'priorite',
+    'tmi_rate',
     'wizard_step_completed',
   ]
 
@@ -62,8 +68,8 @@ export const PUT = withAuth(async (req: Request, user: User) => {
 
   // Marqueur de complétion : timestamp de la dernière soumission.
   update['profile_completed_at'] = new Date().toISOString()
-  // Wizard final = étape 8 atteinte.
-  update['wizard_step_completed'] = 8
+  // CS1 — wizard final = étape 9 atteinte (« Ta fiscalité » ajoutée).
+  update['wizard_step_completed'] = 9
 
   const { data, error } = await supabase
     .from('profiles')
@@ -93,6 +99,7 @@ export const PATCH = withAuth(async (req: Request, user: User) => {
 
   const supabase = await createServerClient()
 
+  // CS1 — tmi_rate ajouté (idem PUT).
   const allowed: (keyof WritableFields)[] = [
     'prenom', 'age', 'situation_familiale', 'enfants', 'statut_pro',
     'revenu_mensuel', 'revenu_conjoint', 'autres_revenus', 'stabilite_revenus',
@@ -101,6 +108,7 @@ export const PATCH = withAuth(async (req: Request, user: User) => {
     'quiz_bourse', 'quiz_crypto', 'quiz_immo',
     'risk_1', 'risk_2', 'risk_3', 'risk_4',
     'fire_type', 'revenu_passif_cible', 'age_cible', 'priorite',
+    'tmi_rate',
     'wizard_step_completed',
   ]
 
