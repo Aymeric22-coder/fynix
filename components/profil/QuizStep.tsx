@@ -125,11 +125,11 @@ export function QuizStep({
           </p>
         </div>
       ) : quiz.map((q, qi) => (
-        <div key={qi} className="space-y-3">
+        <div key={q.id} className="space-y-3">
           <p className="text-xs text-secondary uppercase tracking-widest">Question {qi + 1} / {quiz.length}</p>
-          <p className="text-sm text-primary">{q.q}</p>
+          <p className="text-sm text-primary">{q.text}</p>
           <div className="space-y-2">
-            {q.opts.map((opt, oi) => {
+            {q.options.map((opt, oi) => {
               const selected = answers[qi] === oi
               return (
                 <button

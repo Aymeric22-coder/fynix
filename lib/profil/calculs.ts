@@ -63,133 +63,21 @@ export const PRIORITES             = ['Liberté de temps', 'Arrêter de travaill
 
 // ───────────────────────────────────────────────────────────────────
 // Constantes — Quiz
-// Chaque question : libellé, 4 options, index de la bonne réponse.
+// CS6 — La source unique vit dans `lib/profil/quizCatalog.ts`
+// (id stable, tag concept, lesson micro-leçon). Cette section ne fait
+// que ré-exporter les tableaux historiques (`QUIZ_BOURSE/CRYPTO/IMMO`)
+// pour préserver la compatibilité des call-sites (Step5/6/7, scoring).
+// NE PAS ré-ajouter des questions ici — éditer quizCatalog.ts.
 // ───────────────────────────────────────────────────────────────────
 
-export interface QuizQuestion {
-  q:    string
-  opts: ReadonlyArray<string>
-  ans:  number
-}
+export { QUIZ_CATALOG, getQuizQuestions, deriveMissedConcepts, deriveMissedConceptTags } from './quizCatalog'
+export type { QuizQuestion, QuizDomain } from './quizCatalog'
+import { QUIZ_CATALOG as _QUIZ_CATALOG } from './quizCatalog'
+import type { QuizQuestion as _QuizQuestion } from './quizCatalog'
 
-export const QUIZ_BOURSE: ReadonlyArray<QuizQuestion> = [
-  {
-    q: 'Qu\'est-ce qu\'un ETF ?',
-    opts: [
-      'Un fonds indiciel coté en bourse qui réplique la performance d\'un indice',
-      'Une action d\'une seule entreprise cotée en bourse',
-      'Un produit d\'épargne garanti et réglementé par l\'État',
-      'Une obligation émise par une entreprise pour se financer',
-    ],
-    ans: 0,
-  },
-  {
-    q: 'Que mesure le PER (Price to Earnings Ratio) d\'une action ?',
-    opts: [
-      'La volatilité historique d\'une action sur douze mois',
-      'La valorisation d\'une action rapportée à ses bénéfices annuels',
-      'Le rendement des dividendes versés aux actionnaires',
-      'Le volume d\'échanges moyen sur la journée',
-    ],
-    ans: 1,
-  },
-  {
-    q: 'En quoi consiste le DCA (Dollar Cost Averaging) ?',
-    opts: [
-      'Acheter massivement lors des plus bas de marché uniquement',
-      'Vendre progressivement ses positions pour sécuriser les gains',
-      'Investir une somme fixe à intervalles réguliers, quel que soit le cours',
-      'Concentrer ses achats sur les actions avec le PER le plus faible',
-    ],
-    ans: 2,
-  },
-  {
-    q: 'Quelle enveloppe fiscale permet d\'exonérer les plus-values sur actions européennes après 5 ans ?',
-    opts: [
-      'Le CTO — Compte-Titres Ordinaire',
-      'Le PER — Plan d\'Épargne Retraite',
-      'L\'assurance-vie en unités de compte',
-      'Le PEA — Plan d\'Épargne en Actions',
-    ],
-    ans: 3,
-  },
-] as const
-
-export const QUIZ_CRYPTO: ReadonlyArray<QuizQuestion> = [
-  {
-    q: 'Qu\'est-ce que la blockchain ?',
-    opts: [
-      'Un registre distribué et immuable qui enregistre des transactions de façon décentralisée',
-      'Une cryptomonnaie alternative au Bitcoin, créée en 2015',
-      'Une plateforme centralisée permettant d\'acheter et vendre des cryptos',
-      'Un portefeuille numérique sécurisé par empreinte digitale',
-    ],
-    ans: 0,
-  },
-  {
-    q: 'Que signifie « staker » des cryptomonnaies ?',
-    opts: [
-      'Échanger des cryptos rapidement pour profiter de la volatilité',
-      'Bloquer des cryptos pour participer à la validation du réseau et recevoir des récompenses',
-      'Convertir ses cryptomonnaies en euros sur une plateforme d\'échange',
-      'Miner de nouvelles cryptomonnaies via la puissance de calcul',
-    ],
-    ans: 1,
-  },
-  {
-    q: 'Qu\'est-ce qu\'un hardware wallet (cold storage) ?',
-    opts: [
-      'Un compte sur une exchange sécurisé par double authentification',
-      'Une cryptomonnaie stable adossée à un actif réel',
-      'Un portefeuille physique qui stocke vos clés privées hors ligne',
-      'Un service de prêt de cryptomonnaies entre particuliers',
-    ],
-    ans: 2,
-  },
-  {
-    q: 'La DeFi (Finance Décentralisée) désigne…',
-    opts: [
-      'Un organisme de régulation internationale des marchés crypto',
-      'Des services financiers sans intermédiaire grâce aux smart contracts sur blockchain',
-      'Une monnaie numérique de banque centrale (CBDC)',
-      'Le déficit énergétique généré par les blockchains',
-    ],
-    ans: 1,
-  },
-] as const
-
-export const QUIZ_IMMO: ReadonlyArray<QuizQuestion> = [
-  {
-    q: 'Comment calcule-t-on le rendement locatif brut d\'un bien ?',
-    opts: [
-      '(Loyers annuels nets de toutes charges ÷ Prix d\'achat) × 100',
-      '(Loyers annuels bruts ÷ Prix d\'achat total frais inclus) × 100',
-      '(Prix de revente − Prix d\'achat) ÷ Prix d\'achat × 100',
-      'Loyers mensuels perçus × 10',
-    ],
-    ans: 1,
-  },
-  {
-    q: 'En quoi consiste l\'effet de levier en investissement immobilier ?',
-    opts: [
-      'Négocier agressivement le prix d\'achat sous le prix marché',
-      'Revendre rapidement après achat pour encaisser une plus-value',
-      'Utiliser un crédit bancaire pour amplifier le rendement sur son apport personnel',
-      'Rembourser le crédit en avance pour réduire le coût des intérêts',
-    ],
-    ans: 2,
-  },
-  {
-    q: 'Qu\'est-ce qu\'une SCPI ?',
-    opts: [
-      'Un dispositif fiscal pour déduire des travaux de ses impôts',
-      'Un crédit immobilier à taux variable révisé annuellement',
-      'Un contrat de location avec option d\'achat pour le locataire',
-      'Une société qui collecte l\'épargne pour acheter de l\'immobilier et redistribuer des loyers',
-    ],
-    ans: 3,
-  },
-] as const
+export const QUIZ_BOURSE: ReadonlyArray<_QuizQuestion> = _QUIZ_CATALOG.bourse
+export const QUIZ_CRYPTO: ReadonlyArray<_QuizQuestion> = _QUIZ_CATALOG.crypto
+export const QUIZ_IMMO:   ReadonlyArray<_QuizQuestion> = _QUIZ_CATALOG.immo
 
 // ───────────────────────────────────────────────────────────────────
 // Constantes — Questions de risque (étape 8)
@@ -282,9 +170,9 @@ export const FIRE_TYPES: ReadonlyArray<FireTypeDef> = [
  */
 export function quizScore(
   answers: ReadonlyArray<number | null | undefined>,
-  quiz:    ReadonlyArray<QuizQuestion>,
+  quiz:    ReadonlyArray<_QuizQuestion>,
 ): number {
-  return quiz.reduce((acc, q, i) => acc + (answers[i] === q.ans ? 1 : 0), 0)
+  return quiz.reduce((acc, q, i) => acc + (answers[i] === q.correctIndex ? 1 : 0), 0)
 }
 
 export type QuizLevel = 'Débutant' | 'Intermédiaire' | 'Avancé' | 'Expert'
