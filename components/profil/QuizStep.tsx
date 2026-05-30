@@ -17,7 +17,7 @@
  */
 'use client'
 
-import { Award, Check } from 'lucide-react'
+import { Award, Check, Lightbulb, X } from 'lucide-react'
 import { cn } from '@/lib/utils/format'
 import type { QuizQuestion, ExpertDomain } from '@/lib/profil/calculs'
 
@@ -124,13 +124,24 @@ export function QuizStep({
             répondre aux questions.
           </p>
         </div>
-      ) : quiz.map((q, qi) => (
+      ) : quiz.map((q, qi) => {
+        // QW10 — Calcul du feedback pédagogique. On compare la réponse
+        // sélectionnée à correctIndex. Si différente (et != sentinel -1),
+        // on colore correct/wrong et on affiche la micro-leçon en dessous.
+        const selectedIdx = answers[qi]
+        const hasAnswered = typeof selectedIdx === 'number' && selectedIdx >= 0
+        const isCorrect   = hasAnswered && selectedIdx === q.correctIndex
+        const isWrong     = hasAnswered && !isCorrect
+        return (
         <div key={q.id} className="space-y-3">
           <p className="text-xs text-secondary uppercase tracking-widest">Question {qi + 1} / {quiz.length}</p>
           <p className="text-sm text-primary">{q.text}</p>
           <div className="space-y-2">
             {q.options.map((opt, oi) => {
-              const selected = answers[qi] === oi
+              const selected      = selectedIdx === oi
+              // QW10 — highlight correct/wrong UNIQUEMENT après une réponse.
+              const isCorrectOpt  = hasAnswered && oi === q.correctIndex
+              const isWrongOpt    = hasAnswered && selected && oi !== q.correctIndex
               return (
                 <button
                   type="button"
@@ -138,26 +149,60 @@ export function QuizStep({
                   onClick={() => selectOption(qi, oi)}
                   className={cn(
                     'w-full text-left flex items-start gap-3 px-3.5 py-3 rounded-lg border transition-colors',
-                    selected
-                      ? 'border-accent bg-accent-muted'
-                      : 'border-border bg-surface-2 hover:border-border-2',
+                    isCorrectOpt    ? 'border-accent bg-accent-muted' :
+                    isWrongOpt      ? 'border-danger/50 bg-danger-muted' :
+                    selected        ? 'border-accent bg-accent-muted' :
+                                      'border-border bg-surface-2 hover:border-border-2',
                   )}
                 >
                   <span className={cn(
                     'flex-shrink-0 w-4 h-4 rounded-full border-2 mt-0.5 flex items-center justify-center transition-colors',
-                    selected ? 'border-accent bg-accent text-bg' : 'border-muted',
+                    isCorrectOpt ? 'border-accent bg-accent text-bg' :
+                    isWrongOpt   ? 'border-danger bg-danger text-bg' :
+                    selected     ? 'border-accent bg-accent text-bg' :
+                                   'border-muted',
                   )}>
-                    {selected && <Check size={10} strokeWidth={3} />}
+                    {isCorrectOpt && <Check size={10} strokeWidth={3} />}
+                    {isWrongOpt   && <X size={10} strokeWidth={3} />}
+                    {selected && !isCorrectOpt && !isWrongOpt && <Check size={10} strokeWidth={3} />}
                   </span>
-                  <span className={cn('text-sm leading-relaxed', selected ? 'text-primary' : 'text-secondary')}>
+                  <span className={cn(
+                    'text-sm leading-relaxed',
+                    isCorrectOpt ? 'text-primary' :
+                    isWrongOpt   ? 'text-primary' :
+                    selected     ? 'text-primary' :
+                                   'text-secondary',
+                  )}>
                     {opt}
                   </span>
                 </button>
               )
             })}
           </div>
+
+          {/* QW10 — Micro-leçon inline. Visible UNIQUEMENT quand l'utilisateur
+              s'est trompé. Reste affichée tant que la réponse reste fausse —
+              disparaît dès qu'il sélectionne la bonne option (re-render naturel).
+              Pattern « moment pédagogique » Duolingo. */}
+          {isWrong && (
+            <div
+              data-testid={`micro-lesson-${q.id}`}
+              className="rounded-lg border-l-4 border-l-accent border-y border-r border-y-accent/20 border-r-accent/20 bg-accent/5 p-4 animate-in fade-in slide-in-from-bottom-2 duration-200"
+            >
+              <div className="flex items-start gap-3">
+                <Lightbulb size={16} className="text-accent flex-shrink-0 mt-0.5" aria-hidden />
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs text-accent uppercase tracking-widest font-medium mb-1.5">
+                    Pour la prochaine fois — <span aria-hidden className="not-italic">{q.lessonEmoji}</span> {q.lessonTitle}
+                  </p>
+                  <p className="text-sm text-secondary leading-relaxed">{q.lesson}</p>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
-      ))}
+        )
+      })}
     </div>
   )
 }

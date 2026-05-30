@@ -42,6 +42,11 @@ export interface QuizQuestion {
   readonly options:      ReadonlyArray<string>
   readonly correctIndex: number
   readonly tag:          string
+  /** QW10 — titre court de la micro-leçon (« Les ETF », « Le PEA
+   *  fiscalement »…) affiché en header de la carte leçon. */
+  readonly lessonTitle:  string
+  /** QW10 — pictogramme léger (1 emoji) qui décore la carte leçon. */
+  readonly lessonEmoji:  string
   readonly lesson:       string
 }
 
@@ -61,6 +66,8 @@ const QUIZ_BOURSE: ReadonlyArray<QuizQuestion> = [
       'Une obligation émise par une entreprise pour se financer',
     ],
     correctIndex: 0,
+    lessonTitle: 'Les ETF',
+    lessonEmoji: '📊',
     lesson:
       'Un ETF est un fonds coté en bourse qui réplique mécaniquement un indice ' +
       '(CAC 40, MSCI World…). En achetant une part, tu détiens en miniature toutes ' +
@@ -78,6 +85,8 @@ const QUIZ_BOURSE: ReadonlyArray<QuizQuestion> = [
       'Le volume d\'échanges moyen sur la journée',
     ],
     correctIndex: 1,
+    lessonTitle: 'Le PER (Price/Earnings)',
+    lessonEmoji: '📈',
     lesson:
       'Le PER (Price / Earnings) compare le prix d\'une action à son bénéfice par action. ' +
       'Un PER de 15 signifie 15 années de bénéfices pour rentabiliser l\'achat. Plus il est ' +
@@ -95,6 +104,8 @@ const QUIZ_BOURSE: ReadonlyArray<QuizQuestion> = [
       'Concentrer ses achats sur les actions avec le PER le plus faible',
     ],
     correctIndex: 2,
+    lessonTitle: 'Le DCA',
+    lessonEmoji: '⏱️',
     lesson:
       'Le DCA (Dollar Cost Averaging) consiste à investir un montant fixe à intervalles ' +
       'réguliers, peu importe le cours. Tu achètes plus d\'unités quand le marché baisse, ' +
@@ -112,6 +123,8 @@ const QUIZ_BOURSE: ReadonlyArray<QuizQuestion> = [
       'Le PEA — Plan d\'Épargne en Actions',
     ],
     correctIndex: 3,
+    lessonTitle: 'Le PEA fiscalement',
+    lessonEmoji: '🏦',
     lesson:
       'Le PEA (Plan d\'Épargne en Actions) exonère d\'impôt sur le revenu les plus-values ' +
       'après 5 ans de détention. Seuls les prélèvements sociaux (17,2 %) restent dus. ' +
@@ -132,6 +145,8 @@ const QUIZ_CRYPTO: ReadonlyArray<QuizQuestion> = [
       'Un portefeuille numérique sécurisé par empreinte digitale',
     ],
     correctIndex: 0,
+    lessonTitle: 'La blockchain',
+    lessonEmoji: '🔗',
     lesson:
       'Une blockchain est un registre numérique partagé entre des milliers d\'ordinateurs, ' +
       'sans autorité centrale. Chaque transaction est validée par consensus et inscrite de ' +
@@ -149,6 +164,8 @@ const QUIZ_CRYPTO: ReadonlyArray<QuizQuestion> = [
       'Miner de nouvelles cryptomonnaies via la puissance de calcul',
     ],
     correctIndex: 1,
+    lessonTitle: 'Le staking',
+    lessonEmoji: '🪙',
     lesson:
       'Staker, c\'est immobiliser ses cryptos sur le réseau pour participer à la validation ' +
       'des blocs (mécanisme Proof-of-Stake). En échange, tu reçois des récompenses (souvent ' +
@@ -166,6 +183,8 @@ const QUIZ_CRYPTO: ReadonlyArray<QuizQuestion> = [
       'Un service de prêt de cryptomonnaies entre particuliers',
     ],
     correctIndex: 2,
+    lessonTitle: 'Le cold storage',
+    lessonEmoji: '🔐',
     lesson:
       'Un hardware wallet (Ledger, Trezor…) stocke tes clés privées dans un dispositif hors ' +
       'ligne. Sans ces clés, personne ne peut bouger tes cryptos — pas même un site piraté. ' +
@@ -183,6 +202,8 @@ const QUIZ_CRYPTO: ReadonlyArray<QuizQuestion> = [
       'Le déficit énergétique généré par les blockchains',
     ],
     correctIndex: 1,
+    lessonTitle: 'La DeFi',
+    lessonEmoji: '🌐',
     lesson:
       'La DeFi (Decentralized Finance) regroupe des services financiers (prêt, échange, ' +
       'assurance) gérés par des smart contracts sur blockchain, sans banque ni courtier. ' +
@@ -203,6 +224,8 @@ const QUIZ_IMMO: ReadonlyArray<QuizQuestion> = [
       'Loyers mensuels perçus × 10',
     ],
     correctIndex: 1,
+    lessonTitle: 'Le rendement locatif brut',
+    lessonEmoji: '💹',
     lesson:
       'Le rendement locatif brut = (loyer annuel ÷ prix d\'achat frais inclus) × 100. Pour ' +
       '800 €/mois de loyer sur un bien à 150 000 € frais inclus : (9 600 ÷ 150 000) × 100 = ' +
@@ -220,6 +243,8 @@ const QUIZ_IMMO: ReadonlyArray<QuizQuestion> = [
       'Rembourser le crédit en avance pour réduire le coût des intérêts',
     ],
     correctIndex: 2,
+    lessonTitle: 'L\'effet de levier',
+    lessonEmoji: '⚖️',
     lesson:
       'L\'effet de levier, c\'est utiliser un crédit pour acheter un bien plus cher que ton ' +
       'apport. Si tu mets 30 k€ d\'apport pour un bien à 200 k€ qui prend 5 % de valeur, ' +
@@ -238,6 +263,8 @@ const QUIZ_IMMO: ReadonlyArray<QuizQuestion> = [
       'Une société qui collecte l\'épargne pour acheter de l\'immobilier et redistribuer des loyers',
     ],
     correctIndex: 3,
+    lessonTitle: 'Les SCPI',
+    lessonEmoji: '🏢',
     // TODO: vérifier exactitude légale — fiscalité SCPI = revenus fonciers (IR au barème
     // + 17,2 % PS), abattement micro-foncier 30 % si total fonciers < 15 000 €/an,
     // régime réel sinon. La formulation "fiscalité comme un loyer classique" est juste
