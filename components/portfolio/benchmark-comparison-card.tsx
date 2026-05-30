@@ -27,6 +27,18 @@ interface Props {
   className?: string
 }
 
+/**
+ * Format l'ecart de performance en POINTS DE POURCENTAGE (pp), pas en %.
+ * Un ecart entre deux taux de rendement est mathematiquement en pp — afficher
+ * du `%` serait techniquement faux et incoherent avec le tooltip InfoTip.
+ * Local au composant : pas de mutation du formatPercent global (utilise
+ * legitimement pour de vrais % ailleurs).
+ */
+function formatSpreadPp(value: number, decimals = 1): string {
+  const sign = value > 0 ? '+' : ''
+  return `${sign}${value.toFixed(decimals)} pp`
+}
+
 /** "Sur 6 mois" / "Sur 1 an" / "Sur 2,5 ans". */
 function periodLabel(days: number): string {
   if (days >= 365) {
@@ -110,7 +122,7 @@ export function BenchmarkComparisonCard({ data, className }: Props) {
                       : <span className="text-muted">—</span>}
                   </td>
                   <td className={`py-2.5 text-right financial-value ${diffColor}`}>
-                    {formatPercent(diff, { sign: true, decimals: 1 })}
+                    {formatSpreadPp(diff)}
                   </td>
                 </tr>
               )
