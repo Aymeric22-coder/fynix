@@ -385,46 +385,56 @@ describe('genererRecommandations', () => {
     }
   })
 
-  // ── Tâche A.4 — priorite du profil influe sur le tri à niveau égal ──
-  it('priorite "securite" remonte les recos liquidité/risque à priorité égale', () => {
-    // Profil avec à la fois cash insuffisant (liquidite, haute) et surexpo
-    // sectorielle (diversification, haute). En mode "securite", liquidite
-    // doit passer en premier.
-    const p = patrimoine({
-      totalCash: 1000,
+  // ── QW4 — la priorité de vie discrimine le tri des recos (4 buckets) ──
+  //
+  // Profil-test générant 4 recos HAUTE de catégories distinctes :
+  //   surexpo-secteur (diversification) · cash-insuffisant (liquidite)
+  //   pea-non-ouvert (fiscalite)        · retard-fire (fire)
+  // → on observe le tri intra-niveau bouger selon le bucket.
+  function profilDiscrimination(prioriteLibelle: string): PatrimoineComplet {
+    return patrimoine({
+      totalNet: 50_000, totalBrut: 50_000, totalPortefeuille: 49_000,
+      totalCash: 1000,   // → cash-insuffisant (1000/2000 = 0.5 mois < 3)
       fireInputs: {
         ...patrimoine().fireInputs,
+        enveloppes: [],            // PEA non ouvert → pea-non-ouvert (actions de base > 5 k€)
         charges_mensuelles: 2000,
-        priorite: 'Sécurité famille',
+        age: 30, age_cible: 40,    // retard FIRE marqué → retard-fire
+        epargne_mensuelle: 500,
+        priorite: prioriteLibelle,
       } as never,
     })
-    const recos = genererRecommandations(p, calculerTousLesScores(p))
-    const hautes = recos.filter((r) => r.priorite === 'haute')
-    const idxLiq = hautes.findIndex((r) => r.categorie === 'liquidite')
-    const idxDiv = hautes.findIndex((r) => r.categorie === 'diversification')
-    if (idxLiq >= 0 && idxDiv >= 0) {
-      expect(idxLiq).toBeLessThan(idxDiv)
-    }
+  }
+  function top3(prioriteLibelle: string): string[] {
+    const p = profilDiscrimination(prioriteLibelle)
+    return genererRecommandations(p, calculerTousLesScores(p)).slice(0, 3).map((r) => r.id)
+  }
+
+  it('securite_famille remonte la liquidité (cash-insuffisant en tête)', () => {
+    const ids = top3('Sécurité famille')
+    expect(ids[0]).toBe('cash-insuffisant')
   })
 
-  it('priorite "croissance" remonte les recos fire et diversification', () => {
-    const p = patrimoine({
-      totalCash: 1000,
-      fireInputs: {
-        ...patrimoine().fireInputs,
-        charges_mensuelles: 2000,
-        priorite: 'Transmettre un patrimoine',  // → croissance
-      } as never,
-    })
-    const recos = genererRecommandations(p, calculerTousLesScores(p))
-    // Le tri par priorité absolu reste prioritaire : on vérifie juste qu'à
-    // priorité égale, fire / diversification précèdent liquidite.
-    const hautes = recos.filter((r) => r.priorite === 'haute')
-    const idxFire = hautes.findIndex((r) => r.categorie === 'fire')
-    const idxLiq  = hautes.findIndex((r) => r.categorie === 'liquidite')
-    if (idxFire >= 0 && idxLiq >= 0) {
-      expect(idxFire).toBeLessThan(idxLiq)
-    }
+  it('independance remonte le FIRE puis la fiscalité', () => {
+    const ids = top3('Arrêter de travailler')
+    expect(ids[0]).toBe('retard-fire')
+    expect(ids[1]).toBe('pea-non-ouvert')
+  })
+
+  it('transmission remonte diversification + fiscalité, redescend le FIRE', () => {
+    const ids = top3('Transmettre un patrimoine')
+    expect(ids).toContain('surexpo-secteur')
+    expect(ids).toContain('pea-non-ouvert')
+    expect(ids).not.toContain('retard-fire')   // fire redescendu hors top-3
+  })
+
+  it('les 4 buckets produisent 4 top-3 DISTINCTS (discrimination effective)', () => {
+    const eq  = top3('Liberté de temps')       // equilibre
+    const sf  = top3('Sécurité famille')        // securite_famille
+    const ind = top3('Arrêter de travailler')   // independance
+    const tr  = top3('Transmettre un patrimoine') // transmission
+    const serial = [eq, sf, ind, tr].map((a) => a.join('>'))
+    expect(new Set(serial).size).toBe(4)
   })
 
   it('priorite "equilibre" ou absente → tri inchangé', () => {

@@ -411,16 +411,24 @@ describe('deriveStabiliteFromStatutPro', () => {
 })
 
 describe('normalizePriorite', () => {
-  it('mappe les libellés UI', () => {
-    expect(normalizePriorite('Sécurité famille')).toBe('securite')
-    expect(normalizePriorite('Transmettre un patrimoine')).toBe('croissance')
+  // QW4 — Les 5 chips du wizard (étape 8) → 4 buckets distincts.
+  it('mappe les 5 chips wizard vers 4 buckets', () => {
+    expect(normalizePriorite('Transmettre un patrimoine')).toBe('transmission')
+    expect(normalizePriorite('Sécurité famille')).toBe('securite_famille')
+    expect(normalizePriorite('Arrêter de travailler')).toBe('independance')
     expect(normalizePriorite('Liberté de temps')).toBe('equilibre')
     expect(normalizePriorite('Voyager')).toBe('equilibre')
-    expect(normalizePriorite('Investir en immobilier')).toBe('immo')
   })
-  it('accepte aussi les ids', () => {
-    expect(normalizePriorite('securite')).toBe('securite')
-    expect(normalizePriorite('immo')).toBe('immo')
+  it('tolérant à la casse / sans accent / ids directs', () => {
+    expect(normalizePriorite('transmission')).toBe('transmission')
+    expect(normalizePriorite('securite_famille')).toBe('securite_famille')
+    expect(normalizePriorite('independance')).toBe('independance')
+    expect(normalizePriorite('equilibre')).toBe('equilibre')
+  })
+  it('null / undefined / inconnu → null (fallback safe)', () => {
+    expect(normalizePriorite(null)).toBeNull()
+    expect(normalizePriorite(undefined)).toBeNull()
+    expect(normalizePriorite('Devenir astronaute')).toBeNull()
   })
 })
 

@@ -69,11 +69,24 @@ const PRELEVEMENTS_SOCIAUX = 0.172
 //
 // Valeurs négatives = remonter dans la liste. Positives = redescendre.
 
+// QW4 — Boost catégoriel par bucket de priorité de vie (4 buckets remappés).
+// Négatif = remonte dans la liste (à niveau de priorité absolu égal),
+// positif = redescend. Le tri primaire reste haute > moyenne > info.
 const PRIORITE_BOOST: Record<PrioriteId, Partial<Record<Recommandation['categorie'], number>>> = {
-  securite:   { liquidite: -2, risque: -1, fiscalite: 0,  diversification: 0,  fire: 1 },
-  croissance: { fire: -2,      diversification: -1, fiscalite: 0,  liquidite: 1, risque: 0 },
-  immo:       { diversification: -2, fire: -1, fiscalite: 0,  liquidite: 0,  risque: 0 },
-  equilibre:  {},  // pas de boost — tri purement par priorité haute/moyenne/info
+  // Pas de biais : tri purement par priorité haute/moyenne/info.
+  equilibre:        {},
+  // Sécuriser le foyer : coussin cash prioritaire, alerte cohérence remonte,
+  // l'indépendance précoce passe après.
+  securite_famille: { liquidite: -2, risque: -1, fire: 1 },
+  // Atteindre l'indépendance : objectif FIRE central, optimisation fiscale
+  // pour accélérer, on fait travailler le cash plutôt que l'accumuler.
+  independance:     { fire: -2, fiscalite: -1, liquidite: 1 },
+  // Transmettre : patrimoine équilibré (partageable) + enveloppes à rôle
+  // successoral (AV) remontent ; l'indépendance précoce redescend.
+  // ⚠️ Boost-proxy FAIBLE assumé : le catalogue de recommandations n'a
+  // aucune reco de transmission directe (donation, démembrement, clause
+  // bénéficiaire AV, SCI). Cf. follow-up « Recos catalogue transmission ».
+  transmission:     { diversification: -1, fiscalite: -1, fire: 1 },
 }
 
 /** Type étendu local pour lire `priorite` depuis fireInputs sans modifier

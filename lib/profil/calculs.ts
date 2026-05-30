@@ -374,7 +374,13 @@ export function fireTarget(revenuPassifMensuelCible: number): number {
 
 export type FireTypeId          = 'lean' | 'classic' | 'fat' | 'coast' | 'barista'
 export type StabiliteRevenusId  = 'cdi' | 'independant' | 'chomage' | 'retraite'
-export type PrioriteId          = 'securite' | 'croissance' | 'immo' | 'equilibre'
+// QW4 — Buckets de priorité de vie. Remappés pour refléter fidèlement les
+// 5 chips du wizard (étape 8) : chaque chip a maintenant un bucket dédié,
+// au lieu de l'ancien collapse (Liberté/Arrêter/Voyager → equilibre,
+// Transmettre → croissance, Sécurité famille → securite). Les anciens
+// buckets 'securite' | 'croissance' | 'immo' sont SUPPRIMÉS (code mort :
+// aucun chip ni code applicatif ne les produisait après remap).
+export type PrioriteId          = 'equilibre' | 'transmission' | 'securite_famille' | 'independance'
 export type SituationFamilialeId = 'celibataire' | 'couple' | 'marie' | 'pacse' | 'autre'
 
 export function normalizeFireType(v: string | null | undefined): FireTypeId | null {
@@ -441,14 +447,20 @@ export function deriveStabiliteFromStatutPro(
 export function normalizePriorite(v: string | null | undefined): PrioriteId | null {
   if (!v) return null
   const s = v.toLowerCase().trim()
-  if (s.includes('sécurité') || s.includes('securite') || s.includes('famille')) return 'securite'
-  if (s.includes('immo'))                                                          return 'immo'
-  if (s.includes('croissance') || s.includes('transmet') || s.includes('patrimoine')) return 'croissance'
-  if (s.includes('équilibre') || s.includes('equilibre'))                          return 'equilibre'
-  // Libellés "Liberté de temps" / "Arrêter de travailler" / "Voyager" →
-  // équilibré par défaut (FIRE classique sans biais sectoriel).
-  if (s.includes('liberté') || s.includes('liberte') || s.includes('arrêter')
-   || s.includes('arreter') || s.includes('voyager')) return 'equilibre'
+  // QW4 — Mapping 1 chip → 1 bucket. Ordre important :
+  //  - "Transmettre un patrimoine" testé AVANT toute branche contenant
+  //    "patrimoine" (il n'y en a plus, mais on garde l'ordre défensif).
+  //  - "Sécurité famille" : 'sécurité' OU 'famille'.
+  //  - "Arrêter de travailler" → independance (objectif FIRE / cesser l'activité).
+  //  - "Liberté de temps" / "Voyager" / "Équilibre" → equilibre (pas de biais).
+  if (s.includes('transmet') || s.includes('transmission'))             return 'transmission'
+  if (s.includes('sécurité') || s.includes('securite') || s.includes('famille')) return 'securite_famille'
+  if (s.includes('arrêter')  || s.includes('arreter')
+   || s.includes('indépendance') || s.includes('independance')
+   || s.includes('travailler'))                                         return 'independance'
+  if (s.includes('équilibre') || s.includes('equilibre')
+   || s.includes('liberté')  || s.includes('liberte')
+   || s.includes('voyager'))                                            return 'equilibre'
   return null
 }
 
