@@ -1,9 +1,10 @@
 'use client'
 
 import { useState } from 'react'
-import { Save, User, Percent, Globe, Mail, Send } from 'lucide-react'
+import { Save, User, Percent, Globe, Mail, Send, AlertTriangle, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { createClient } from '@/lib/supabase/client'
+import { ResetProfileModal } from '@/components/parametres/ResetProfileModal'
 import type { Profile } from '@/types/database.types'
 
 // `null` = "Non renseigné" → fallback TMI 30 % côté fiscaliteImmo / optimiseur.
@@ -24,6 +25,8 @@ export default function ParametresForm({ profile, userEmail }: Props) {
   // DB sont conservées (pattern QW1 invest_mensuel) — DROP COLUMN différé.
   const [saving,          setSaving]          = useState(false)
   const [saved,           setSaved]           = useState(false)
+  // Dev tool — modal de réinitialisation profil.
+  const [resetModalOpen,  setResetModalOpen]  = useState(false)
 
   // Sprint 6 — préférences email
   const [emailMonthly,    setEmailMonthly]    = useState(profile?.email_monthly_report ?? true)
@@ -108,6 +111,7 @@ export default function ParametresForm({ profile, userEmail }: Props) {
   const INPUT   = 'w-full bg-surface-2 border border-border rounded-lg px-3 py-2.5 text-sm text-primary focus:outline-none focus:border-accent transition-colors'
 
   return (
+    <>
     <form onSubmit={handleSave} className="space-y-6">
       {/* Profil */}
       <div className={SECTION}>
@@ -267,7 +271,31 @@ export default function ParametresForm({ profile, userEmail }: Props) {
         </Button>
         {saved && <span className="text-sm text-accent">✓ Paramètres sauvegardés</span>}
       </div>
+
+      {/* ───────── Zone dangereuse ─────────
+          Outil dev : remettre le profil à zéro pour revivre le wizard. */}
+      <div className="mt-8 rounded-lg border border-danger/30 bg-danger-muted p-5 space-y-3">
+        <div className="flex items-center gap-2">
+          <AlertTriangle size={15} className="text-danger" />
+          <h2 className="text-sm font-medium text-danger">Zone dangereuse</h2>
+        </div>
+        <p className="text-xs text-secondary leading-relaxed">
+          Réinitialiser efface toutes tes réponses du wizard et te permet de le
+          refaire depuis le début. Tes biens, comptes, positions et préférences
+          email ne sont pas touchés. Action irréversible.
+        </p>
+        <Button
+          variant="danger"
+          type="button"
+          icon={RotateCcw}
+          onClick={() => setResetModalOpen(true)}
+        >
+          Réinitialiser mon profil
+        </Button>
+      </div>
     </form>
+    <ResetProfileModal open={resetModalOpen} onClose={() => setResetModalOpen(false)} />
+    </>
   )
 }
 
