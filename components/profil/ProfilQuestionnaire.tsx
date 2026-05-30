@@ -30,6 +30,8 @@ import {
   END, type StepId,
 } from '@/lib/profil/routing'
 import { getChapterProgress } from '@/lib/profil/chaptersConstants'
+import { LiveAvatarCard } from './LiveAvatarCard'
+import { useMediaQuery, MEDIA_LG } from '@/hooks/use-media-query'
 import { EMPTY_VALUES, type QuestionnaireValues } from './questionnaire-types'
 import type { LifeEventDraft } from './lifeEventsDraft'
 import { Step1 } from './steps/Step1'
@@ -195,9 +197,20 @@ export function ProfilQuestionnaire({
   const meta = STEPS[step - 1]!
   // CS10 — header narratif inline : chapitre + sous-titre.
   const chapterProgress = getChapterProgress(step)
+  // QW7 — avatar live monté UNIQUEMENT sur >= lg (decision cadrage).
+  // useMediaQuery est SSR-safe : false au mount → bascule à true post-mount.
+  // On évite donc le calcul + render de l'avatar côté mobile.
+  const isDesktop = useMediaQuery(MEDIA_LG)
 
   return (
-    <div className="max-w-2xl mx-auto">
+    <div className={cn(
+      // QW7 — Grid 2 colonnes >= lg. Le `max-w-2xl mx-auto` original est
+      // conservé sur mobile (et reproduit pour la colonne gauche en
+      // desktop via la largeur 42rem du grid).
+      'max-w-2xl mx-auto',
+      'lg:max-w-6xl lg:grid lg:grid-cols-[42rem_minmax(0,22rem)] lg:gap-8 lg:items-start',
+    )}>
+      <div className="lg:max-w-2xl">
       {/* CS10 — Header chapitre + barre de progression CS3.
           Le label remplace l'ancien `meta.title` du header (le titre de
           l'étape reste affiché en h2 dans la carte ci-dessous). */}
@@ -355,6 +368,16 @@ export function ProfilQuestionnaire({
           </div>
         </div>
       </div>
+      </div>{/* QW7 — fin colonne gauche du grid */}
+
+      {/* QW7 — Colonne droite : avatar live (desktop ≥ lg uniquement).
+          Mount conditionnel via useMediaQuery — pas juste un display:none —
+          pour ne pas calculer les métriques sur mobile. */}
+      {isDesktop && (
+        <div className="lg:sticky lg:top-24 lg:self-start">
+          <LiveAvatarCard values={values} lifeEvents={lifeEvents} />
+        </div>
+      )}
     </div>
   )
 }
