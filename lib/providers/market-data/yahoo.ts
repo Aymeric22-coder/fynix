@@ -109,21 +109,30 @@ export class YahooFinanceProvider implements MarketProvider {
   }
 
   async getHistory(ticker: string, from: Date, to: Date): Promise<OHLCV[]> {
+    // yf.historical() tape /v7/finance/download/ (CSV, deprecated par Yahoo
+    // fin 2024) → 429 systematique depuis les IPs cloud (Vercel iad1).
+    // yf.chart() tape /v8/finance/chart/, meme endpoint que les pages
+    // publiques, beaucoup moins rate-limite. Format retour : { quotes: [...] }
+    // au lieu d'un array direct. Filtre defensif : on garde uniquement les
+    // entrees avec un close numerique positif.
     try {
-      const results = await yf.historical(
+      const result = await yf.chart(
         ticker,
         { period1: from, period2: to, interval: '1d' },
         { validateResult: false },
       )
 
-      return (results as any[]).map((r: any) => ({
-        date:   format(new Date(r.date), 'yyyy-MM-dd'),
-        open:   r.open  ?? r.close,
-        high:   r.high  ?? r.close,
-        low:    r.low   ?? r.close,
-        close:  r.close,
-        volume: r.volume ?? null,
-      }))
+      const quotes = (result?.quotes ?? []) as any[]
+      return quotes
+        .filter((q: any) => typeof q.close === 'number' && q.close > 0)
+        .map((q: any) => ({
+          date:   format(new Date(q.date), 'yyyy-MM-dd'),
+          open:   q.open  ?? q.close,
+          high:   q.high  ?? q.close,
+          low:    q.low   ?? q.close,
+          close:  q.close,
+          volume: q.volume ?? null,
+        }))
     } catch (e) {
       console.warn(`[yahoo] getHistory(${ticker}) failed:`, e)
       return []
