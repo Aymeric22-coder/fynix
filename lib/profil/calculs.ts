@@ -53,7 +53,12 @@ export const SITUATIONS_FAMILIALES = ['Célibataire', 'En couple', 'Marié(e) / 
 export const STATUTS_PRO           = ['Salarié', 'Indépendant / Freelance', 'Chef d\'entreprise', 'Retraité', 'Autre'] as const
 export const ENFANTS               = ['0', '1', '2', '3', '4+'] as const
 export const STABILITES_REVENUS    = ['Très stables (CDI)', 'Stables mais variables', 'Irréguliers', 'Très variables'] as const
-export const ENVELOPPES            = ['PEA', 'Assurance-vie', 'CTO', 'PER', 'Livret A', 'LDDS', 'CEL / PEL', 'Aucune'] as const
+// CS5 dette — Source unique des chips Step 4 dans `enveloppesConstants.ts`.
+// On re-exporte ici la liste de libellés pour rester compatible avec les
+// consommateurs existants (Step4.tsx, ProfilCard, etc.). NE PAS éditer
+// cette ligne — modifier ENVELOPPE_DEFS à la place.
+import { ENVELOPPE_LABELS } from './enveloppesConstants'
+export const ENVELOPPES            = ENVELOPPE_LABELS
 export const PRIORITES             = ['Liberté de temps', 'Arrêter de travailler', 'Voyager', 'Transmettre un patrimoine', 'Sécurité famille'] as const
 
 // ───────────────────────────────────────────────────────────────────

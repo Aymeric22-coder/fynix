@@ -38,6 +38,9 @@ import {
   RENDEMENT_PAR_CLASSE as RENDEMENT_CLASSE_SHARED,
 } from './constants'
 import { devWarn } from '../utils/devLog'
+import {
+  findEnvelopeByLabel, type EnvelopeFiscalKey,
+} from '@/lib/profil/enveloppesConstants'
 
 // ─────────────────────────────────────────────────────────────────
 // Constantes Sprint 3 — paramètres FIRE ajustables
@@ -62,31 +65,44 @@ const FISCALITE_AV_LONG_TERME_PCT = AV_LONG_TERME_PCT
  * (dividendes + retraits) selon la répartition des enveloppes déclarées
  * par l'utilisateur dans le profil.
  *
- * Heuristique simplifiée : on suppose que les enveloppes pèsent à parts
- * égales si plusieurs sont déclarées, et on prend une moyenne pondérée
- * de leur fiscalité respective.
+ * CS5 dette — Refactor : lit le `fiscalTaxKey` depuis `ENVELOPPE_DEFS`
+ * (source unique) au lieu de regex sur les libellés. Élimine le couplage
+ * fragile et la branche morte `lep` (n'a jamais existé comme chip).
+ *
+ * Heuristique simplifiée : moyenne non pondérée des taux d'imposition
+ * "estimés" par enveloppe — sert au modèle global, pas un conseil fiscal.
+ *
  *   - PEA (après 5 ans)         : 17,2 % (PS seulement)
  *   - Assurance-vie (8 ans)     : ~24,7 % (PFL + PS)
  *   - CTO                       : 30 % (PFU)
  *   - PER                       : 30 % (au retrait — simplification)
- *   - Livret A / LDDS / LEP     : 0 % (exonérés)
+ *   - Livret A / LDDS / CEL/PEL : 0 % (exonérés ou assimilés)
+ *
+ * Enveloppes avec `fiscalTaxKey = null` (Immobilier, Aucune) sont exclues
+ * du calcul — la fiscalité immo est gérée par `immoCalculs`.
  *
  * Si aucune enveloppe n'est déclarée, on retombe sur le PFU (30 %).
  */
+const TAUX_PAR_FISCAL_KEY: Record<NonNullable<EnvelopeFiscalKey>, number> = {
+  pea:      PS_PEA_AV_PCT,
+  av:       FISCALITE_AV_LONG_TERME_PCT,
+  cto:      PFU_CTO_PCT,
+  per:      PFU_CTO_PCT,
+  livret_a: 0,
+  ldds:     0,
+  cel_pel:  0,
+}
+
 export function estimerTauxFiscalitePortefeuille(enveloppes: ReadonlyArray<string> | null | undefined): number {
   if (!enveloppes || enveloppes.length === 0) return PFU_CTO_PCT
 
   let total = 0
   let count = 0
-  for (const env of enveloppes) {
-    const e = env.toLowerCase()
-    if (e.includes('pea'))                         { total += PS_PEA_AV_PCT;            count++ }
-    else if (e.includes('assurance') || e === 'av'){ total += FISCALITE_AV_LONG_TERME_PCT; count++ }
-    else if (e.includes('cto'))                    { total += PFU_CTO_PCT;              count++ }
-    else if (e.includes('per'))                    { total += PFU_CTO_PCT;              count++ }
-    else if (e.includes('livret') || e.includes('ldds') || e.includes('lep')) {
-      total += 0; count++
-    }
+  for (const label of enveloppes) {
+    const def = findEnvelopeByLabel(label)
+    if (!def || def.fiscalTaxKey === null) continue
+    total += TAUX_PAR_FISCAL_KEY[def.fiscalTaxKey]
+    count++
   }
   if (count === 0) return PFU_CTO_PCT
   return Math.round((total / count) * 10) / 10

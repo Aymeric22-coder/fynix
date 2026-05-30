@@ -21,6 +21,7 @@ import {
   AV_ABATTEMENT_COUPLE,
   TMI_FALLBACK_PCT,
 } from './constants'
+import { findEnvelopeById } from '@/lib/profil/enveloppesConstants'
 
 // ─────────────────────────────────────────────────────────────────
 // Constantes fiscales (France 2026)
@@ -156,7 +157,11 @@ export function calculerOpportunitesFiscales(
 // Profil fiscal
 // ─────────────────────────────────────────────────────────────────
 
-const ENVELOPPES_REFERENCE = ['PEA', 'Assurance-vie', 'PER', 'CTO', 'Livret A', 'LDDS']
+// CS5 dette — Référence fiscale dérivée de ENVELOPPE_DEFS (source unique).
+// Les "enveloppes fiscales" qu'on suggère d'ouvrir si manquantes = celles
+// avec un fiscalTaxKey != null ET hors Livret A / LDDS / CEL / PEL qui sont
+// déjà ouvertes par défaut côté banque française (et plafonnés).
+const ENVELOPPES_FISCALES_RECOMMANDEES = ['pea', 'av', 'per', 'cto']
 
 function construireProfilFiscal(p: PatrimoineComplet): ProfilFiscal {
   const fi  = p.fireInputs
@@ -165,19 +170,23 @@ function construireProfilFiscal(p: PatrimoineComplet): ProfilFiscal {
   // L'agregateur expose un flag `tmiEstime` pour que l'UI puisse alerter.
   const tmi = fi.tmi_rate ?? TMI_FALLBACK_PCT
 
-  // Enveloppes déclarées (normalisation lowercase)
-  const envLower = (fi.enveloppes ?? []).map((e) => e.toLowerCase())
-  const has = (kw: string) => envLower.some((e) => e.includes(kw.toLowerCase()))
-
+  // CS5 dette — Match strict via ENVELOPPE_DEFS au lieu de substring lower.
+  // On extrait les enveloppes "fiscales" effectivement ouvertes par l'user.
+  const userLabels = new Set(fi.enveloppes ?? [])
   const enveloppesOuvertes: string[] = []
-  if (has('pea'))                          enveloppesOuvertes.push('PEA')
-  if (has('assurance') || has('av'))       enveloppesOuvertes.push('Assurance-vie')
-  if (has('per'))                          enveloppesOuvertes.push('PER')
-  if (has('cto'))                          enveloppesOuvertes.push('CTO')
-  if (has('livret a'))                     enveloppesOuvertes.push('Livret A')
-  if (has('ldds'))                         enveloppesOuvertes.push('LDDS')
+  for (const id of ENVELOPPES_FISCALES_RECOMMANDEES) {
+    const def = findEnvelopeById(id)
+    if (def && userLabels.has(def.label)) enveloppesOuvertes.push(def.label)
+  }
+  // Livret A / LDDS conservés dans la liste ouverte pour usage downstream.
+  for (const id of ['livreta', 'ldds'] as const) {
+    const def = findEnvelopeById(id)
+    if (def && userLabels.has(def.label)) enveloppesOuvertes.push(def.label)
+  }
 
-  const enveloppesManquantes = ENVELOPPES_REFERENCE.filter((e) => !enveloppesOuvertes.includes(e))
+  const enveloppesManquantes = ENVELOPPES_FISCALES_RECOMMANDEES
+    .map((id) => findEnvelopeById(id)?.label)
+    .filter((lbl): lbl is string => !!lbl && !enveloppesOuvertes.includes(lbl))
 
   // Revenus fonciers annuels = somme des loyers bruts annuels (locatifs)
   const revenusFonciers = p.biens
@@ -191,7 +200,8 @@ function construireProfilFiscal(p: PatrimoineComplet): ProfilFiscal {
     .reduce((s, pos) => s + pos.current_value, 0)
   // Si PEA fermé : tout est en CTO → dividendes sur la totalité.
   // Si PEA ouvert : on suppose qu'une partie reste en CTO (actions non-EU, etc.).
-  const partCto      = has('pea') ? 0.3 : 1
+  const peaLabel     = findEnvelopeById('pea')?.label ?? 'PEA'
+  const partCto      = userLabels.has(peaLabel) ? 0.3 : 1
   const revenusCto   = valActionsEtf * partCto * (YIELD_DIVIDENDES_PCT / 100)
 
   // Régimes immo actifs (uniques)

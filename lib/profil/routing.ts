@@ -28,6 +28,7 @@
  */
 
 import type { QuestionnaireValues } from '@/components/profil/questionnaire-types'
+import { anyEnvelopeHasClass } from './enveloppesConstants'
 
 /** IDs des étapes du wizard. Aligne sur STEPS dans lib/profil/calculs.ts. */
 export type StepId = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10
@@ -39,18 +40,24 @@ export const ALL_STEPS: readonly StepId[] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as c
 // ────────────────────────────────────────────────────────────────────
 
 /**
- * True si l'utilisateur a déclaré au moins une enveloppe crypto à l'étape 4.
- * Pattern de recherche insensible à la casse.
+ * True si l'utilisateur a déclaré au moins une enveloppe exposée à la crypto
+ * à l'étape 4.
+ *
+ * CS5 dette — Auparavant regex `/crypto/i` sur le libellé. Bug : aucune chip
+ * « Crypto » n'existait, R1 se déclenchait à 100 %. Le refactor (chip Crypto
+ * ajoutée + lecture du tag `classes:['crypto']` via ENVELOPPE_DEFS) résout
+ * le couplage UI ↔ regex de façon définitive.
  */
 export function hasCryptoEnvelope(v: QuestionnaireValues): boolean {
-  return (v.enveloppes ?? []).some((e) => /crypto/i.test(e))
+  return anyEnvelopeHasClass(v.enveloppes, 'crypto')
 }
 
 /**
- * True si l'utilisateur a déclaré au moins une enveloppe immo/SCPI à l'étape 4.
+ * True si l'utilisateur a déclaré au moins une enveloppe exposée à l'immobilier
+ * (chip « Immobilier / SCPI ») à l'étape 4.
  */
 export function hasImmoEnvelope(v: QuestionnaireValues): boolean {
-  return (v.enveloppes ?? []).some((e) => /immo|scpi/i.test(e))
+  return anyEnvelopeHasClass(v.enveloppes, 'immo')
 }
 
 /**
