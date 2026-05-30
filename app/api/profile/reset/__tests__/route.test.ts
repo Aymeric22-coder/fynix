@@ -45,7 +45,8 @@ vi.mock('@/lib/utils/api', () => ({
     Response.json({ data: null, error: message }, { status }),
 }))
 
-import { POST, RESET_WIPE_PAYLOAD } from '../route'
+import { POST } from '../route'
+import { RESET_WIPE_PAYLOAD } from '../payload'
 
 beforeEach(() => {
   updates.length = 0
