@@ -8,8 +8,16 @@
  * (POST /api/profile/life-events/sync).
  *
  * UX :
- *   - 4 blocs toggle on/off (Retraite, Capital exceptionnel, Achat RP, Naissance)
- *   - 1 seul Capital exceptionnel autorisé en MVP (cf. décision #7)
+ *   - 4 sections (Retraite, Capital exceptionnel, Achat RP, Naissance)
+ *   - Capital exceptionnel : N événements supportés (héritage + bonus +
+ *     vente d'entreprise = 3 events distincts à des dates différentes).
+ *     La DB et l'API /sync supportaient déjà N rows ; seule l'UI était
+ *     bloquée à 1 (cf. décision #7 MVP). Soft cap à 10 (cohérent avec
+ *     l'esprit de la CHECK migration 050).
+ *   - Retraite, Achat RP, Naissance : 1 max (sémantiquement unique).
+ *     Décision : naissance reste 1 événement avec `nb_enfants` plutôt
+ *     que N rows (l'engine de projection somme déjà par enfant ;
+ *     refactor des coûts staggered = follow-up séparé).
  *   - Date saisie en MM/AAAA → engine arrondit à l'année la plus proche
  *   - InfoTip pension avec lien info-retraite.fr (décision #1)
  *   - Question 3 options "Es-tu déjà propriétaire ?" pilotant la visibilité
@@ -19,7 +27,7 @@
 'use client'
 
 import { useMemo } from 'react'
-import { ExternalLink } from 'lucide-react'
+import { ExternalLink, Plus, X } from 'lucide-react'
 import { cn } from '@/lib/utils/format'
 import { Field } from '@/components/ui/field'
 import { InfoTip } from '@/components/ui/info-tip'
@@ -71,12 +79,14 @@ function parseDate(s: string | null): { year: number | null; month: number | nul
   }
 }
 
-/** Trouve l'évènement actif d'un type donné (1 seul par type en MVP). */
+/** Trouve l'évènement actif d'un type donné (utilisé pour les types
+ *  sémantiquement uniques : retraite, achat_rp, naissance). */
 function findEvent(events: LifeEventDraft[], type: LifeEventType): LifeEventDraft | null {
   return events.find((e) => e.type === type) ?? null
 }
 
-/** Insère ou remplace un évènement (1 par type — MVP). */
+/** Insère ou remplace un évènement unique-par-type (retraite, achat_rp,
+ *  naissance). NE PAS utiliser pour capital_exceptionnel (multi). */
 function upsertEvent(events: LifeEventDraft[], next: LifeEventDraft): LifeEventDraft[] {
   const filtered = events.filter((e) => e.type !== next.type)
   return [...filtered, next]
@@ -86,6 +96,44 @@ function upsertEvent(events: LifeEventDraft[], next: LifeEventDraft): LifeEventD
 function removeEventsOfType(events: LifeEventDraft[], type: LifeEventType): LifeEventDraft[] {
   return events.filter((e) => e.type !== type)
 }
+
+// ────────────────────────────────────────────────────────────────────
+// Helpers multi-événements (capital_exceptionnel principalement)
+// ────────────────────────────────────────────────────────────────────
+
+/** Retourne les événements d'un type avec leur INDEX dans le tableau
+ *  global. L'index sert de clé pour update/remove ciblé d'une row
+ *  parmi plusieurs du même type. */
+function getEventsOfTypeWithIndex(
+  events: LifeEventDraft[],
+  type: LifeEventType,
+): Array<{ event: LifeEventDraft; index: number }> {
+  return events
+    .map((event, index) => ({ event, index }))
+    .filter(({ event }) => event.type === type)
+}
+
+/** Append un nouvel événement (sans toucher aux existants — multi OK). */
+function appendEvent(events: LifeEventDraft[], next: LifeEventDraft): LifeEventDraft[] {
+  return [...events, next]
+}
+
+/** Met à jour l'événement à l'index donné (immutable replace). */
+function updateEventAt(
+  events: LifeEventDraft[],
+  index:  number,
+  patch:  Partial<LifeEventDraft>,
+): LifeEventDraft[] {
+  return events.map((e, i) => (i === index ? { ...e, ...patch } : e))
+}
+
+/** Supprime l'événement à l'index donné. */
+function removeAt(events: LifeEventDraft[], index: number): LifeEventDraft[] {
+  return events.filter((_, i) => i !== index)
+}
+
+/** Soft cap N événements de type `capital_exceptionnel` (UX guardrail). */
+const CAPITAL_MAX_EVENTS = 10
 
 // ────────────────────────────────────────────────────────────────────
 // Sous-composant : toggle d'évènement (bloc carte)
@@ -205,16 +253,26 @@ export function StepProjetsVie({ values, set, lifeEvents, setLifeEvents }: Props
     }))
   }
 
-  // ── Capital exceptionnel ──────────────────────────────────────────
-  const capitalEvt = findEvent(lifeEvents, 'capital_exceptionnel')
-  const toggleCapital = () => {
-    if (capitalEvt) setLifeEvents(removeEventsOfType(lifeEvents, 'capital_exceptionnel'))
-    else setLifeEvents(upsertEvent(lifeEvents, {
+  // ── Capital exceptionnel (MULTI) ──────────────────────────────────
+  // Multi-événements depuis le fix : héritage + bonus + vente d'entreprise
+  // sont 3 events distincts, à des dates différentes. La DB et l'API /sync
+  // supportaient déjà N rows ; seule l'UI était limitée à 1 (MVP).
+  const capitalEvents = getEventsOfTypeWithIndex(lifeEvents, 'capital_exceptionnel')
+  const canAddCapital = capitalEvents.length < CAPITAL_MAX_EVENTS
+  const addCapitalEvent = () => {
+    if (!canAddCapital) return
+    setLifeEvents(appendEvent(lifeEvents, {
       type: 'capital_exceptionnel', is_active: true,
       occurrence_date: buildDate(new Date().getFullYear() + 5, 1),
       montant: null, label: 'Héritage',
       meta: { preset: 'heritage' },
     }))
+  }
+  const updateCapitalAt = (index: number, patch: Partial<LifeEventDraft>) => {
+    setLifeEvents(updateEventAt(lifeEvents, index, patch))
+  }
+  const removeCapitalAt = (index: number) => {
+    setLifeEvents(removeAt(lifeEvents, index))
   }
 
   // ── Achat RP ──────────────────────────────────────────────────────
@@ -313,71 +371,139 @@ export function StepProjetsVie({ values, set, lifeEvents, setLifeEvents }: Props
         </Field>
       </EventCard>
 
-      {/* ── 2. Capital exceptionnel ────────────────────────────────── */}
-      <EventCard type="capital_exceptionnel" active={!!capitalEvt} onToggle={toggleCapital}>
-        <Field label="Catégorie">
-          <div className="flex flex-wrap gap-2">
-            {CAPITAL_EXCEPTIONNEL_PRESETS.map((p) => {
-              const isSelected = (capitalEvt?.meta as { preset?: string } | undefined)?.preset === p.value
+      {/* ── 2. Capital exceptionnel (MULTI) ────────────────────────── */}
+      {/* N événements supportés (héritage, vente entreprise, bonus, etc.).
+          Chacun a sa propre date / catégorie / montant. Bouton « + Ajouter »
+          jusqu'au soft cap (CAPITAL_MAX_EVENTS). */}
+      <div className="rounded-lg border border-border bg-surface-2 p-4">
+        <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+          <p className="text-sm font-medium text-primary flex items-center gap-2">
+            <span className="text-xl leading-none">{LIFE_EVENT_EMOJI.capital_exceptionnel}</span>
+            {LIFE_EVENT_LABELS.capital_exceptionnel}
+            {capitalEvents.length > 0 && (
+              <span className="text-xs text-secondary font-normal">
+                ({capitalEvents.length} événement{capitalEvents.length > 1 ? 's' : ''})
+              </span>
+            )}
+          </p>
+        </div>
+
+        {capitalEvents.length === 0 ? (
+          <p className="text-xs text-muted leading-relaxed mb-3">
+            Aucun capital exceptionnel renseigné. Tu peux en ajouter plusieurs
+            (héritage, bonus, vente d&apos;entreprise…) avec des dates et montants
+            distincts.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {capitalEvents.map(({ event, index }, ordinal) => {
+              const preset = (event.meta as { preset?: string } | undefined)?.preset
               return (
-                <button
-                  key={p.value}
-                  type="button"
-                  onClick={() => {
-                    if (!capitalEvt) return
-                    setLifeEvents(upsertEvent(lifeEvents, {
-                      ...capitalEvt,
-                      meta: { ...(capitalEvt.meta ?? {}), preset: p.value as CapitalExceptionnelPreset },
-                      label: p.value === 'autre' ? (capitalEvt.label ?? 'Capital exceptionnel') : p.label,
-                    }))
-                  }}
-                  aria-pressed={isSelected}
-                  className={cn(
-                    'px-3 py-1.5 rounded-md text-xs font-medium border transition-colors',
-                    isSelected ? 'bg-accent-muted border-accent/30 text-accent' :
-                                 'bg-surface-2 border-border text-secondary hover:text-primary',
-                  )}
+                <div
+                  key={index}
+                  data-testid={`capital-event-${ordinal}`}
+                  className="rounded-md border border-border bg-bg/40 p-3"
                 >
-                  {p.label}
-                </button>
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <p className="text-xs uppercase tracking-wider text-secondary font-medium">
+                      Événement {ordinal + 1} / {capitalEvents.length}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => removeCapitalAt(index)}
+                      aria-label={`Supprimer l'événement ${ordinal + 1}`}
+                      className="inline-flex items-center gap-1 text-xs text-secondary hover:text-danger transition-colors"
+                    >
+                      <X size={12} /> Supprimer
+                    </button>
+                  </div>
+
+                  <div className="space-y-3">
+                    <Field label="Catégorie">
+                      <div className="flex flex-wrap gap-2">
+                        {CAPITAL_EXCEPTIONNEL_PRESETS.map((p) => {
+                          const isSelected = preset === p.value
+                          return (
+                            <button
+                              key={p.value}
+                              type="button"
+                              onClick={() => updateCapitalAt(index, {
+                                meta:  { ...(event.meta ?? {}), preset: p.value as CapitalExceptionnelPreset },
+                                label: p.value === 'autre' ? (event.label ?? 'Capital exceptionnel') : p.label,
+                              })}
+                              aria-pressed={isSelected}
+                              className={cn(
+                                'px-3 py-1.5 rounded-md text-xs font-medium border transition-colors',
+                                isSelected ? 'bg-accent-muted border-accent/30 text-accent' :
+                                             'bg-surface-2 border-border text-secondary hover:text-primary',
+                              )}
+                            >
+                              {p.label}
+                            </button>
+                          )
+                        })}
+                      </div>
+                      {preset === 'autre' && (
+                        <input
+                          type="text"
+                          value={event.label ?? ''}
+                          placeholder="Précise…"
+                          onChange={(e) => updateCapitalAt(index, { label: e.target.value })}
+                          className="mt-2 bg-surface-2 border border-border rounded-md px-2 py-1.5 text-sm text-primary w-full focus:outline-none focus:border-accent"
+                        />
+                      )}
+                    </Field>
+
+                    <Field label="Date prévue (mois / année)">
+                      <DateMonthYearInput
+                        date={event.occurrence_date}
+                        setDate={(d) => updateCapitalAt(index, { occurrence_date: d })}
+                      />
+                    </Field>
+
+                    <Field label="Montant estimé (€)">
+                      <input
+                        type="number"
+                        min={0}
+                        max={10_000_000}
+                        step={1000}
+                        value={event.montant ?? ''}
+                        placeholder="50000"
+                        onChange={(e) => {
+                          const n = e.target.value === '' ? null : Number(e.target.value)
+                          updateCapitalAt(index, { montant: n })
+                        }}
+                        className="bg-surface-2 border border-border rounded-md px-3 py-2 text-sm text-primary w-40 focus:outline-none focus:border-accent"
+                      />
+                    </Field>
+                  </div>
+                </div>
               )
             })}
           </div>
-          {(capitalEvt?.meta as { preset?: string } | undefined)?.preset === 'autre' && (
-            <input
-              type="text"
-              value={capitalEvt?.label ?? ''}
-              placeholder="Précise…"
-              onChange={(e) => {
-                if (!capitalEvt) return
-                setLifeEvents(upsertEvent(lifeEvents, { ...capitalEvt, label: e.target.value }))
-              }}
-              className="mt-2 bg-surface-2 border border-border rounded-md px-2 py-1.5 text-sm text-primary w-full focus:outline-none focus:border-accent"
-            />
+        )}
+
+        <button
+          type="button"
+          onClick={addCapitalEvent}
+          disabled={!canAddCapital}
+          data-testid="add-capital-event"
+          className={cn(
+            'mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-colors',
+            canAddCapital
+              ? 'bg-accent-muted border-accent/30 text-accent hover:border-accent/50'
+              : 'bg-surface-2 border-border text-muted cursor-not-allowed',
           )}
-        </Field>
-        <Field label="Date prévue (mois / année)">
-          <DateMonthYearInput
-            date={capitalEvt?.occurrence_date ?? null}
-            setDate={(d) => capitalEvt && setLifeEvents(upsertEvent(lifeEvents, { ...capitalEvt, occurrence_date: d }))}
-          />
-        </Field>
-        <Field label="Montant estimé (€)">
-          <input
-            type="number"
-            min={0}
-            max={10_000_000}
-            step={1000}
-            value={capitalEvt?.montant ?? ''}
-            placeholder="50000"
-            onChange={(e) => {
-              const n = e.target.value === '' ? null : Number(e.target.value)
-              if (capitalEvt) setLifeEvents(upsertEvent(lifeEvents, { ...capitalEvt, montant: n }))
-            }}
-            className="bg-surface-2 border border-border rounded-md px-3 py-2 text-sm text-primary w-40 focus:outline-none focus:border-accent"
-          />
-        </Field>
-      </EventCard>
+        >
+          <Plus size={12} />
+          {capitalEvents.length === 0 ? 'Ajouter un capital exceptionnel' : 'Ajouter un autre'}
+        </button>
+        {!canAddCapital && (
+          <p className="text-[11px] text-muted mt-2">
+            Limite de {CAPITAL_MAX_EVENTS} événements atteinte.
+          </p>
+        )}
+      </div>
 
       {/* ── 3. Achat RP ───────────────────────────────────────────── */}
       <div className="rounded-lg border border-border bg-surface-2 p-4">
