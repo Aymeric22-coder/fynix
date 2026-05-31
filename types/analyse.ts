@@ -490,7 +490,7 @@ export interface ScoresComplets {
 export interface Recommandation {
   id:             string
   priorite:       'haute' | 'moyenne' | 'info'
-  categorie:      'diversification' | 'fiscalite' | 'fire' | 'risque' | 'liquidite'
+  categorie:      'diversification' | 'fiscalite' | 'fire' | 'risque' | 'liquidite' | 'transmission'
   titre:          string
   description:    string
   /** Ex : "Gain de 3 ans sur votre FIRE". Null si non quantifiable. */

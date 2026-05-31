@@ -29,6 +29,7 @@ export type QuestionnaireValues = Pick<
   | 'fire_type' | 'revenu_passif_cible' | 'age_cible' | 'priorite'
   | 'tmi_rate'
   | 'proprietaire_rp_status'
+  | 'objectifs_axes'
 >
 
 /** Valeurs par défaut (tout à null / tableaux vides). */
@@ -43,4 +44,5 @@ export const EMPTY_VALUES: QuestionnaireValues = {
   fire_type: null, revenu_passif_cible: null, age_cible: null, priorite: null,
   tmi_rate: null,
   proprietaire_rp_status: null,
+  objectifs_axes: null,
 }

@@ -14,9 +14,12 @@
 import { useState } from 'react'
 import { cn, formatCurrency } from '@/lib/utils/format'
 import { Field, Input, FormGrid } from '@/components/ui/field'
-import { Chip } from '../Chip'
-import { FIRE_TYPES, PRIORITES, RISK_QUESTIONS, normalizeFireType } from '@/lib/profil/calculs'
+import { FIRE_TYPES, RISK_QUESTIONS, normalizeFireType } from '@/lib/profil/calculs'
 import { QUICK_HYPOTHESES } from '@/lib/onboarding/quickProjection'
+import {
+  OBJECTIF_AXES, OBJECTIF_LABELS, OBJECTIF_DESCRIPTIONS,
+  OBJECTIFS_NEUTRES, type ObjectifAxe, type ObjectifsAxes,
+} from '@/lib/profil/objectifsConstants'
 import type { QuestionnaireValues } from '../questionnaire-types'
 
 /** Pourcentage par défaut quand on bascule en mode "%" sans valeur existante.
@@ -104,16 +107,62 @@ export function StepRisqueFire({ values, set }: Props) {
         </Field>
       </FormGrid>
 
-      <Field label="Priorité principale">
-        <div className="flex flex-wrap gap-2">
-          {PRIORITES.map((v) => (
-            <Chip key={v} active={values.priorite === v} onClick={() => set('priorite', v)}>
-              {v}
-            </Chip>
-          ))}
-        </div>
-      </Field>
+      {/* CS4 — Boussole d'objectifs 4 axes. Remplace l'ancien chip
+          mono-axe `priorite` (legacy conservé en DB). */}
+      <ObjectifsAxesSliders values={values} set={set} />
     </div>
+  )
+}
+
+// ────────────────────────────────────────────────────────────────────
+// CS4 — Sous-composant : 4 sliders d'objectifs
+// ────────────────────────────────────────────────────────────────────
+
+interface ObjectifsAxesSlidersProps {
+  values: QuestionnaireValues
+  set:    <K extends keyof QuestionnaireValues>(k: K, v: QuestionnaireValues[K]) => void
+}
+
+function ObjectifsAxesSliders({ values, set }: ObjectifsAxesSlidersProps) {
+  // Valeur affichée : utilise les axes saisis OU les neutres (50,50,50,50).
+  const axes: ObjectifsAxes = values.objectifs_axes ?? OBJECTIFS_NEUTRES
+
+  function setAxe(axe: ObjectifAxe, v: number) {
+    const next: ObjectifsAxes = { ...axes, [axe]: v }
+    set('objectifs_axes', next)
+  }
+
+  return (
+    <Field
+      label="Tes priorités d'objectifs"
+      hint="Bouge les sliders selon ce qui compte le plus pour toi. Plusieurs axes peuvent être hauts en même temps."
+    >
+      <div className="space-y-4">
+        {OBJECTIF_AXES.map((axe) => {
+          const v = axes[axe]
+          return (
+            <div key={axe} data-testid={`objectif-slider-${axe}`}>
+              <div className="flex items-baseline justify-between mb-1.5">
+                <label htmlFor={`objectif-${axe}`} className="text-sm font-medium text-primary">
+                  {OBJECTIF_LABELS[axe]}
+                </label>
+                <span className="text-xs text-secondary financial-value">{v}</span>
+              </div>
+              <input
+                id={`objectif-${axe}`}
+                type="range" min={0} max={100} step={5} value={v}
+                onChange={(e) => setAxe(axe, Number(e.target.value))}
+                className="w-full accent-emerald-500 cursor-pointer"
+                aria-label={OBJECTIF_LABELS[axe]}
+              />
+              <p className="text-xs text-muted leading-relaxed mt-1">
+                {OBJECTIF_DESCRIPTIONS[axe]}
+              </p>
+            </div>
+          )
+        })}
+      </div>
+    </Field>
   )
 }
 

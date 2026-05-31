@@ -348,6 +348,9 @@ interface ProfileRow {
   statut_pro:          string | null
   // CS3 R5 — domaines auto-déclarés expert sur les quiz.
   quiz_self_declared_domains: string[] | null
+  // CS4 — Boussole d'objectifs 4 axes (jsonb). NULL = utilisateur pre-CS4
+  // (fallback sur `priorite` legacy).
+  objectifs_axes:      { rendement: number; securite: number; optimisation: number; transmission: number } | null
 }
 
 interface ProfileLoaded {
@@ -384,6 +387,8 @@ interface ProfileLoaded {
   fire_type:            string | null
   priorite:             string | null
   stabilite_revenus:    string | null
+  /** CS4 — Boussole 4 axes. NULL si non migré, alors fallback sur `priorite`. */
+  objectifs_axes:       { rendement: number; securite: number; optimisation: number; transmission: number } | null
 }
 
 /**
@@ -423,7 +428,7 @@ async function loadProfile(userId: string): Promise<ProfileLoaded> {
       risk_1, risk_2, risk_3, risk_4,
       quiz_bourse, quiz_crypto, quiz_immo, quiz_self_declared_domains,
       situation_familiale, enfants, fire_type, priorite, stabilite_revenus,
-      statut_pro
+      statut_pro, objectifs_axes
     `)
     .eq('id', userId)
     .maybeSingle()
@@ -443,6 +448,7 @@ async function loadProfile(userId: string): Promise<ProfileLoaded> {
       charges_mensuelles: 0, risk_score: 50, enveloppes: [], tmi_rate: null,
       situation_familiale: null, enfants: null, fire_type: null,
       priorite: null, stabilite_revenus: null,
+      objectifs_axes: null,
     }
   }
   const p = data as unknown as ProfileRow
@@ -515,6 +521,8 @@ async function loadProfile(userId: string): Promise<ProfileLoaded> {
     priorite:            p.priorite,
     // QW2 — valeur EFFECTIVE (saisie ou fallback statut_pro), pas le brut.
     stabilite_revenus:   stabiliteEffective,
+    // CS4 — Boussole 4 axes (jsonb). NULL = profil pre-CS4 → fallback priorite.
+    objectifs_axes:      p.objectifs_axes,
   }
 }
 
@@ -829,6 +837,9 @@ export async function getPatrimoineComplet(userId: string): Promise<PatrimoineCo
     fire_type:            profile.fire_type,
     situation_familiale:  profile.situation_familiale,
     enfants:              profile.enfants,
+    // CS4 — Exposé pour le moteur recos (fallback automatique sur priorite
+    // si null). Lecture côté recommandations.ts via FireInputsExt local.
+    objectifs_axes:       profile.objectifs_axes,
   }
 
   // Construction temporaire pour calculer scores + recos (besoin de l'objet

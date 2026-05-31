@@ -13,10 +13,33 @@
  * violation.
  */
 
+import { z } from 'zod'
 import { createServerClient } from '@/lib/supabase/server'
 import { ok, err, withAuth, parseBody } from '@/lib/utils/api'
 import type { User } from '@supabase/supabase-js'
 import type { Profile } from '@/types/database.types'
+
+// CS4 — Boussole d'objectifs 4 axes : validation stricte JSONB.
+// 4 axes 0-100. Tout autre forme = rejet (pas de coercition silencieuse).
+const ObjectifsAxesSchema = z.object({
+  rendement:    z.number().int().min(0).max(100),
+  securite:     z.number().int().min(0).max(100),
+  optimisation: z.number().int().min(0).max(100),
+  transmission: z.number().int().min(0).max(100),
+}).strict()
+
+/** Valide `objectifs_axes` si présent dans le body. Retourne null si invalide
+ *  (avec message), ou la valeur typée (incluant null explicite = reset axes). */
+function validateObjectifsAxes(
+  value: unknown,
+): { ok: true; value: z.infer<typeof ObjectifsAxesSchema> | null } | { ok: false; error: string } {
+  if (value === null) return { ok: true, value: null }
+  const parsed = ObjectifsAxesSchema.safeParse(value)
+  if (!parsed.success) {
+    return { ok: false, error: `objectifs_axes invalide : ${parsed.error.issues.map((i) => i.message).join(', ')}` }
+  }
+  return { ok: true, value: parsed.data }
+}
 
 // CS1 — `tmi_rate` est désormais saisissable via wizard (Step 4 post-CS10) ET /parametres.
 // Retiré de l'Omit pour autoriser l'écriture via cette route. Les autres
@@ -60,12 +83,21 @@ export const PUT = withAuth(async (req: Request, user: User) => {
     'tmi_rate',
     // CS5 — statut propriétaire RP saisi en Step10.
     'proprietaire_rp_status',
+    // CS4 — Boussole 4 axes (jsonb). Validation Zod ci-dessous AVANT update.
+    'objectifs_axes',
     'wizard_step_completed',
   ]
 
   const update: Record<string, unknown> = {}
   for (const k of allowed) {
     if (k in body) update[k] = body[k]
+  }
+
+  // CS4 — Validation Zod stricte de objectifs_axes (jsonb : pas de CHECK DB).
+  if ('objectifs_axes' in update) {
+    const res = validateObjectifsAxes(update['objectifs_axes'])
+    if (!res.ok) return err(res.error, 400)
+    update['objectifs_axes'] = res.value
   }
 
   // Marqueur de complétion : timestamp de la dernière soumission.
@@ -113,12 +145,21 @@ export const PATCH = withAuth(async (req: Request, user: User) => {
     'tmi_rate',
     // CS5 — statut propriétaire RP saisi en Step10.
     'proprietaire_rp_status',
+    // CS4 — Boussole 4 axes (jsonb). Validation Zod ci-dessous AVANT update.
+    'objectifs_axes',
     'wizard_step_completed',
   ]
 
   const update: Record<string, unknown> = {}
   for (const k of allowed) {
     if (k in body) update[k] = body[k]
+  }
+
+  // CS4 — Validation Zod stricte de objectifs_axes (jsonb : pas de CHECK DB).
+  if ('objectifs_axes' in update) {
+    const res = validateObjectifsAxes(update['objectifs_axes'])
+    if (!res.ok) return err(res.error, 400)
+    update['objectifs_axes'] = res.value
   }
 
   if (Object.keys(update).length === 0) return err('Aucune donnée à mettre à jour', 400)

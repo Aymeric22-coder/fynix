@@ -208,7 +208,12 @@ export interface Profile {
   fire_type:            string | null
   revenu_passif_cible:  number | null
   age_cible:            number | null
+  // CS4 — `priorite` LEGACY conservée (lecture fallback uniquement, plus
+  // d'écriture). Le moteur consomme `objectifs_axes` en priorité.
   priorite:             string | null
+  // CS4 — Boussole d'objectifs 4 axes (rendement, securite, optimisation,
+  // transmission) valeurs 0..100. NULL = pas encore migré.
+  objectifs_axes:       { rendement: number; securite: number; optimisation: number; transmission: number } | null
 
   /** Sentinel : si null, le wizard n'a jamais ete soumis. */
   profile_completed_at: string | null

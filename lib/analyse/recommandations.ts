@@ -15,6 +15,7 @@ import { calculerImpactEpargne } from './projectionFIRE'
 import { formatEur } from '@/lib/utils/format'
 import type { PatrimoineComplet, Recommandation, ScoresComplets } from '@/types/analyse'
 import { normalizePriorite, type PrioriteId } from '../profil/calculs'
+import { computeObjectifsBoost } from '@/lib/profil/objectifsConstants'
 
 const PRIO_RANK: Record<Recommandation['priorite'], number> = {
   haute: 0, moyenne: 1, info: 2,
@@ -89,10 +90,11 @@ const PRIORITE_BOOST: Record<PrioriteId, Partial<Record<Recommandation['categori
   transmission:     { diversification: -1, fiscalite: -1, fire: 1 },
 }
 
-/** Type étendu local pour lire `priorite` depuis fireInputs sans modifier
- *  types/analyse.ts (autre session). */
+/** Type étendu local pour lire `priorite` LEGACY + `objectifs_axes` CS4
+ *  depuis fireInputs sans modifier types/analyse.ts. */
 type FireInputsExt = PatrimoineComplet['fireInputs'] & {
-  priorite?: string | null
+  priorite?:        string | null
+  objectifs_axes?:  import('@/lib/profil/objectifsConstants').ObjectifsAxes | null
 }
 
 /** Génère la liste des recommandations actives pour ce snapshot. */
@@ -314,6 +316,69 @@ export function genererRecommandations(
     })
   }
 
+  // ───────────────────────────────────────────────────────────────
+  // CS4 — Recos catégorie 'transmission' (#10..#12)
+  // ───────────────────────────────────────────────────────────────
+  // Combler le « trou catalogue transmission » identifié en pré-CS4 :
+  // l'AFFINITY_MATRIX prévoit une colonne dédiée, mais sans reco produite
+  // l'axe transmission=100 ne pourrait rien remonter. Heuristiques simples,
+  // déclenchées sur signaux objectifs (âge, patrimoine, enveloppes, enfants).
+  // Toutes en priorité 'info' ou 'moyenne' (pas d'alerte critique).
+
+  const enfantsBrut    = p.fireInputs.enfants
+  const aEnfants       = enfantsBrut !== null && enfantsBrut !== '0'
+  const avOuverte      = env.some((e) => e.includes('assurance-vie') || e.includes('assurance vie') || e === 'av')
+  const patrimoineNet  = p.totalNet
+  const ageUser        = p.fireInputs.age
+
+  // 10. Désigner / vérifier bénéficiaires AV (si AV ouverte)
+  if (avOuverte) {
+    push(out, {
+      id:           'transmission-clause-beneficiaire',
+      priorite:     'info',
+      categorie:    'transmission',
+      titre:        'Vérifiez la clause bénéficiaire de votre assurance-vie',
+      description:  `Vous détenez une assurance-vie : c'est l'enveloppe la plus efficace pour transmettre hors succession (jusqu'à 152 500 € par bénéficiaire, hors droits). Une clause mal rédigée fait perdre l'avantage.`,
+      impact_estime: aEnfants
+        ? `Jusqu'à 152 500 € transmissibles par enfant hors droits de succession (versements avant 70 ans).`
+        : `Jusqu'à 152 500 € par bénéficiaire désigné hors droits de succession (versements avant 70 ans).`,
+      action:       'Demandez à votre assureur de revoir la clause bénéficiaire (formulation libre conseillée par un notaire si patrimoine complexe).',
+    })
+  }
+
+  // 11. Programme de donations (si patrimoine > 200k et a des enfants)
+  if (patrimoineNet > 200_000 && aEnfants) {
+    push(out, {
+      id:           'transmission-donations',
+      priorite:     'moyenne',
+      categorie:    'transmission',
+      titre:        'Anticipez la transmission via un programme de donations',
+      description:  `Avec ${formatEur(patrimoineNet, { decimals: 0 })} de patrimoine net, vous pouvez transmettre 100 000 € par enfant tous les 15 ans en franchise de droits.`,
+      impact_estime: `Une donation de 100 000 € à un enfant aujourd\'hui = ~20 000 € de droits évités (TMI moyenne 20 %), répétable tous les 15 ans.`,
+      gain_estime_eur:   20_000,
+      gain_estime_label: ' de droits évités par enfant et par cycle 15 ans',
+      action:       'Consultez un notaire pour mettre en place une stratégie pluriannuelle (donation simple, donation-partage, démembrement).',
+    })
+  }
+
+  // 12. Ouvrir une AV pour transmission (si AV PAS ouverte et patrimoine > 50k)
+  if (!avOuverte && patrimoineNet > 50_000) {
+    const ageHint = ageUser !== null && ageUser < 70
+      ? ' Ouvrir avant 70 ans maximise l\'abattement (152 500 € par bénéficiaire vs 30 500 € au global après).'
+      : ''
+    push(out, {
+      id:           'transmission-ouvrir-av',
+      priorite:     'info',
+      categorie:    'transmission',
+      titre:        'Ouvrir une assurance-vie pour préparer la transmission',
+      description:  `Aucune assurance-vie dans vos enveloppes. C'est l'outil n°1 de transmission hors succession en France.${ageHint}`,
+      impact_estime: aEnfants
+        ? `Jusqu'à 152 500 € transmissibles par enfant hors droits de succession.`
+        : null,
+      action:       'Ouvrez une assurance-vie (versement initial libre, dès 100 €). Le délai fiscal des 8 ans démarre à l\'ouverture — plus tôt = mieux.',
+    })
+  }
+
   // 9. Absence de diversification immo (si patrimoine > 50k et profil != Conservateur)
   if (
     p.totalImmo === 0 &&
@@ -331,18 +396,34 @@ export function genererRecommandations(
     })
   }
 
-  // Tri par priorité, puis par boost catégoriel selon la priorité de vie
-  // déclarée dans le profil (securite / croissance / immo / equilibre).
-  // Le boost ne déclasse jamais une "haute" derrière une "moyenne" : il
-  // joue uniquement à niveau de priorité absolu égal.
-  const priorite = normalizePriorite((p.fireInputs as FireInputsExt).priorite)
-  const boostMap = priorite ? PRIORITE_BOOST[priorite] : undefined
+  // CS4 — Tri par priorité (haute > moyenne > info dominant), puis par
+  // boost catégoriel. Préférence : OBJECTIFS_BOOST (4 axes) si l'user a
+  // migré CS4 (objectifs_axes IS NOT NULL). Fallback : PRIORITE_BOOST
+  // legacy (4 buckets) pour les profils pré-CS4.
+  //
+  // INVARIANT critique : axes neutres (tous à 50) → boost = 0 strict.
+  // C'est ce qui préserve les cas-tests Marc CS1 41 %.
+  const fi              = p.fireInputs as FireInputsExt
+  const axesCS4         = fi.objectifs_axes
+  const prioriteLegacy  = normalizePriorite(fi.priorite)
+  const legacyBoostMap  = prioriteLegacy ? PRIORITE_BOOST[prioriteLegacy] : undefined
 
   out.sort((a, b) => {
     const dPrio = PRIO_RANK[a.priorite] - PRIO_RANK[b.priorite]
     if (dPrio !== 0) return dPrio
-    const ba = boostMap?.[a.categorie] ?? 0
-    const bb = boostMap?.[b.categorie] ?? 0
+
+    if (axesCS4) {
+      // CS4 — Matrice d'affinité : convention « boost POSITIF = recommandation
+      // affiliée à un axe poussé par l'user → remonter ». Tri DESCENDANT
+      // (= bb - ba pour faire passer bb devant si bb > ba).
+      const ba = computeObjectifsBoost(axesCS4, a.categorie as 'diversification' | 'fiscalite' | 'fire' | 'risque' | 'liquidite' | 'transmission')
+      const bb = computeObjectifsBoost(axesCS4, b.categorie as 'diversification' | 'fiscalite' | 'fire' | 'risque' | 'liquidite' | 'transmission')
+      return bb - ba
+    }
+    // Pré-CS4 fallback : PRIORITE_BOOST legacy avec convention INVERSE
+    // (boost NÉGATIF = remonter). Tri ASCENDANT (comportement original).
+    const ba = legacyBoostMap?.[a.categorie] ?? 0
+    const bb = legacyBoostMap?.[b.categorie] ?? 0
     return ba - bb
   })
 

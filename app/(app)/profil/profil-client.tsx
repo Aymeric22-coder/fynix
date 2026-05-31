@@ -22,7 +22,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { PlayCircle, RotateCcw, Sparkles, ArrowLeft } from 'lucide-react'
+import { PlayCircle, RotateCcw, Sparkles, ArrowLeft, Compass } from 'lucide-react'
 import { PageHeader } from '@/components/shared/page-header'
 import { Button } from '@/components/ui/button'
 import { ProfilQuestionnaire } from '@/components/profil/ProfilQuestionnaire'
@@ -101,6 +101,14 @@ export function ProfilClient() {
   // Affiche le bandeau « tu affines » si l'utilisateur arrive du nouvel
   // onboarding 60s (quick_done = true) et n'a pas encore terminé le wizard.
   const showQuickAffinerBanner = profile.onboarding_quick_done && !isComplete
+  // CS4 — Bandeau « Affine tes priorités ». Visible uniquement pour les
+  // profils complets dont la priorité a été saisie au format LEGACY (mono-axe)
+  // et qui n'ont pas encore migré vers la boussole 4 axes. Le moteur recos
+  // continue de fonctionner via PRIORITE_BOOST, mais l'utilisateur perd la
+  // granularité (sécurité 80, optim 50…). Le clic ouvre le wizard à la step
+  // Risque & FIRE pour saisir les axes.
+  const showCs4MigrationBanner =
+    isComplete && !editing && profile.priorite !== null && profile.objectifs_axes === null
   // Si on a une reprise possible et que l'utilisateur n'a pas encore choisi
   // (resumeStep null, startFresh false), on affiche d'abord la bannière.
   const showResumeBanner = hasPartial && resumeStep === null && !startFresh
@@ -170,6 +178,28 @@ export function ProfilClient() {
             <ArrowLeft size={12} />
             Revenir au dashboard
           </Link>
+        </div>
+      )}
+
+      {showCs4MigrationBanner && (
+        <div className="mb-5 rounded-xl border border-accent/30 bg-accent/5 p-4 flex items-start justify-between gap-3 flex-wrap">
+          <div className="flex items-start gap-3 min-w-0">
+            <Compass size={18} className="text-accent flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm text-primary font-medium">Affine tes priorités</p>
+              <p className="text-xs text-secondary mt-0.5 leading-relaxed">
+                Tu avais déclaré « <span className="text-primary font-medium">{profile.priorite}</span> » comme priorité unique.
+                FIRECORE évolue : tu peux maintenant pondérer 4 axes (Rendement, Sécurité, Optimisation, Transmission)
+                pour des recommandations plus fines.
+              </p>
+            </div>
+          </div>
+          <Button
+            icon={Compass}
+            onClick={() => { setEditing(true); setResumeStep(9) }}
+          >
+            Configurer la boussole
+          </Button>
         </div>
       )}
 
@@ -252,6 +282,9 @@ function extractInitialValues(p: ReturnType<typeof useUserProfile>['profile']): 
     risk_1: p.risk_1, risk_2: p.risk_2, risk_3: p.risk_3, risk_4: p.risk_4,
     fire_type: p.fire_type, revenu_passif_cible: p.revenu_passif_cible,
     age_cible: p.age_cible, priorite: p.priorite,
+    // CS4 — Boussole 4 axes (jsonb). Pré-rempli si déjà saisi, null sinon
+    // (fallback legacy `priorite` côté moteur recos).
+    objectifs_axes: p.objectifs_axes,
     // CS1 — TMI (étape 9). Pré-rempli depuis /parametres si déjà saisi.
     tmi_rate: p.tmi_rate,
     // CS5 — statut propriétaire RP (étape 10).

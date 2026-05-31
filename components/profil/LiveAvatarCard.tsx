@@ -33,6 +33,10 @@ import {
 import type { QuestionnaireValues } from './questionnaire-types'
 import type { LifeEventDraft } from './lifeEventsDraft'
 import { LIFE_EVENT_LABELS, LIFE_EVENT_EMOJI } from '@/lib/profil/lifeEventsConstants'
+import {
+  OBJECTIF_LABELS, sortAxesByValue,
+  type ObjectifAxe,
+} from '@/lib/profil/objectifsConstants'
 
 // ────────────────────────────────────────────────────────────────────
 // Types
@@ -84,6 +88,8 @@ export interface LiveMetrics {
     cibleMensuelle:  number | null
     ageCible:        number | null
   }
+  hasObjectifsAxes: boolean
+  objectifsAxesSorted: ReadonlyArray<{ axe: ObjectifAxe; value: number }>
   hasLifeEvents: boolean
   lifeEventsActifs: ReadonlyArray<{ id: string; label: string; emoji: string }>
 }
@@ -189,6 +195,12 @@ export function computeLiveMetrics(
     ? (FIRE_TYPES.find((f) => f.id === v.fire_type || f.name === v.fire_type)?.name ?? v.fire_type)
     : null
 
+  // Objectifs (CS4 — boussole 4 axes)
+  const hasObjectifsAxes = !!v.objectifs_axes
+  const objectifsAxesSorted = v.objectifs_axes
+    ? sortAxesByValue(v.objectifs_axes)
+    : []
+
   // Life events actifs
   const lifeEventsActifs = lifeEvents
     .filter((e) => e.is_active)
@@ -201,6 +213,7 @@ export function computeLiveMetrics(
 
   const hasAnyData = hasIdentity || hasCashflow || hasFiscalite || hasEnveloppes
                   || hasSavoirs  || hasRisque   || hasFire      || hasLifeEvents
+                  || hasObjectifsAxes
 
   return {
     hasAnyData,
@@ -224,6 +237,8 @@ export function computeLiveMetrics(
     },
     hasLifeEvents,
     lifeEventsActifs,
+    hasObjectifsAxes,
+    objectifsAxesSorted,
   }
 }
 
@@ -359,6 +374,23 @@ export function LiveAvatarCard({ values, lifeEvents }: Props) {
           )}
           {m.fire.ageCible !== null && (
             <MiniKvRow label="Âge cible" value={`${m.fire.ageCible} ans`} />
+          )}
+          {m.hasObjectifsAxes && (
+            <div className="mt-2 pt-2 border-t border-border/50">
+              <p className="text-[10px] text-secondary uppercase tracking-widest mb-1.5">
+                Tes priorités
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {m.objectifsAxesSorted.map(({ axe, value }) => (
+                  <span
+                    key={axe}
+                    className="px-2 py-0.5 rounded-full text-[10px] border border-accent/30 bg-accent-muted text-accent whitespace-nowrap"
+                  >
+                    {OBJECTIF_LABELS[axe]} {value}
+                  </span>
+                ))}
+              </div>
+            </div>
           )}
         </Section>
       )}

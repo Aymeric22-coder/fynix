@@ -14,7 +14,7 @@
 import { useState } from 'react'
 import {
   AlertTriangle, AlertCircle, Info, Compass, Receipt, Sparkles, Shield, PiggyBank,
-  Coins, Clock, Check, RotateCcw, ChevronDown, ChevronUp,
+  Coins, Clock, Check, RotateCcw, ChevronDown, ChevronUp, Gift,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { Recommandation } from '@/types/analyse'
@@ -53,6 +53,8 @@ const CATEGORIE_ICON: Record<Recommandation['categorie'], LucideIcon> = {
   fire:            Sparkles,
   risque:          Shield,
   liquidite:       PiggyBank,
+  // CS4 — nouvelle catégorie transmission (recos AV/donations/clause bénéficiaire).
+  transmission:    Gift,
 }
 
 export function Recommandations({ recos }: Props) {

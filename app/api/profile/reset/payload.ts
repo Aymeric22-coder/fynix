@@ -68,6 +68,8 @@ export const RESET_WIPE_PAYLOAD = {
   tmi_rate:            null,
   // ── Wizard Step 10 (CS5) ────────────────────────────────────────────
   proprietaire_rp_status: null,
+  // ── Wizard Step 9 — CS4 boussole d'objectifs ────────────────────────
+  objectifs_axes:         null,
   // ── Legacy /parametres CS1 (UI retirée, colonnes DB conservées car
   //    encore lues en aval : `professional_income_eur` dans /immobilier,
   //    `foyer_fiscal_parts` dans tax-estimate). Consolidation 1 :
