@@ -28,21 +28,22 @@ export interface StepMeta {
   sub:    string
 }
 
+// Renumérotation post-CS10 : l'ordre des IDs SUIT l'ordre d'affichage du
+// wizard. Plus de friction « Step9 = Fiscalité affichée en 4e position ».
+// La migration SQL 051 a re-mappé les `wizard_step_completed` existants.
 export const STEPS: ReadonlyArray<StepMeta> = [
-  { id: 1, title: 'Situation personnelle',     sub: 'Les bases de votre profil pour personnaliser toute votre expérience FIRECORE.' },
-  { id: 2, title: 'Revenus',                   sub: 'Vos revenus nets mensuels, toutes sources confondues.' },
-  { id: 3, title: 'Charges & Dépenses',        sub: 'Vos charges fixes et courantes pour calculer votre vrai reste à vivre.' },
-  { id: 4, title: 'Capacité d\'investissement', sub: 'Ce que vous pouvez réellement allouer chaque mois à votre patrimoine.' },
-  { id: 5, title: 'Quiz Bourse',               sub: '4 questions pour évaluer objectivement vos connaissances. Soyez honnête — c\'est pour mieux vous accompagner.' },
-  { id: 6, title: 'Quiz Crypto',               sub: '4 questions pour mesurer vos connaissances en cryptomonnaies.' },
-  { id: 7, title: 'Quiz Immobilier',           sub: '3 questions pour évaluer vos bases en investissement immobilier.' },
-  { id: 8, title: 'Profil de risque & FIRE',   sub: 'Comment réagissez-vous face à la volatilité, et quelle est votre vision de l\'indépendance financière ?' },
-  // CS1 — Nouvelle étape ajoutée en FIN pour préserver wizard_step_completed
-  // des profils existants (pas de renumérotation des 8 premières étapes).
-  { id: 9, title: 'Ta fiscalité',              sub: 'Une dernière info pour calibrer précisément tes recos fiscales. Étape skippable.' },
-  // CS5 — Étape 10 ajoutée en fin également. Skippable. Capture les
-  // évènements de vie (retraite, capital exceptionnel, achat RP, naissance).
-  { id: 10, title: 'Tes projets de vie',       sub: 'Quelques dates futures pour personnaliser ta trajectoire FIRE. Étape skippable.' },
+  { id: 1,  title: 'Situation personnelle',     sub: 'Les bases de votre profil pour personnaliser toute votre expérience FIRECORE.' },
+  { id: 2,  title: 'Revenus',                   sub: 'Vos revenus nets mensuels, toutes sources confondues.' },
+  { id: 3,  title: 'Charges & Dépenses',        sub: 'Vos charges fixes et courantes pour calculer votre vrai reste à vivre.' },
+  // CS1 — Fiscalité (anciennement ID 9, désormais ID 4 dans l'ordre visuel).
+  { id: 4,  title: 'Ta fiscalité',              sub: 'Une dernière info pour calibrer précisément tes recos fiscales. Étape skippable.' },
+  { id: 5,  title: 'Capacité d\'investissement', sub: 'Ce que vous pouvez réellement allouer chaque mois à votre patrimoine.' },
+  { id: 6,  title: 'Quiz Bourse',               sub: '4 questions pour évaluer objectivement vos connaissances. Soyez honnête — c\'est pour mieux vous accompagner.' },
+  { id: 7,  title: 'Quiz Crypto',               sub: '4 questions pour mesurer vos connaissances en cryptomonnaies.' },
+  { id: 8,  title: 'Quiz Immobilier',           sub: '3 questions pour évaluer vos bases en investissement immobilier.' },
+  { id: 9,  title: 'Profil de risque & FIRE',   sub: 'Comment réagissez-vous face à la volatilité, et quelle est votre vision de l\'indépendance financière ?' },
+  // CS5 — Projets de vie (ID 10 inchangé, toujours la dernière étape).
+  { id: 10, title: 'Tes projets de vie',        sub: 'Quelques dates futures pour personnaliser ta trajectoire FIRE. Étape skippable.' },
 ] as const
 
 // ───────────────────────────────────────────────────────────────────

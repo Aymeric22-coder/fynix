@@ -34,16 +34,21 @@ import { LiveAvatarCard } from './LiveAvatarCard'
 import { useMediaQuery, MEDIA_LG } from '@/hooks/use-media-query'
 import { EMPTY_VALUES, type QuestionnaireValues } from './questionnaire-types'
 import type { LifeEventDraft } from './lifeEventsDraft'
-import { Step1 } from './steps/Step1'
-import { Step2 } from './steps/Step2'
-import { Step3 } from './steps/Step3'
-import { Step4 } from './steps/Step4'
-import { Step5 } from './steps/Step5'
-import { Step6 } from './steps/Step6'
-import { Step7 } from './steps/Step7'
-import { Step8 } from './steps/Step8'
-import { Step9 } from './steps/Step9'
-import { Step10 } from './steps/Step10'
+// Renumérotation post-CS10 — composants nommés par CONCEPT (pas par
+// numéro) pour décorréler le nom de fichier de l'ID step. Mapping IDs :
+//   1 Identité  / 2 Revenus    / 3 Charges       / 4 Fiscalité
+//   5 Capacité  / 6 Quiz Bourse / 7 Quiz Crypto  / 8 Quiz Immo
+//   9 Risque+FIRE / 10 Projets de vie
+import { StepIdentite }    from './steps/StepIdentite'
+import { StepRevenus }     from './steps/StepRevenus'
+import { StepCharges }     from './steps/StepCharges'
+import { StepFiscalite }   from './steps/StepFiscalite'
+import { StepCapacite }    from './steps/StepCapacite'
+import { StepQuizBourse }  from './steps/StepQuizBourse'
+import { StepQuizCrypto }  from './steps/StepQuizCrypto'
+import { StepQuizImmo }    from './steps/StepQuizImmo'
+import { StepRisqueFire }  from './steps/StepRisqueFire'
+import { StepProjetsVie }  from './steps/StepProjetsVie'
 
 interface Props {
   initialValues?: Partial<QuestionnaireValues>
@@ -291,16 +296,16 @@ export function ProfilQuestionnaire({
           </div>
         )}
 
-        {step === 1  && <Step1  values={values} set={set} />}
-        {step === 2  && <Step2  values={values} set={set} />}
-        {step === 3  && <Step3  values={values} set={set} />}
-        {step === 4  && <Step4  values={values} set={set} />}
-        {step === 5  && <Step5  values={values} set={set} />}
-        {step === 6  && <Step6  values={values} set={set} />}
-        {step === 7  && <Step7  values={values} set={set} />}
-        {step === 8  && <Step8  values={values} set={set} />}
-        {step === 9  && <Step9  values={values} set={set} />}
-        {step === 10 && <Step10 values={values} set={set} lifeEvents={lifeEvents} setLifeEvents={setLifeEvents} />}
+        {step === 1  && <StepIdentite    values={values} set={set} />}
+        {step === 2  && <StepRevenus     values={values} set={set} />}
+        {step === 3  && <StepCharges     values={values} set={set} />}
+        {step === 4  && <StepFiscalite   values={values} set={set} />}
+        {step === 5  && <StepCapacite    values={values} set={set} />}
+        {step === 6  && <StepQuizBourse  values={values} set={set} />}
+        {step === 7  && <StepQuizCrypto  values={values} set={set} />}
+        {step === 8  && <StepQuizImmo    values={values} set={set} />}
+        {step === 9  && <StepRisqueFire  values={values} set={set} />}
+        {step === 10 && <StepProjetsVie  values={values} set={set} lifeEvents={lifeEvents} setLifeEvents={setLifeEvents} />}
 
         {touched && !stepValid && (
           <p className="text-xs text-warning bg-warning-muted px-3 py-2 rounded-lg mt-4">

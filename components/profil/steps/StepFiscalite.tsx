@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Étape 9 — Ta fiscalité (CS1).
  *
  * Capture la TMI (Tranche Marginale d'Imposition) pour calibrer les recos
@@ -32,7 +32,7 @@ interface Props {
   set:    <K extends keyof QuestionnaireValues>(k: K, v: QuestionnaireValues[K]) => void
 }
 
-export function Step9({ values, set }: Props) {
+export function StepFiscalite({ values, set }: Props) {
   return (
     <div className="space-y-5">
       {/* Mention pédagogique */}

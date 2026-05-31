@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Étape 10 — Tes projets de vie (CS5).
  *
  * Capture les évènements de vie utilisés par le moteur de projection FIRE
@@ -190,7 +190,7 @@ function DateMonthYearInput(props: {
 // Step 10 component
 // ────────────────────────────────────────────────────────────────────
 
-export function Step10({ values, set, lifeEvents, setLifeEvents }: Props) {
+export function StepProjetsVie({ values, set, lifeEvents, setLifeEvents }: Props) {
   const age = values.age ?? 0
   const naissanceMutedByAge = age >= 50
 

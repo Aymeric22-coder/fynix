@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Étape 1 — Situation personnelle.
  * Prénom (texte), âge (nombre), enfants (select), situation familiale et
  * statut pro (chips à choix unique).
@@ -15,7 +15,7 @@ interface Props {
   set:    <K extends keyof QuestionnaireValues>(k: K, v: QuestionnaireValues[K]) => void
 }
 
-export function Step1({ values, set }: Props) {
+export function StepIdentite({ values, set }: Props) {
   return (
     <div className="space-y-5">
       <Field label="Prénom">

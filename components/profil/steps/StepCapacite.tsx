@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Étape 4 — Capacité d'investissement.
  * Affiche le "reste à vivre" calculé automatiquement (revenus − charges)
  * comme indicateur live au-dessus des inputs.
@@ -16,7 +16,7 @@ interface Props {
   set:    <K extends keyof QuestionnaireValues>(k: K, v: QuestionnaireValues[K]) => void
 }
 
-export function Step4({ values, set }: Props) {
+export function StepCapacite({ values, set }: Props) {
   const num = (k: 'epargne_mensuelle') =>
     (e: React.ChangeEvent<HTMLInputElement>) =>
       set(k, e.target.value ? Number(e.target.value) : null)

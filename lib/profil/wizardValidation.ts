@@ -9,27 +9,34 @@
 import type { QuestionnaireValues } from '@/components/profil/questionnaire-types'
 import { normalizeFireType } from './calculs'
 
-/** Étapes critiques : impossible de passer sans remplir les champs requis. */
-export const REQUIRED_STEPS: ReadonlyArray<number> = [1, 8]
+/** Étapes critiques : impossible de passer sans remplir les champs requis.
+ *  Renumérotation post-CS10 : Risque+FIRE est désormais ID 9 (ancien 8). */
+export const REQUIRED_STEPS: ReadonlyArray<number> = [1, 9]
 
 /** Étapes non critiques : bouton "Passer cette étape" disponible.
- *  CS1 — ajout de l'étape 9 « Ta fiscalité » (skippable, fallback 30 % aval).
- *  CS5 — ajout de l'étape 10 « Tes projets de vie » (skippable, no-op aval). */
-export const SKIPPABLE_STEPS: ReadonlyArray<number> = [2, 3, 6, 7, 9, 10]
+ *  Renumérotation post-CS10 (mapping ancien → nouveau) :
+ *    Revenus (2)            : inchangé
+ *    Charges (3)            : inchangé
+ *    Fiscalité (9 → 4)      : ID changé
+ *    Quiz Bourse (5 → 6)    : ID changé
+ *    Quiz Crypto (6 → 7)    : ID changé
+ *    Quiz Immo (7 → 8)      : ID changé
+ *    Projets de vie (10)    : inchangé */
+export const SKIPPABLE_STEPS: ReadonlyArray<number> = [2, 3, 4, 6, 7, 8, 10]
 
 /**
  * Liste des champs manquants pour l'étape donnée. Vide = étape valide.
  *
- * Critères par étape :
+ * Critères par étape (post-renumérotation CS10) :
  *  - 1 (identité)    : âge, situation_familiale, statut_pro
- *  - 8 (FIRE)        : fire_type, revenu_passif_cible, age_cible
- *  - 2/3/4/5/6/7/9   : aucun champ obligatoire (skippable ou facultatif)
+ *  - 9 (FIRE)        : fire_type, revenu_passif_cible, age_cible
+ *  - 2/3/4/5/6/7/8/10 : aucun champ obligatoire (skippable ou facultatif)
  *
  * Les valeurs 0 sont considérées comme "remplies" : si l'utilisateur a
  * saisi un revenu de 0 ou un âge de 0, on respecte ce choix explicite et
  * on ne demande pas de le re-remplir.
  *
- * CS1 — étape 9 (« Ta fiscalité ») : tmi_rate est null-OK (fallback 30 %
+ * CS1 — étape 4 (« Ta fiscalité ») : tmi_rate est null-OK (fallback 30 %
  * appliqué côté optimiseur/fiscaliteImmo). Aucune validation requise.
  */
 export function missingFields(step: number, v: QuestionnaireValues): string[] {
@@ -38,7 +45,7 @@ export function missingFields(step: number, v: QuestionnaireValues): string[] {
     if (v.age === null || v.age === undefined)                          out.push('âge')
     if (!v.situation_familiale)                                         out.push('situation familiale')
     if (!v.statut_pro)                                                  out.push('statut professionnel')
-  } else if (step === 8) {
+  } else if (step === 9) {
     if (!v.fire_type)                                                   out.push('type de FIRE')
     // CS3 R4 — revenu_passif_cible devient OPTIONNEL si fire_type est
     // coast ou barista. Justification : coast vise une capitalisation qui

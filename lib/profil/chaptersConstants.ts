@@ -6,15 +6,14 @@
  * chapitre. La couche chapitre est PUREMENT VISUELLE : le moteur
  * SKIP_RULES (routing.ts) continue de fonctionner sans modification.
  *
- * Mapping retenu (cf. CS10 sous-tâche, option a) :
- *   Chapitre 1 « Toi »          — Steps 1, 2, 3, 9   (4 étapes)
- *   Chapitre 2 « Tes savoirs »  — Steps 4, 5, 6, 7   (4 étapes)
- *   Chapitre 3 « Tes ambitions »— Steps 8, 10        (2 étapes)
+ * Mapping (post-renumérotation, ALL_STEPS naturel [1..10]) :
+ *   Chapitre 1 « Toi »          — Steps 1, 2, 3, 4    (4 étapes)
+ *   Chapitre 2 « Tes savoirs »  — Steps 5, 6, 7, 8    (4 étapes)
+ *   Chapitre 3 « Tes ambitions »— Steps 9, 10         (2 étapes)
  *
- * Step 9 (fiscalité) a été déplacée entre 3 et 4 dans `ALL_STEPS` pour
- * que le chapitre « Toi » ne soit pas interrompu visuellement par les
- * quizzes du chapitre « Tes savoirs ». Les numéros restent stables, seul
- * l'ordre de visite change.
+ * Les IDs SUIVENT désormais l'ordre visuel — aucun réordonnement
+ * artificiel dans ALL_STEPS, la concaténation des stepIds de CHAPTERS
+ * est strictement `[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]`.
  */
 
 import { ALL_STEPS, type StepId } from './routing'
@@ -34,19 +33,19 @@ export const CHAPTERS: ReadonlyArray<Chapter> = [
     id:       'toi',
     title:    'Toi',
     subtitle: 'On commence par toi — qui tu es, ta situation, ce que tu as construit.',
-    stepIds:  [1, 2, 3, 9],
+    stepIds:  [1, 2, 3, 4],
   },
   {
     id:       'savoirs',
     title:    'Tes savoirs',
     subtitle: 'Ce que tu maîtrises côté investissement (et ce qu\'on peut clarifier ensemble).',
-    stepIds:  [4, 5, 6, 7],
+    stepIds:  [5, 6, 7, 8],
   },
   {
     id:       'ambitions',
     title:    'Tes ambitions',
     subtitle: 'Où tu veux aller, ce que tu prépares pour demain.',
-    stepIds:  [8, 10],
+    stepIds:  [9, 10],
   },
 ] as const
 

@@ -84,16 +84,17 @@ describe('prédicats purs', () => {
 // ─────────────────────────────────────────────────────────────────────
 
 describe('R1/R2 garde-fou — enveloppes=[]', () => {
-  it('enveloppes=[] (Step 4 sauté) → AUCUN skip auto', () => {
+  it('enveloppes=[] (Step 5 sauté) → AUCUN skip auto', () => {
     const path = computeActivePath(mk({ enveloppes: [] }))
-    // CS10 — Ordre réordonné : Step 9 (Fiscalité) intercalée entre 3 et 4
-    // pour préserver la continuité narrative du chapitre « Toi ».
-    expect(path).toEqual([1, 2, 3, 9, 4, 5, 6, 7, 8, 10])
+    // Renumérotation post-CS10 — ALL_STEPS naturel [1..10]. Aucun skip
+    // tant que enveloppes n'a pas été touché (garde-fou anti-faux-positif).
+    expect(path).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
   })
 
-  it('enveloppes=[PEA] (Step 4 touché, sans crypto/immo) → skip 6+7', () => {
+  it('enveloppes=[PEA] (Step 5 touché, sans crypto/immo) → skip 7+8', () => {
     const path = computeActivePath(mk({ enveloppes: [PEA] }))
-    expect(path).toEqual([1, 2, 3, 9, 4, 5, 8, 10])
+    // R1 skip Quiz Crypto (nouvel ID 7), R2 skip Quiz Immo (nouvel ID 8).
+    expect(path).toEqual([1, 2, 3, 4, 5, 6, 9, 10])
   })
 })
 
@@ -102,23 +103,24 @@ describe('R1/R2 garde-fou — enveloppes=[]', () => {
 // ─────────────────────────────────────────────────────────────────────
 
 describe('R3 réinterprété — copie retraité', () => {
+  // Post-renumérotation : Quiz Crypto = step 7, Quiz Bourse = step 6.
   it('non-retraité, pas de crypto → message standard', () => {
     const v = mk({ enveloppes: [PEA], statut_pro: 'Salarié' })
-    const reason = findSkipReason(6, v)
+    const reason = findSkipReason(7, v)
     expect(reason).toMatch(/n'as pas déclaré d'enveloppe crypto/i)
     expect(reason).not.toMatch(/retraité/i)
   })
 
   it('retraité, pas de crypto → message reformulé', () => {
     const v = mk({ enveloppes: [PEA], statut_pro: 'Retraité' })
-    const reason = findSkipReason(6, v)
+    const reason = findSkipReason(7, v)
     expect(reason).toMatch(/retraité/i)
     expect(reason).toMatch(/crypto/i)
   })
 
-  it('retraité ne skippe PAS la Bourse (Step 5 reste utile)', () => {
+  it('retraité ne skippe PAS la Bourse (Step 6 reste utile)', () => {
     const v = mk({ enveloppes: [PEA], statut_pro: 'Retraité' })
-    expect(computeActivePath(v)).toContain(5)
+    expect(computeActivePath(v)).toContain(6)
   })
 })
 
@@ -133,15 +135,13 @@ describe('computeActivePath — 8 personas du plan', () => {
     expect: { length: number; skips: StepId[] }
   }
 
-  // CS5 dette — Toutes les fixtures utilisent maintenant les LABELS RÉELS
-  // exposés par ENVELOPPE_DEFS (importés en haut du fichier). Plus aucune
-  // chaîne fictive ('Crypto' ou 'SCPI' qui n'existaient pas comme chip).
-  // Sophie cumule maintenant CRYPTO + IMMO = path complet à 10 étapes.
+  // Renumérotation post-CS10 : Quiz Crypto = 7, Quiz Immo = 8.
+  // Longueurs des paths inchangées (seul l'ID des skips a évolué).
   const personas: Persona[] = [
     {
       nom: 'a. Thomas — primo-investisseur 28 ans, locataire',
       values: { age: 28, statut_pro: 'Salarié', enveloppes: [LIVRET_A] },
-      expect: { length: 8, skips: [6, 7] },  // pas crypto, pas immo
+      expect: { length: 8, skips: [7, 8] },  // pas crypto, pas immo
     },
     {
       nom: 'b. Sophie — multi-biens, SCI (CRYPTO + IMMO réels)',
@@ -153,37 +153,37 @@ describe('computeActivePath — 8 personas du plan', () => {
       nom: 'c. Marc — cadre TMI 41 %',
       values: { age: 52, statut_pro: 'Salarié',
                 enveloppes: [PEA, AV] },
-      expect: { length: 8, skips: [6, 7] },
+      expect: { length: 8, skips: [7, 8] },
     },
     {
       nom: 'd. Léo — aspirant FIRE',
       values: { age: 35, statut_pro: 'Salarié',
                 enveloppes: [PEA, CTO, CRYPTO] },
-      expect: { length: 9, skips: [7] },
+      expect: { length: 9, skips: [8] },
     },
     {
       nom: 'e. Famille Bernard — couple + enfants (IMMO via SCPI)',
       values: { age: 40, statut_pro: 'Salarié',
                 enveloppes: [AV, PEA, IMMO] },
-      expect: { length: 9, skips: [6] },   // pas crypto, immo OK (chip Immobilier / SCPI)
+      expect: { length: 9, skips: [7] },   // pas crypto, immo OK (chip Immobilier / SCPI)
     },
     {
       nom: 'f. Annie — proche retraite',
       values: { age: 60, statut_pro: 'Retraité',
                 enveloppes: [AV, LIVRET_A] },
-      expect: { length: 8, skips: [6, 7] },
+      expect: { length: 8, skips: [7, 8] },
     },
     {
       nom: 'g. Karim — freelance revenus irréguliers',
       values: { age: 33, statut_pro: 'Indépendant / Freelance',
                 enveloppes: [PEA] },
-      expect: { length: 8, skips: [6, 7] },
+      expect: { length: 8, skips: [7, 8] },
     },
     {
       nom: 'h. Hélène — prudente, averse au risque',
       values: { age: 48, statut_pro: 'Salarié',
                 enveloppes: [LIVRET_A, LDDS, AV] },
-      expect: { length: 8, skips: [6, 7] },
+      expect: { length: 8, skips: [7, 8] },
     },
   ]
 
@@ -203,27 +203,28 @@ describe('computeActivePath — 8 personas du plan', () => {
 // ─────────────────────────────────────────────────────────────────────
 
 describe('getNextStep — saute correctement', () => {
-  it('Thomas (skip 6 et 7) → 5 → next = 8', () => {
+  // Post-renumérotation : Quiz Bourse=6, Quiz Crypto=7, Quiz Immo=8, FIRE=9.
+  it('Thomas (skip 7 et 8) → 6 → next = 9', () => {
     const v = mk({ enveloppes: [LIVRET_A] })
-    expect(getNextStep(5, v)).toBe(8)
+    expect(getNextStep(6, v)).toBe(9)
   })
 
-  it('Sophie (path complet) → 5 → next = 6', () => {
+  it('Sophie (path complet) → 6 → next = 7', () => {
     const v = mk({ enveloppes: [PEA, CRYPTO, IMMO] })
-    expect(getNextStep(5, v)).toBe(6)
+    expect(getNextStep(6, v)).toBe(7)
   })
 
   it('dernière étape du path → END', () => {
-    // CS5 — path 8 étapes pour [LIVRET_A] (skip 6+7), dernière = 10.
+    // Post-renumérotation : path 8 étapes pour [LIVRET_A] (skip 7+8), dernière = 10.
     const v = mk({ enveloppes: [LIVRET_A] })
     expect(getNextStep(10, v)).toBe(END)
   })
 })
 
 describe('getPrevStep — POINT CRITIQUE (cf. §7-2 cadrage)', () => {
-  it('Thomas (skip 6) → 8 → prev = 5 (PAS 7 qui serait sauté)', () => {
+  it('Thomas (skip 7) → 9 → prev = 6 (PAS 8 qui serait sauté)', () => {
     const v = mk({ enveloppes: [LIVRET_A] })
-    expect(getPrevStep(8, v)).toBe(5)
+    expect(getPrevStep(9, v)).toBe(6)
   })
 
   it('première étape → null', () => {
@@ -236,23 +237,24 @@ describe('getPrevStep — POINT CRITIQUE (cf. §7-2 cadrage)', () => {
 // ─────────────────────────────────────────────────────────────────────
 
 describe('overrides — réactive l\'étape pour la session', () => {
-  it('override sur step 6 → path inclut 6 même sans crypto', () => {
+  // Post-renumérotation : Quiz Crypto = step 7.
+  it('override sur step 7 → path inclut 7 même sans crypto', () => {
     const v = mk({ enveloppes: [PEA] })
-    const overrides = new Set<StepId>([6])
+    const overrides = new Set<StepId>([7])
     const path = computeActivePath(v, overrides)
-    expect(path).toContain(6)
+    expect(path).toContain(7)
   })
 
-  it('override sur step 6 → findSkipReason retourne null', () => {
+  it('override sur step 7 → findSkipReason retourne null', () => {
     const v = mk({ enveloppes: [PEA] })
-    expect(findSkipReason(6, v)).not.toBeNull()
-    expect(findSkipReason(6, v, new Set([6]))).toBeNull()
+    expect(findSkipReason(7, v)).not.toBeNull()
+    expect(findSkipReason(7, v, new Set([7]))).toBeNull()
   })
 
   it('isStepSkipped respecte les overrides', () => {
     const v = mk({ enveloppes: [PEA] })
-    expect(isStepSkipped(6, v)).toBe(true)
-    expect(isStepSkipped(6, v, new Set([6]))).toBe(false)
+    expect(isStepSkipped(7, v)).toBe(true)
+    expect(isStepSkipped(7, v, new Set([7]))).toBe(false)
   })
 })
 
@@ -261,11 +263,11 @@ describe('overrides — réactive l\'étape pour la session', () => {
 // ─────────────────────────────────────────────────────────────────────
 
 describe('re-routage rétroactif', () => {
-  it('ajouter Crypto à enveloppes ré-active Step 6 au prochain call', () => {
+  it('ajouter Crypto à enveloppes ré-active Step 7 au prochain call', () => {
     const v1 = mk({ enveloppes: [PEA] })
-    expect(computeActivePath(v1)).not.toContain(6)
+    expect(computeActivePath(v1)).not.toContain(7)
     const v2 = mk({ enveloppes: [PEA, CRYPTO] })
-    expect(computeActivePath(v2)).toContain(6)
+    expect(computeActivePath(v2)).toContain(7)
   })
 })
 

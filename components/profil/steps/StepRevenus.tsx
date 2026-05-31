@@ -1,4 +1,4 @@
-/** Étape 2 — Revenus (vous, conjoint, autres, stabilité). */
+﻿/** Étape 2 — Revenus (vous, conjoint, autres, stabilité). */
 'use client'
 
 import { Field, Input } from '@/components/ui/field'
@@ -11,7 +11,7 @@ interface Props {
   set:    <K extends keyof QuestionnaireValues>(k: K, v: QuestionnaireValues[K]) => void
 }
 
-export function Step2({ values, set }: Props) {
+export function StepRevenus({ values, set }: Props) {
   const num = (k: 'revenu_mensuel' | 'revenu_conjoint' | 'autres_revenus') =>
     (e: React.ChangeEvent<HTMLInputElement>) =>
       set(k, e.target.value ? Number(e.target.value) : null)

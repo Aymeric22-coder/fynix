@@ -1,8 +1,8 @@
-/** Étape 7 — Quiz Immobilier. */
+﻿/** Étape 6 — Quiz Crypto. */
 'use client'
 
 import { QuizStep } from '../QuizStep'
-import { QUIZ_IMMO } from '@/lib/profil/calculs'
+import { QUIZ_CRYPTO } from '@/lib/profil/calculs'
 import type { QuestionnaireValues } from '../questionnaire-types'
 
 interface Props {
@@ -10,15 +10,15 @@ interface Props {
   set:    <K extends keyof QuestionnaireValues>(k: K, v: QuestionnaireValues[K]) => void
 }
 
-export function Step7({ values, set }: Props) {
+export function StepQuizCrypto({ values, set }: Props) {
   return (
     <QuizStep
-      badge="Évaluation Immobilier"
-      tone="success"
-      quiz={QUIZ_IMMO}
-      answers={values.quiz_immo ?? []}
-      onChange={(a) => set('quiz_immo', a)}
-      domain="immo"
+      badge="Évaluation Crypto"
+      tone="warning"
+      quiz={QUIZ_CRYPTO}
+      answers={values.quiz_crypto ?? []}
+      onChange={(a) => set('quiz_crypto', a)}
+      domain="crypto"
       selfDeclared={values.quiz_self_declared_domains ?? []}
       onExpertToggle={(next) => set('quiz_self_declared_domains', next)}
     />

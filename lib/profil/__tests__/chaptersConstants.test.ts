@@ -81,11 +81,11 @@ describe('assertChaptersCoverAllSteps', () => {
 // ────────────────────────────────────────────────────────────────────
 
 describe('getChapterForStep', () => {
-  // Mapping attendu : 1,2,3,9=Toi  / 4,5,6,7=Tes savoirs  / 8,10=Tes ambitions
+  // Mapping post-renumérotation : 1,2,3,4=Toi  / 5,6,7,8=Tes savoirs  / 9,10=Tes ambitions
   const expected: Array<[StepId, string]> = [
-    [1, 'toi'], [2, 'toi'], [3, 'toi'], [9, 'toi'],
-    [4, 'savoirs'], [5, 'savoirs'], [6, 'savoirs'], [7, 'savoirs'],
-    [8, 'ambitions'], [10, 'ambitions'],
+    [1, 'toi'], [2, 'toi'], [3, 'toi'], [4, 'toi'],
+    [5, 'savoirs'], [6, 'savoirs'], [7, 'savoirs'], [8, 'savoirs'],
+    [9, 'ambitions'], [10, 'ambitions'],
   ]
   for (const [step, chapterId] of expected) {
     it(`step ${step} → chapitre ${chapterId}`, () => {
@@ -109,23 +109,26 @@ describe('getChapterProgress', () => {
     expect(p.isFirstStepInChapter).toBe(true)
     expect(p.isLastStepInChapter).toBe(false)
   })
-  it('Step 9 → chapitre Toi, 4e étape sur 4 (dernière)', () => {
-    const p = getChapterProgress(9)
+  // Post-renumérotation : Fiscalité est ID 4, dernière étape du chapitre Toi.
+  it('Step 4 (Fiscalité) → chapitre Toi, 4e étape sur 4 (dernière)', () => {
+    const p = getChapterProgress(4)
     expect(p.chapter.id).toBe('toi')
     expect(p.stepInChapter).toBe(4)
     expect(p.totalStepsInChapter).toBe(4)
     expect(p.isFirstStepInChapter).toBe(false)
     expect(p.isLastStepInChapter).toBe(true)
   })
-  it('Step 4 → chapitre Tes savoirs, 1ère étape', () => {
-    const p = getChapterProgress(4)
+  // Post-renumérotation : Capacité est ID 5, 1re étape du chapitre Savoirs.
+  it('Step 5 (Capacité) → chapitre Tes savoirs, 1ère étape', () => {
+    const p = getChapterProgress(5)
     expect(p.chapter.id).toBe('savoirs')
     expect(p.chapterIndex).toBe(1)
     expect(p.stepInChapter).toBe(1)
     expect(p.isFirstStepInChapter).toBe(true)
   })
-  it('Step 8 → chapitre Tes ambitions, 1ère étape sur 2', () => {
-    const p = getChapterProgress(8)
+  // Post-renumérotation : Risque+FIRE est ID 9, 1re étape du chapitre Ambitions.
+  it('Step 9 (Risque+FIRE) → chapitre Tes ambitions, 1ère étape sur 2', () => {
+    const p = getChapterProgress(9)
     expect(p.chapter.id).toBe('ambitions')
     expect(p.chapterIndex).toBe(2)
     expect(p.totalStepsInChapter).toBe(2)
@@ -148,12 +151,10 @@ describe('Cohérence avec ALL_STEPS', () => {
     const concat = CHAPTERS.flatMap((c) => c.stepIds)
     expect(concat).toEqual([...ALL_STEPS])
   })
-  it('Step 9 est juste après Step 3 et avant Step 4 dans ALL_STEPS', () => {
-    const idx9 = ALL_STEPS.indexOf(9)
-    const idx3 = ALL_STEPS.indexOf(3)
-    const idx4 = ALL_STEPS.indexOf(4)
-    expect(idx3).toBe(idx9 - 1)
-    expect(idx4).toBe(idx9 + 1)
+  // Post-renumérotation : ALL_STEPS est naturel [1..10] — plus de
+  // réordonnement artificiel. Ce test garantit la propriété stricte.
+  it('ALL_STEPS = [1..10] naturel', () => {
+    expect([...ALL_STEPS]).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
   })
 })
 

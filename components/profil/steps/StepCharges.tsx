@@ -1,4 +1,4 @@
-/** Étape 3 — Charges & dépenses. */
+﻿/** Étape 3 — Charges & dépenses. */
 'use client'
 
 import { Field, Input } from '@/components/ui/field'
@@ -9,7 +9,7 @@ interface Props {
   set:    <K extends keyof QuestionnaireValues>(k: K, v: QuestionnaireValues[K]) => void
 }
 
-export function Step3({ values, set }: Props) {
+export function StepCharges({ values, set }: Props) {
   const num = (k: 'loyer' | 'autres_credits' | 'charges_fixes' | 'depenses_courantes') =>
     (e: React.ChangeEvent<HTMLInputElement>) =>
       set(k, e.target.value ? Number(e.target.value) : null)

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Étape 8 — Profil de risque & objectif FIRE.
  * - 4 questions comportementales (radios)
  * - Sélection du type de FIRE (cartes cliquables)
@@ -29,7 +29,7 @@ interface Props {
   set:    <K extends keyof QuestionnaireValues>(k: K, v: QuestionnaireValues[K]) => void
 }
 
-export function Step8({ values, set }: Props) {
+export function StepRisqueFire({ values, set }: Props) {
   return (
     <div className="space-y-7">
       {/* Questions de risque */}

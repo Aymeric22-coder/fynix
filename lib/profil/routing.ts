@@ -37,23 +37,17 @@ import { anyEnvelopeHasClass } from './enveloppesConstants'
 export type StepId = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10
 
 /**
- * Ordre d'AFFICHAGE du wizard (≠ ordre numérique des IDs).
+ * Ordre d'AFFICHAGE du wizard.
  *
- * CS10 (Phase 6) — Step 9 « Ta fiscalité » est intercalée entre Step 3 et
- * Step 4 pour conserver la cohérence narrative des chapitres :
- *   « Toi »          = [1, 2, 3, 9]   (identité, revenus, charges, fiscalité)
- *   « Tes savoirs »  = [4, 5, 6, 7]   (enveloppes, quizzes)
- *   « Tes ambitions »= [8, 10]        (FIRE goal, projets de vie)
+ * Renumérotation post-CS10 — Les IDs SUIVENT désormais l'ordre visuel
+ * (1 = première étape, 10 = dernière). Plus de friction « Step 9 affichée
+ * en 4e position ». ALL_STEPS redevient un range naturel `[1..10]`.
  *
- * Sans ce réordonnement, l'utilisateur faisait Toi → Savoirs → Toi (9) →
- * Ambitions : le chapitre « Toi » était interrompu par les quizzes.
- *
- * IMPORTANT — `wizard_step_completed` reste un compteur par ID (pas par
- * position). Le helper `getNextStep` est la source de vérité pour calculer
- * la prochaine étape : il consomme `ALL_STEPS` et donne l'étape suivante
- * dans l'ordre VISUEL, pas `lastStep + 1`. Cf. profil-client.tsx.
+ * Le helper `getNextStep` reste néanmoins préservé : il gère le SKIP
+ * (R1/R2) — `getNextStep(N)` peut sauter à N+2 ou plus si la step suivante
+ * est skippée par le moteur. `lastStep + 1` casserait ce comportement.
  */
-export const ALL_STEPS: readonly StepId[] = [1, 2, 3, 9, 4, 5, 6, 7, 8, 10] as const
+export const ALL_STEPS: readonly StepId[] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const
 
 // ────────────────────────────────────────────────────────────────────
 // Helpers de prédicats purs (testables individuellement)
@@ -116,23 +110,23 @@ export interface SkipRule {
  * Phase 5/6 viendront pousser leurs propres règles dans ce tableau.
  */
 export const SKIP_RULES: readonly SkipRule[] = [
-  // R1 — Quiz Crypto
+  // R1 — Quiz Crypto (nouvel ID 7 post-renumérotation, ancien 6)
   {
-    step: 6,
+    step: 7,
     shouldSkip: (v) => hasTouchedEnvelopes(v) && !hasCryptoEnvelope(v),
     reason: (v) =>
       isRetraite(v)
-        ? "Tu es retraité et n'as pas déclaré d'enveloppe crypto à l'étape 4."
-        : "Tu n'as pas déclaré d'enveloppe crypto à l'étape 4.",
+        ? "Tu es retraité et n'as pas déclaré d'enveloppe crypto à l'étape 5."
+        : "Tu n'as pas déclaré d'enveloppe crypto à l'étape 5.",
   },
-  // R2 — Quiz Immo
+  // R2 — Quiz Immo (nouvel ID 8 post-renumérotation, ancien 7)
   {
-    step: 7,
+    step: 8,
     shouldSkip: (v) => hasTouchedEnvelopes(v) && !hasImmoEnvelope(v),
     reason: (v) =>
       isRetraite(v)
-        ? "Tu es retraité et n'as pas déclaré d'immobilier (chip Immobilier / SCPI) à l'étape 4."
-        : "Tu n'as pas déclaré d'immobilier (chip Immobilier / SCPI) à l'étape 4.",
+        ? "Tu es retraité et n'as pas déclaré d'immobilier (chip Immobilier / SCPI) à l'étape 5."
+        : "Tu n'as pas déclaré d'immobilier (chip Immobilier / SCPI) à l'étape 5.",
   },
 ]
 
