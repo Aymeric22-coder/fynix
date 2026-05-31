@@ -109,12 +109,23 @@ export function buildLifeEventVectors(
     switch (evt.type) {
       case 'capital_exceptionnel': {
         // Héritage / vente d'entreprise — inflow ponctuel à year y.
-        // - y < 0 (passé) : on l'injecte tout de même à year 0 (déjà perçu,
-        //   mais l'utilisateur a peut-être oublié de l'inclure dans le
-        //   capital de départ). Le builder reste neutre, l'UI affiche un
-        //   warning séparé (cf. cas pernicieux §7 cadrage).
-        // - y > horizon : ignoré (hors fenêtre).
-        const y = Math.max(0, Math.min(horizon, yEvt))
+        // CS2 LOT 0 — Bug double-comptage fixé :
+        //   Avant : `y = max(0, min(horizon, yEvt))` injectait les héritages
+        //   PASSÉS sur year 0. Mais un héritage déjà perçu se retrouve dans
+        //   `totalCash` réel (déposé sur Livret A) → double-comptage de
+        //   80 k€ qui re-impactaient la projection sur l'année courante.
+        //   Maintenant : `yEvt < 0` → événement SKIP entièrement. Le
+        //   patrimoine réel agrégé contient déjà le capital perçu.
+        // - y > horizon : ignoré (hors fenêtre, comportement préservé).
+        if (yEvt < 0) {
+          // Passé : déjà inclus dans totalCash/totalPortefeuille réel.
+          applied.push({
+            id: evt.id, type: evt.type, yearOffset: yEvt,
+            label: evt.label, montant: evt.montant,
+          })
+          break
+        }
+        const y = Math.min(horizon, yEvt)
         const montant = Number.isFinite(evt.montant ?? NaN) ? evt.montant! : 0
         if (montant > 0) {
           revenuExceptionnel[y] = (revenuExceptionnel[y] ?? 0) + montant

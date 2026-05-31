@@ -146,6 +146,59 @@ describe('CS5 — Capital exceptionnel', () => {
     const apres = projectionGlobale({ ...BASE_INPUTS, ...vecs })
     expect(apres.patrimoineAgeCible).toBeGreaterThan(avant.patrimoineAgeCible)
   })
+
+  // CS2 LOT 0 — Bug fix : héritage déjà perçu (occurrence_date < now) ne
+  // doit PAS être injecté dans la projection (sinon double-comptage avec
+  // totalCash réel qui contient déjà le capital deposé sur Livret A).
+  it('CS2 LOT 0 — héritage passé (occurrence_date < now) → IGNORÉ (pas de double-comptage)', () => {
+    const v = buildLifeEventVectors([
+      evt({ id: 'h-past', type: 'capital_exceptionnel', occurrence_date: '2024-03-15', montant: 80_000 }),
+    ], BASE_PROFILE, { horizon: 35, now: NOW })  // NOW = 2026-01-01
+    // Le vecteur reste tout-zéro — l'héritage est déjà dans totalCash réel.
+    expect(v.revenuPassifExceptionnelParAnnee.every((x) => x === 0)).toBe(true)
+    // L'évènement est tout de même tracé dans appliedEvents pour audit/UI.
+    expect(v.appliedEvents).toHaveLength(1)
+    expect(v.appliedEvents[0]!.id).toBe('h-past')
+  })
+
+  it('CS2 LOT 0 — non-régression : héritage futur (Marc +5 ans 80 k€) → comportement strictement préservé', () => {
+    const v = buildLifeEventVectors([
+      evt({ id: 'h-marc', type: 'capital_exceptionnel', occurrence_date: '2031-01-01', montant: 80_000 }),
+    ], BASE_PROFILE, { horizon: 40, now: NOW })
+    // 2031-01 vu de 2026-01 = year 5 (round(5.0))
+    expect(v.revenuPassifExceptionnelParAnnee[5]).toBe(80_000)
+    // Reste du vecteur à zéro
+    for (let y = 0; y < v.revenuPassifExceptionnelParAnnee.length; y++) {
+      if (y === 5) continue
+      expect(v.revenuPassifExceptionnelParAnnee[y]).toBe(0)
+    }
+  })
+
+  it('CS2 LOT 0 — non-régression : event hors horizon (> horizon) → clamp préservé', () => {
+    // Horizon = 10 ans depuis 2026 → cap à year 10 (= 2036). Event 2050 = +24 ans.
+    const v = buildLifeEventVectors([
+      evt({ id: 'h-far', type: 'capital_exceptionnel', occurrence_date: '2050-01-01', montant: 50_000 }),
+    ], BASE_PROFILE, { horizon: 10, now: NOW })
+    // Le clamp `Math.min(horizon, yEvt)` ramène l'event à year 10.
+    expect(v.revenuPassifExceptionnelParAnnee[10]).toBe(50_000)
+  })
+
+  // CS2 LOT 0 — Limitation connue documentée : pour retraite et naissance,
+  // une occurrence_date passée s'applique dès year 0. C'est accidentellement
+  // correct dans la majorité des cas (Annie déjà retraitée = bascule épargne
+  // immédiate ; naissance passée = enfants déjà comptés dans charges
+  // courantes), mais peut diverger si la pension réelle ne correspond pas
+  // au revenu_mensuel actuel. Fix futur si besoin (non blocant CS2).
+  it('CS2 LOT 0 — limitation connue : retraite passée applique le delta dès year 0', () => {
+    // Annie déjà à la retraite (date 2024) avec pension 1500.
+    const annieProfile = { age: 60, revenu_mensuel_total: 3000, epargne_mensuelle: 500 } as const
+    const v = buildLifeEventVectors([
+      evt({ id: 'r-past', type: 'retraite', occurrence_date: '2024-06-01', montant: 1500 }),
+    ], annieProfile, { horizon: 35, now: NOW })
+    // delta = (pension - charges) - epargne_actuelle = (1500 - 2500) - 500 = -1500
+    // Appliqué dès year 0 (comportement actuel, accidentellement correct).
+    expect(v.epargneDeltaParAnnee[0]).toBe(-1500)
+  })
 })
 
 // ────────────────────────────────────────────────────────────────────
