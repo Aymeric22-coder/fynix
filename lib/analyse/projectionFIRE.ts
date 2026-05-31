@@ -41,6 +41,7 @@ import { devWarn } from '../utils/devLog'
 import {
   findEnvelopeByLabel, type EnvelopeFiscalKey,
 } from '@/lib/profil/enveloppesConstants'
+import { CRYPTO_RENDEMENT_CENTRAL_PCT } from '@/lib/profil/cryptoConstants'
 
 // ─────────────────────────────────────────────────────────────────
 // Constantes Sprint 3 — paramètres FIRE ajustables
@@ -109,16 +110,18 @@ export function estimerTauxFiscalitePortefeuille(enveloppes: ReadonlyArray<strin
 }
 
 // I10 audit : taux centralisés dans lib/analyse/constants.ts (RENDEMENT_PAR_CLASSE).
-// Mapping AnalyseAssetType → classe partagée. crypto/metaux gardés à 0 ici car
-// le calcul de rendement portefeuille les exclut explicitement plus bas (proxy
-// de long terme actions/ETF, plus stable pour le sliders init).
+// Mapping AnalyseAssetType → classe partagée.
+// CS2 LOT 1 : crypto désormais incluse (CRYPTO_RENDEMENT_CENTRAL_PCT,
+// conservateur 4 %, cf. lib/profil/cryptoConstants.ts). Avant CS2 elle était
+// skip dans calculerRendementPortefeuille → projection biaisée pour les
+// users avec ≥ 10 % crypto.
 const RENDEMENT_PAR_CLASSE: Record<AnalyseAssetType, number> = {
   stock:   RENDEMENT_CLASSE_SHARED.actions * 100,
   etf:     RENDEMENT_CLASSE_SHARED.etf * 100,
   bond:    RENDEMENT_CLASSE_SHARED.obligataire * 100,
   scpi:    RENDEMENT_CLASSE_SHARED.scpi * 100,
   metal:   RENDEMENT_CLASSE_SHARED.metaux * 100,
-  crypto:  0,
+  crypto:  CRYPTO_RENDEMENT_CENTRAL_PCT,
   unknown: 0,
 }
 const RENDEMENT_IMMO_DIRECT = RENDEMENT_CLASSE_SHARED.immo * 100
@@ -132,7 +135,8 @@ export function calculerRendementPortefeuille(p: PatrimoineComplet): number {
   let totalPondere = 0
   let denom        = 0
   for (const pos of p.positions) {
-    if (pos.asset_type === 'crypto') continue
+    // CS2 LOT 1 : crypto INCLUSE (était skip avant, biais sur projection).
+    // Taux conservateur 4 %/an dans RENDEMENT_PAR_CLASSE.crypto.
     totalPondere += pos.current_value * (RENDEMENT_PAR_CLASSE[pos.asset_type] ?? 0)
     denom        += pos.current_value
   }
