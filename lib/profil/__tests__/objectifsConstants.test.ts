@@ -16,9 +16,9 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import {
-  OBJECTIF_AXES, OBJECTIF_LABELS, OBJECTIF_DESCRIPTIONS,
-  OBJECTIFS_NEUTRES, AFFINITY_MATRIX,
-  computeObjectifsBoost, normalizeAxes, sortAxesByValue,
+  OBJECTIF_AXES, OBJECTIF_LABELS, OBJECTIF_LABELS_COMPACT, OBJECTIF_DESCRIPTIONS,
+  OBJECTIFS_NEUTRES, AFFINITY_MATRIX, BALANCED_SPREAD_THRESHOLD,
+  computeObjectifsBoost, normalizeAxes, sortAxesByValue, formatTopPriorities,
   deriveObjectifsFromPriorite,
   type ObjectifsAxes, type RecoCategorieAffinity,
 } from '../objectifsConstants'
@@ -143,6 +143,93 @@ describe('sortAxesByValue', () => {
     const axes: ObjectifsAxes = { rendement: 30, securite: 80, optimisation: 50, transmission: 70 }
     const sorted = sortAxesByValue(axes)
     expect(sorted.map((s) => s.axe)).toEqual(['securite', 'transmission', 'optimisation', 'rendement'])
+  })
+
+  it('tri stable en cas d\'égalité : ordre alphabétique des labels FR', () => {
+    // 80,80,30,30 — Rendement vs Sécurité : "Rendement" < "Sécurité" en alpha FR
+    const axes: ObjectifsAxes = { rendement: 80, securite: 80, optimisation: 30, transmission: 30 }
+    const sorted = sortAxesByValue(axes)
+    expect(sorted.map((s) => s.axe)).toEqual(['rendement', 'securite', 'optimisation', 'transmission'])
+  })
+})
+
+// ────────────────────────────────────────────────────────────────────
+// 5-bis — formatTopPriorities (compact display ProfilCard/LiveAvatarCard)
+// ────────────────────────────────────────────────────────────────────
+
+describe('formatTopPriorities (fix CS4 L5 — compact display)', () => {
+  it('OBJECTIF_LABELS_COMPACT — "Optimisation" sans "fiscale"', () => {
+    expect(OBJECTIF_LABELS_COMPACT.optimisation).toBe('Optimisation')
+    // Les autres sont identiques aux labels longs.
+    expect(OBJECTIF_LABELS_COMPACT.rendement).toBe(OBJECTIF_LABELS.rendement)
+    expect(OBJECTIF_LABELS_COMPACT.securite).toBe(OBJECTIF_LABELS.securite)
+    expect(OBJECTIF_LABELS_COMPACT.transmission).toBe(OBJECTIF_LABELS.transmission)
+  })
+
+  it('BALANCED_SPREAD_THRESHOLD vaut 15 (spec)', () => {
+    expect(BALANCED_SPREAD_THRESHOLD).toBe(15)
+  })
+
+  it('axes [80,30,65,30] → "Rendement 80 · Optimisation 65"', () => {
+    const axes: ObjectifsAxes = { rendement: 80, securite: 30, optimisation: 65, transmission: 30 }
+    expect(formatTopPriorities(axes)).toBe('Rendement 80 · Optimisation 65')
+  })
+
+  it('axes neutres [50,50,50,50] → "Profil équilibré"', () => {
+    expect(formatTopPriorities(OBJECTIFS_NEUTRES)).toBe('Profil équilibré')
+  })
+
+  it('axes [60,50,55,45] (spread=15) → "Profil équilibré" (seuil INCLUSIF côté équilibré)', () => {
+    const axes: ObjectifsAxes = { rendement: 60, securite: 50, optimisation: 55, transmission: 45 }
+    expect(formatTopPriorities(axes)).toBe('Profil équilibré')
+  })
+
+  it('axes [60,50,55,40] (spread=20) → "Rendement 60 · Optimisation 55"', () => {
+    const axes: ObjectifsAxes = { rendement: 60, securite: 50, optimisation: 55, transmission: 40 }
+    expect(formatTopPriorities(axes)).toBe('Rendement 60 · Optimisation 55')
+  })
+
+  it('axes [80,80,30,30] → "Rendement 80 · Sécurité 80" (ordre alphabétique stable)', () => {
+    const axes: ObjectifsAxes = { rendement: 80, securite: 80, optimisation: 30, transmission: 30 }
+    expect(formatTopPriorities(axes)).toBe('Rendement 80 · Sécurité 80')
+  })
+
+  it('option showValues: false → libellés seuls', () => {
+    const axes: ObjectifsAxes = { rendement: 80, securite: 30, optimisation: 65, transmission: 30 }
+    expect(formatTopPriorities(axes, { showValues: false })).toBe('Rendement · Optimisation')
+  })
+
+  it('option topN: 3 → 3 axes affichés (si profil non équilibré)', () => {
+    const axes: ObjectifsAxes = { rendement: 80, securite: 30, optimisation: 65, transmission: 50 }
+    expect(formatTopPriorities(axes, { topN: 3 })).toBe('Rendement 80 · Optimisation 65 · Transmission 50')
+  })
+
+  it('option topN: 1 → axe principal seul', () => {
+    const axes: ObjectifsAxes = { rendement: 80, securite: 30, optimisation: 65, transmission: 30 }
+    expect(formatTopPriorities(axes, { topN: 1 })).toBe('Rendement 80')
+  })
+
+  it('option balancedLabel personnalisable', () => {
+    expect(formatTopPriorities(OBJECTIFS_NEUTRES, { balancedLabel: 'Tout équilibré' }))
+      .toBe('Tout équilibré')
+  })
+
+  it('axes tous à 0 → équilibré (spread=0)', () => {
+    const axes: ObjectifsAxes = { rendement: 0, securite: 0, optimisation: 0, transmission: 0 }
+    expect(formatTopPriorities(axes)).toBe('Profil équilibré')
+  })
+
+  it('garantit longueur compatible avec carte (proxy : top 2 < 50 chars)', () => {
+    // Cas le pire : 3 caractères max par chiffre + 2 labels longs
+    const axes: ObjectifsAxes = { rendement: 100, securite: 0, optimisation: 99, transmission: 0 }
+    const out = formatTopPriorities(axes)
+    expect(out.length).toBeLessThan(50)
+    // Vérifie qu'on n'a PAS "Optimisation fiscale" (qui dépasserait)
+    expect(out).not.toContain('fiscale')
+  })
+
+  it('non-régression OBJECTIF_LABELS long inchangé (utilisé par sliders Step 9)', () => {
+    expect(OBJECTIF_LABELS.optimisation).toBe('Optimisation fiscale')
   })
 })
 

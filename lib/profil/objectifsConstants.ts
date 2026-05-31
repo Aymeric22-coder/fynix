@@ -75,6 +75,17 @@ export const OBJECTIF_LABELS: Readonly<Record<ObjectifAxe, string>> = {
   transmission: 'Transmission',
 }
 
+/** Libellés COURTS pour les affichages contraints en largeur (ligne « Tes
+ *  priorités » de ProfilCard / LiveAvatarCard). "Optimisation fiscale"
+ *  fait tronquer la ligne sur les cartes étroites — on garde "Optimisation"
+ *  en compact (le contexte FIRECORE rend l'aspect fiscal évident). */
+export const OBJECTIF_LABELS_COMPACT: Readonly<Record<ObjectifAxe, string>> = {
+  rendement:    'Rendement',
+  securite:     'Sécurité',
+  optimisation: 'Optimisation',
+  transmission: 'Transmission',
+}
+
 /** Phrase courte affichée sous chaque slider Step Risque+FIRE. */
 export const OBJECTIF_DESCRIPTIONS: Readonly<Record<ObjectifAxe, string>> = {
   rendement:    'Faire travailler ton patrimoine — revenus passifs, valorisation long terme.',
@@ -242,11 +253,86 @@ export function computeObjectifsBoost(
 /**
  * Trie les axes par valeur décroissante. Utilisé par ProfilCard /
  * LiveAvatarCard pour afficher la hiérarchie de l'utilisateur en bullet.
+ *
+ * Tri stable en cas d'égalité : ordre alphabétique des labels FR. Ça
+ * évite les "swap" visuels entre re-renders (Sécurité 50 / Rendement
+ * 50 → l'ordre alphabétique tranche déterministe).
  */
 export function sortAxesByValue(axes: ObjectifsAxes): Array<{ axe: ObjectifAxe; value: number }> {
   return OBJECTIF_AXES
     .map((axe) => ({ axe, value: axes[axe] }))
-    .sort((a, b) => b.value - a.value)
+    .sort((a, b) => {
+      if (b.value !== a.value) return b.value - a.value
+      // Égalité : ordre alphabétique des LABELS UI (pas des ids).
+      return OBJECTIF_LABELS[a.axe].localeCompare(OBJECTIF_LABELS[b.axe], 'fr')
+    })
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Présentation compacte (UI ProfilCard / LiveAvatarCard)
+// ────────────────────────────────────────────────────────────────────
+
+/** Seuil heuristique au-DESSOUS ou ÉGAL duquel on considère un profil
+ *  "équilibré" : `max(axes) - min(axes) <= BALANCED_SPREAD_THRESHOLD` →
+ *  on n'affiche aucun axe en particulier mais le label "Profil équilibré".
+ *  Inclusif sur la zone équilibrée (cf. spec « seuil exclusif » =
+ *  exclusif côté hiérarchisé). Donc spread = 15 → équilibré. */
+export const BALANCED_SPREAD_THRESHOLD = 15
+
+export interface FormatTopPrioritiesOptions {
+  /** Inclure la valeur après le label. Défaut true. */
+  showValues?: boolean
+  /** Nombre d'axes max à afficher. Défaut 2. */
+  topN?: number
+  /** Libellé à afficher si profil équilibré (max-min < seuil). */
+  balancedLabel?: string
+}
+
+/**
+ * Formate les axes pour un affichage COMPACT type "Tes priorités".
+ *
+ * Stratégie :
+ *  1. Si l'amplitude (max - min) est inférieure à BALANCED_SPREAD_THRESHOLD,
+ *     on retourne `balancedLabel` ("Profil équilibré" par défaut) — il
+ *     n'y a pas de hiérarchie suffisante pour mettre en avant.
+ *  2. Sinon, on trie les axes par valeur desc + ordre alphabétique
+ *     (sortAxesByValue) et on prend les `topN` premiers.
+ *
+ * Returns : la chaîne formatée prête à coller dans une ligne UI.
+ *
+ * Exemples (showValues=true, topN=2) :
+ *   {80,30,65,30} → "Rendement 80 · Optimisation fiscale 65"
+ *   {50,50,50,50} → "Profil équilibré"
+ *   {60,50,55,45} → "Profil équilibré"     (spread 15, seuil exclusif)
+ *   {60,50,55,40} → "Rendement 60 · Optimisation fiscale 55"   (spread 20)
+ *   {80,80,30,30} → "Rendement 80 · Sécurité 80"
+ */
+export function formatTopPriorities(
+  axes:    ObjectifsAxes,
+  options: FormatTopPrioritiesOptions = {},
+): string {
+  const showValues    = options.showValues    ?? true
+  const topN          = options.topN          ?? 2
+  const balancedLabel = options.balancedLabel ?? 'Profil équilibré'
+
+  const values = [axes.rendement, axes.securite, axes.optimisation, axes.transmission]
+  const max = Math.max(...values)
+  const min = Math.min(...values)
+
+  // (1) Heuristique « profil équilibré » : pas de hiérarchie discernable.
+  // Inclusif : spread = 15 → équilibré (cf. BALANCED_SPREAD_THRESHOLD).
+  if (max - min <= BALANCED_SPREAD_THRESHOLD) return balancedLabel
+
+  // (2) Trie + sélection top N. L'ordre stable (alphabétique en cas d'égalité)
+  // est garanti par sortAxesByValue → pas de "swap" visuel entre renders.
+  // Libellés COMPACTS ("Optimisation" et non "Optimisation fiscale") pour
+  // éviter la truncation sur cartes étroites.
+  return sortAxesByValue(axes)
+    .slice(0, Math.max(1, topN))
+    .map((a) => showValues
+      ? `${OBJECTIF_LABELS_COMPACT[a.axe]} ${a.value}`
+      : OBJECTIF_LABELS_COMPACT[a.axe])
+    .join(' · ')
 }
 
 /**

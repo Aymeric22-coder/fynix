@@ -18,7 +18,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { formatCurrency } from '@/lib/utils/format'
 import { computeProfileMetrics, FIRE_TYPES } from '@/lib/profil/calculs'
-import { OBJECTIF_LABELS, sortAxesByValue } from '@/lib/profil/objectifsConstants'
+import { formatTopPriorities } from '@/lib/profil/objectifsConstants'
 import { ScoreRing } from './ScoreRing'
 import { GaugeArc } from './GaugeArc'
 import { CibleFoyer } from './CibleFoyer'
@@ -122,15 +122,16 @@ export function ProfilCard({ profile, onEdit }: Props) {
                 ? `${m.cibleFoyerDetail.hasAdjustment ? m.fireAgeAjuste : m.fireAge} ans`
                 : '—'}
             />
-            {/* CS4 — Boussole d'objectifs : affichage ordonné par valeur
-                décroissante. Fallback sur `priorite` legacy si pas migré. */}
+            {/* CS4 — Boussole d'objectifs : top 2 axes (libellés courts)
+                pour éviter la truncation sur cartes étroites. Le seuil
+                BALANCED_SPREAD_THRESHOLD = 15 pp détecte un profil sans
+                hiérarchie discernable et affiche "Profil équilibré".
+                Fallback sur `priorite` legacy si pas migré. */}
             {profile.objectifs_axes ? (
               <FireLine
                 icon={<Lightbulb size={14} className="text-secondary" />}
                 label="Tes priorités"
-                value={sortAxesByValue(profile.objectifs_axes)
-                  .map((a) => `${OBJECTIF_LABELS[a.axe]} ${a.value}`)
-                  .join(' · ')}
+                value={formatTopPriorities(profile.objectifs_axes, { showValues: true, topN: 2 })}
               />
             ) : profile.priorite ? (
               <FireLine icon={<Lightbulb size={14} className="text-secondary" />} label="Priorité" value={profile.priorite} />
