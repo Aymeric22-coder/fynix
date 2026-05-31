@@ -17,8 +17,10 @@
  */
 'use client'
 
+import { useState } from 'react'
 import { Award, Check, Lightbulb, X } from 'lucide-react'
 import { cn } from '@/lib/utils/format'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import type { QuizQuestion, ExpertDomain } from '@/lib/profil/calculs'
 
 interface QuizStepProps {
@@ -54,22 +56,23 @@ export function QuizStep({
   domain, selfDeclared, onExpertToggle,
 }: QuizStepProps) {
   const isDeclaredExpert = selfDeclared.includes(domain)
+  // Consolidation 2 — remplace window.confirm() par <ConfirmDialog>.
+  // State local : la modal est triggered au clic « Je connais déjà »
+  // quand l'utilisateur n'est pas encore expert auto-déclaré.
+  const [confirmOpen, setConfirmOpen] = useState(false)
 
   function handleExpertClick() {
     if (isDeclaredExpert) {
-      // Déjà déclaré → retirer (revenir au quiz manuel).
+      // Déjà déclaré → retirer immédiatement (revenir au quiz manuel,
+      // pas besoin de confirmation pour défaire son propre choix).
       onExpertToggle(selfDeclared.filter((d) => d !== domain))
       return
     }
-    // Confirmation légère pour éviter les clics accidentels.
-    const ok = typeof window !== 'undefined'
-      ? window.confirm(
-          `On note que tu connais déjà ${DOMAIN_LABELS[domain]}. Ta calibration `
-          + `tiendra compte de cette expertise auto-déclarée. Tu pourras refaire `
-          + `le quiz si tu changes d'avis.`,
-        )
-      : true
-    if (!ok) return
+    // Pas encore expert → ouvrir la modal de confirmation stylée.
+    setConfirmOpen(true)
+  }
+
+  function confirmExpert() {
     onExpertToggle([...selfDeclared, domain])
   }
 
@@ -203,6 +206,27 @@ export function QuizStep({
         </div>
         )
       })}
+
+      {/* Consolidation 2 — Modal de confirmation Expert auto-déclaré
+          (CS3 R5). Remplace l'ancien window.confirm() natif. Stacking
+          avec micro-leçons QW10 OK : Modal a z-50 et est rendu en
+          portail dans document.body, donc au-dessus du flow normal. */}
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title="Te déclarer expert"
+        description={
+          <>
+            En te déclarant expert sur <span className="text-primary font-medium">{DOMAIN_LABELS[domain]}</span>,
+            ce quiz sera passé. Ta projection considérera que tu maîtrises
+            déjà ce sujet — elle sera calibrée en conséquence. Tu peux
+            toujours revenir y répondre plus tard si tu veux affiner.
+          </>
+        }
+        confirmLabel="Je suis expert"
+        cancelLabel="Continuer le quiz"
+        onConfirm={confirmExpert}
+      />
     </div>
   )
 }
