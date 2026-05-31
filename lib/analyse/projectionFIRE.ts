@@ -437,6 +437,8 @@ export function projectionGlobale(inputs: ProjectionInputs): ProjectionGlobaleRe
   // 1. Validation des biens existants
   //    - valeur manquante / nulle → bien ignoré + warning
   //    - credit_restant null/undefined → traité comme 0
+  //    - equity initiale < 0 → CS2 LOT 3 warning « capital restant dû >
+  //      valeur de marché » (cas réel : bien acheté en haut de cycle)
   //    - equity initiale < 1000 € avec crédit > 0 → warning de cohérence
   const biensValides: BienImmo[] = []
   for (const b of inputs.biensExistants) {
@@ -447,7 +449,14 @@ export function projectionGlobale(inputs: ProjectionInputs): ProjectionGlobaleRe
       continue
     }
     const equityInit = valeur - creditRestant
-    if (equityInit < 1000 && creditRestant > 0) {
+    if (equityInit < 0) {
+      // CS2 LOT 3 — Cas explicite : crédit dépasse la valeur. La projection
+      // clamp `equity = max(0, ...)` à `simulerBienExistant` mais on alerte
+      // l'utilisateur sur l'underwater du bien.
+      warnings.push(
+        `Bien "${b.nom}" : capital restant dû (${Math.round(creditRestant).toLocaleString('fr-FR')} €) dépasse la valeur de marché (${Math.round(valeur).toLocaleString('fr-FR')} €). Equity négative de ${Math.round(equityInit).toLocaleString('fr-FR')} € — la projection considère l'equity comme nulle.`,
+      )
+    } else if (equityInit < 1000 && creditRestant > 0) {
       warnings.push(
         `Vérifiez les données de "${b.nom}" — equity initiale anormalement basse (${Math.round(equityInit).toLocaleString('fr-FR')} €) pour un crédit de ${Math.round(creditRestant).toLocaleString('fr-FR')} €.`,
       )

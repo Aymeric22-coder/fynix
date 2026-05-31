@@ -40,6 +40,8 @@ import { OptimiseurHero }          from '@/components/analyse/OptimiseurHero'
 import { OptimiseurFiscal }        from '@/components/analyse/OptimiseurFiscal'
 import { Recommandations }         from '@/components/analyse/Recommandations'
 import { TmiMissingBanner }        from '@/components/analyse/TmiMissingBanner'
+import { PatrimoineEmptyBanner }   from '@/components/analyse/PatrimoineEmptyBanner'
+import { PatrimoineCoverageHint }  from '@/components/analyse/PatrimoineCoverageHint'
 import { calculerOpportunitesFiscales } from '@/lib/analyse/optimiseurFiscal'
 
 export function AnalyseClient() {
@@ -94,6 +96,17 @@ export function AnalyseClient() {
         label: 'Simuler',
         content: (
           <div className="space-y-6">
+            {/* CS2 LOT 4 — Bandeau quand patrimoine vide.
+                Si totalNet === 0, la projection démarre à 0 € : on
+                redirige l'utilisateur vers /portefeuille et /cash. */}
+            <PatrimoineEmptyBanner wizardComplete={true} totalNet={data.totalNet} />
+            {/* CS2 LOT 5 — Hint doux si une catégorie majeure manque. */}
+            <PatrimoineCoverageHint
+              totalPortefeuille={data.totalPortefeuille}
+              totalCash={data.totalCash}
+              totalImmo={data.totalImmo}
+            />
+
             {/* Projection FIRE (chart + sliders) + acquisitions futures
                 + stress tests « Et si… » sont déjà orchestrés en interne. */}
             <ProjectionFIRE patrimoine={data} lastUpdatedAt={lastUpdatedAt} />
