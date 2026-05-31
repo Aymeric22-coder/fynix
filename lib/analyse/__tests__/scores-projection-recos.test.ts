@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Tests des modules d'intelligence Phase 3 :
  *   - lib/analyse/scores.ts (5 scores)
  *   - lib/analyse/projectionFIRE.ts (rendement + simulation)
@@ -34,6 +34,7 @@ function patrimoine(over: Partial<PatrimoineComplet> = {}): PatrimoineComplet {
   return {
     totalBrut: 100000, totalNet: 100000,
     totalPortefeuille: 80000, totalImmo: 0, totalCash: 20000, totalDettes: 0,
+    totalCashInvestissable: 0,
     totalImmoEquity: 0, risqueImmoGlobal: 30, revenuPassifImmo: 0,
     mensualitesImmoTotal: 0, rendementNetImmoMoyen: 0,
     positions: [
@@ -147,6 +148,7 @@ describe('calculerCoherenceProfil', () => {
       fireInputs: { ...patrimoine().fireInputs, risk_score: 20 },
       positions: [pos({ asset_type: 'crypto', current_value: 100000 })],
       totalCash: 0, totalImmo: 0, totalBrut: 100000, totalPortefeuille: 100000,
+    totalCashInvestissable: 0,
     }))
     expect(s.value!).toBeLessThan(40)
     expect(s.niveau).toBe('rouge')
@@ -165,6 +167,7 @@ describe('calculerProgressionFIRE', () => {
     // Phase 8 : actuel = totalPortefeuille + totalCash (financier seul)
     const s = calculerProgressionFIRE(patrimoine({
       totalNet: 1_000_000, totalPortefeuille: 950_000, totalCash: 50_000,
+    totalCashInvestissable: 0,
       fireInputs: { ...patrimoine().fireInputs, revenu_passif_cible: 3000 },
     }))
     expect(s.value).toBe(100)
@@ -181,6 +184,7 @@ describe('calculerProgressionFIRE', () => {
   it('haut quand on est dans les temps', () => {
     const s = calculerProgressionFIRE(patrimoine({
       totalNet: 600000, totalPortefeuille: 600_000, totalCash: 0,
+    totalCashInvestissable: 0,
       fireInputs: {
         ...patrimoine().fireInputs,
         age: 35, age_cible: 60, epargne_mensuelle: 2000,
@@ -202,6 +206,7 @@ describe('calculerSolidite', () => {
   it('bonus pour gros coussin de cash et bcp d\'actifs refuges', () => {
     const s = calculerSolidite(patrimoine({
       totalCash: 60000, totalImmo: 200000, totalBrut: 280000, totalNet: 280000,
+    totalCashInvestissable: 0,
       fireInputs: { ...patrimoine().fireInputs, charges_mensuelles: 2000 },
     }))
     expect(s.value!).toBeGreaterThan(60)
@@ -276,25 +281,31 @@ describe('calculerRendementPortefeuille', () => {
     const r = calculerRendementPortefeuille(patrimoine({
       positions: [pos({ asset_type: 'etf', current_value: 100000 })],
       totalImmo: 0, totalCash: 0, totalBrut: 100000,
+    totalCashInvestissable: 0,
     }))
     expect(r).toBe(7)
   })
 
-  it('exclut la crypto du calcul', () => {
+  it('CS2 LOT 1 — inclut la crypto (4 %) dans le calcul pondéré', () => {
+    // Pré-CS2 : crypto skip → résultat = 7 (ETF seul comptait).
+    // Post-CS2 : crypto comptée à 4 % → moyenne pondérée = (50*7 + 50*4)/100 = 5,5.
     const r = calculerRendementPortefeuille(patrimoine({
       positions: [
         pos({ asset_type: 'etf', current_value: 50000 }),
         pos({ asset_type: 'crypto', current_value: 50000 }),
       ],
       totalImmo: 0, totalCash: 0, totalBrut: 100000,
+    totalCashInvestissable: 0,
     }))
-    expect(r).toBe(7)  // car crypto exclue, le dénominateur ne contient que ETF
+    // (50_000 * 7 + 50_000 * 4) / 100_000 = 5.5
+    expect(r).toBeCloseTo(5.5, 1)
   })
 
   it('mix ETF / Cash → moyenne pondérée', () => {
     const r = calculerRendementPortefeuille(patrimoine({
       positions: [pos({ asset_type: 'etf', current_value: 80000 })],
       totalImmo: 0, totalCash: 20000, totalBrut: 100000,
+    totalCashInvestissable: 0,
     }))
     // (80000 × 7 + 20000 × 3) / 100000 = 6.2
     expect(r).toBe(6.2)
@@ -367,6 +378,7 @@ describe('genererRecommandations', () => {
   it('détecte le cash insuffisant', () => {
     const p = patrimoine({
       totalCash: 1000,
+    totalCashInvestissable: 0,
       fireInputs: { ...patrimoine().fireInputs, charges_mensuelles: 2000 },
     })
     const recos = genererRecommandations(p, calculerTousLesScores(p))
@@ -396,6 +408,7 @@ describe('genererRecommandations', () => {
     return patrimoine({
       totalNet: 50_000, totalBrut: 50_000, totalPortefeuille: 49_000,
       totalCash: 1000,   // → cash-insuffisant (1000/2000 = 0.5 mois < 3)
+    totalCashInvestissable: 0,
       fireInputs: {
         ...patrimoine().fireInputs,
         enveloppes: [],            // PEA non ouvert → pea-non-ouvert (actions de base > 5 k€)
@@ -481,6 +494,7 @@ describe('genererRecommandations', () => {
     // Setup : utilisateur très en retard sur son objectif FIRE
     const p = patrimoine({
       totalNet: 50_000, totalBrut: 50_000, totalPortefeuille: 50_000, totalCash: 0,
+    totalCashInvestissable: 0,
       fireInputs: {
         ...patrimoine().fireInputs,
         age: 30, age_cible: 40,  // 10 ans pour atteindre 900k → quasi impossible

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Tests de l'optimiseur fiscal (Sprint 5).
  *
  * 8 opportunités évaluées avec gain chiffré en €.
@@ -44,6 +44,7 @@ function patrimoine(over: Partial<PatrimoineComplet> = {}): PatrimoineComplet {
   return {
     totalBrut: 200_000, totalNet: 180_000,
     totalPortefeuille: 100_000, totalImmo: 0, totalCash: 20_000, totalDettes: 0,
+    totalCashInvestissable: 0,
     totalImmoEquity: 0, risqueImmoGlobal: 30, revenuPassifImmo: 0,
     mensualitesImmoTotal: 0, rendementNetImmoMoyen: 0,
     positions: [], biens: [], comptes: [],
@@ -375,6 +376,7 @@ describe('OPP_7 — Cash optimization', () => {
     const r = calculerOpportunitesFiscales({
       patrimoine: patrimoine({
         totalCash: 25_000,
+    totalCashInvestissable: 0,
         comptes: [{
           id: 'cc1', nom: 'CC', type: 'compte_courant', banque: 'BNP',
           solde: 20_000, devise: 'EUR', taux_interet: 0,
@@ -390,6 +392,7 @@ describe('OPP_7 — Cash optimization', () => {
     const r = calculerOpportunitesFiscales({
       patrimoine: patrimoine({
         totalCash: 500,
+    totalCashInvestissable: 0,
         comptes: [{
           id: 'cc1', nom: 'CC', type: 'compte_courant', banque: null,
           solde: 500, devise: 'EUR', taux_interet: 0,

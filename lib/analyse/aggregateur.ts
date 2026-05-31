@@ -274,33 +274,48 @@ const CASH_LABEL: Record<string, string> = {
   autre:         'Autre',
 }
 
-async function loadCash(userId: string): Promise<{ comptes: CompteCash[]; totalCash: number }> {
+async function loadCash(userId: string): Promise<{
+  comptes:                CompteCash[]
+  totalCash:              number
+  totalCashInvestissable: number
+}> {
   const supabase = await createServerClient()
   const { data } = await supabase
     .from('cash_accounts')
     .select('id, account_type, balance, currency, bank_name, asset:assets!asset_id (id, name)')
     .eq('user_id', userId)
 
-  if (!data || data.length === 0) return { comptes: [], totalCash: 0 }
+  if (!data || data.length === 0) {
+    return { comptes: [], totalCash: 0, totalCashInvestissable: 0 }
+  }
 
+  // CS2 LOT 2 : on calcule maintenant 2 totaux distincts.
+  //   - totalCash : brut (conservé pour score Couverture cash).
+  //   - totalCashInvestissable : exclut les comptes courants
+  //     (`account_type === 'compte_courant'`). Composer un fond de
+  //     roulement courant à 3 %/an comme un Livret A surévalue la
+  //     projection FIRE. La projection utilise totalCashInvestissable.
   let totalCash = 0
+  let totalCashInvestissable = 0
   const comptes: CompteCash[] = await Promise.all((data as unknown as CashRow[]).map(async (r) => {
     const asset = Array.isArray(r.asset) ? r.asset[0] : r.asset
     const local = num(r.balance)
     const devise = (r.currency ?? 'EUR').toUpperCase()
     const eur = await toEur(local, devise as CurrencyCode).catch(() => local)
+    const typeRaw = (r.account_type ?? 'autre').toLowerCase()
     totalCash += eur
+    if (typeRaw !== 'compte_courant') totalCashInvestissable += eur
     return {
       id:     r.id,
-      nom:    asset?.name ?? CASH_LABEL[(r.account_type ?? '').toLowerCase()] ?? 'Compte',
-      type:   (r.account_type ?? 'autre').toLowerCase(),
+      nom:    asset?.name ?? CASH_LABEL[typeRaw] ?? 'Compte',
+      type:   typeRaw,
       banque: r.bank_name ?? null,
       solde:  eur,
       devise,
     }
   }))
 
-  return { comptes, totalCash }
+  return { comptes, totalCash, totalCashInvestissable }
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -741,7 +756,7 @@ export async function getPatrimoineComplet(userId: string): Promise<PatrimoineCo
   const [
     { positions, totalValue: totalPortefeuille },
     immoData,
-    { comptes, totalCash },
+    { comptes, totalCash, totalCashInvestissable },
     profile,
     lifeEvents,
   ] = await Promise.all([
@@ -820,7 +835,7 @@ export async function getPatrimoineComplet(userId: string): Promise<PatrimoineCo
   // PatrimoineComplet partiellement rempli sans les scores eux-mêmes).
   const partial: PatrimoineComplet = {
     totalBrut, totalNet,
-    totalPortefeuille, totalImmo, totalCash, totalDettes,
+    totalPortefeuille, totalImmo, totalCash, totalCashInvestissable, totalDettes,
     totalImmoEquity, risqueImmoGlobal, revenuPassifImmo,
     mensualitesImmoTotal, rendementNetImmoMoyen,
     positions, biens, comptes,
@@ -851,7 +866,9 @@ export async function getPatrimoineComplet(userId: string): Promise<PatrimoineCo
         } as unknown as PatrimoineComplet) || 7,
       )),
       patrimoineFinancier:   totalPortefeuille,
-      cashActuel:            totalCash,
+      // CS2 LOT 2 — On utilise le cash INVESTISSABLE (hors compte courant)
+      // pour la projection : un fond de roulement n'est pas investi à 3 %/an.
+      cashActuel:            totalCashInvestissable,
       biens,
       totalNet,
       fireType:              profile.fire_type,

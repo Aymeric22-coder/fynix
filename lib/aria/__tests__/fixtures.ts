@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Fixtures partagees pour les tests ARIA.
  * Construit un `PatrimoineComplet` minimal mais coherent, avec overrides.
  */
@@ -118,6 +118,7 @@ export function makePatrimoineFixture(overrides?: Partial<PatrimoineComplet>): P
     totalPortefeuille,
     totalImmo,
     totalCash,
+    totalCashInvestissable: totalCash,
     totalDettes,
     totalImmoEquity,
     risqueImmoGlobal:    45,

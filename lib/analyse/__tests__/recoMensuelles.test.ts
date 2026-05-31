@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Tests des actions du mois (Tâche C.2).
  *
  * 3 règles indépendantes : cash dormant, drift d'allocation, DCA en retard.
@@ -16,6 +16,7 @@ function pat(over: Partial<PatrimoineComplet> = {}): PatrimoineComplet {
   return {
     totalBrut: 100000, totalNet: 100000,
     totalPortefeuille: 60000, totalImmo: 0, totalCash: 40000, totalDettes: 0,
+    totalCashInvestissable: 0,
     totalImmoEquity: 0, risqueImmoGlobal: 30, revenuPassifImmo: 0,
     mensualitesImmoTotal: 0, rendementNetImmoMoyen: 0,
     positions: [], biens: [], comptes: [],
@@ -77,6 +78,7 @@ describe('genererActionsMensuelles — cash dormant', () => {
   it('aucune action si cash <= 12 mois de charges', () => {
     const out = genererActionsMensuelles(pat({
       totalCash: 20_000,  // 10 mois de charges → sous le seuil
+    totalCashInvestissable: 0,
     }), { today: TODAY })
     expect(out.find((a) => a.type === 'invest_cash')).toBeUndefined()
   })
@@ -108,6 +110,7 @@ describe('genererActionsMensuelles — drift allocation', () => {
     // On va donc descendre Cash à 1 % (benchmark 10 → -9, sous-pondéré clairement).
     const out = genererActionsMensuelles(pat({
       totalBrut: 100_000, totalCash: 1_000,
+    totalCashInvestissable: 0,
       repartitionClasses: [
         { label: 'ETF / Fonds', valeur: 60_000, pourcentage: 60, color: '#10B981' },
         { label: 'Immobilier',  valeur: 39_000, pourcentage: 39, color: '#E8B84B' },
@@ -133,6 +136,7 @@ describe('genererActionsMensuelles — drift allocation', () => {
         { label: 'Obligataire', valeur:  5000, pourcentage:  5, color: '#3b82f6' },
       ],
       totalCash: 10000,
+    totalCashInvestissable: 0,
       fireInputs: { ...pat().fireInputs, charges_mensuelles: 5000 },  // évite cash dormant
     }), { today: TODAY })
     expect(out.find((a) => a.type === 'rebalance')).toBeUndefined()
@@ -212,6 +216,7 @@ describe('genererActionsMensuelles — global', () => {
   it('liste vide si aucune règle déclenchée', () => {
     const out = genererActionsMensuelles(pat({
       totalCash: 5000,  // 2.5 mois, sous le seuil
+    totalCashInvestissable: 0,
       repartitionClasses: [
         { label: 'ETF / Fonds', valeur: 50000, pourcentage: 20, color: '#10B981' },
         { label: 'Actions',     valeur: 50000, pourcentage: 20, color: '#38BDF8' },
@@ -261,6 +266,7 @@ describe('genererActionsMensuelles — injection opportunites fiscales (I3)', ()
   it('user TMI 30 + actions hors PEA → action fiscal apparait dans la liste', () => {
     const out = genererActionsMensuelles(pat({
       totalCash: 5000, // pas de cash dormant
+    totalCashInvestissable: 0,
       repartitionClasses: [],
       totalBrut: 50_000,
     }), {
@@ -297,6 +303,7 @@ describe('genererActionsMensuelles — injection opportunites fiscales (I3)', ()
   it('garde les 2 plus gros gains parmi les opportunites applicables', () => {
     const out = genererActionsMensuelles(pat({
       totalCash: 5000, repartitionClasses: [], totalBrut: 50_000,
+    totalCashInvestissable: 0,
     }), {
       today: TODAY,
       opportunitesFiscales: [
@@ -334,6 +341,7 @@ describe('genererActionsMensuelles — injection opportunites fiscales (I3)', ()
     // → l'opportunite PEA fiscale doit etre filtree par overlap.
     const out = genererActionsMensuelles(pat({
       totalCash: 5000,  // pas de cash dormant
+    totalCashInvestissable: 0,
       repartitionClasses: [
         { label: 'PEA',         valeur: 80_000, pourcentage: 80, color: '#10b981' },
         { label: 'ETF / Fonds', valeur: 20_000, pourcentage: 20, color: '#3b82f6' },

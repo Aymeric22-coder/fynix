@@ -304,7 +304,12 @@ export interface PatrimoineComplet {
   totalNet:         number     // totalBrut - totalDettes
   totalPortefeuille: number    // actions + ETF + crypto + obligs (positions)
   totalImmo:        number     // valeur brute immobilier
-  totalCash:        number     // tous les comptes / livrets
+  totalCash:        number     // tous les comptes / livrets (brut, score Couverture cash)
+  /** CS2 LOT 2 — Cash hors comptes courants (= fonds de roulement).
+   *  Utilisé par la projection FIRE pour ne pas surévaluer en composant
+   *  un compte courant à 3 %/an comme un Livret A. Le score Couverture
+   *  cash continue d'utiliser `totalCash` brut. */
+  totalCashInvestissable: number
   totalDettes:      number     // capital restant dû tous crédits
 
   // Phase 8 — KPIs immobilier agrégés (utiles aux scores + UI)
