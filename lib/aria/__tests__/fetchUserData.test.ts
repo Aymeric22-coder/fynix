@@ -180,9 +180,12 @@ describe('fetchUserData', () => {
     await fetchUserData(sb as any, 'user-1')
     const elapsed = Date.now() - t0
 
-    // Si les queries etaient sequentielles, elapsed ~ 100 ms.
-    // En parallele, elapsed ~ 50 ms. On tolere 90 ms pour la lenteur CI.
-    expect(elapsed).toBeLessThan(90)
+    // Si les queries etaient sequentielles, elapsed ~ 100 ms minimum.
+    // En parallele, elapsed ~ 50 ms. On tolere jusqu'a 99 ms pour absorber
+    // la lenteur Windows / CI (flake observe a 92 ms). Toute valeur < 100 ms
+    // prouve toujours le parallelisme (sequentiel donnerait > 100 ms avec
+    // overhead).
+    expect(elapsed).toBeLessThan(99)
     expect(endedSnapshots).toBe(true)
     expect(endedActivites).toBe(true)
     // Les deux queries demarrent dans la meme tranche (<10 ms d'ecart).
