@@ -75,23 +75,29 @@ const QUIZ_BOURSE: ReadonlyArray<QuizQuestion> = [
       'c\'est l\'outil de base de l\'investissement passif.',
   },
   {
-    id: 'bourse-per-ratio',
-    tag: 'per-ratio',
-    text: 'Que mesure le PER (Price to Earnings Ratio) d\'une action ?',
+    // Content polish — remplace bourse-per-ratio (off-target stock-picking
+    // actif) par une notion centrale de l'investissement passif FIRE :
+    // rebalancing périodique. Cohérent avec le profil cible Fynix (DCA +
+    // allocation passive long terme). Même index (Bourse[1]) → safe pour
+    // les colonnes quiz_bourse INTEGER[] existantes en DB.
+    id: 'bourse-rebalancing',
+    tag: 'rebalancing',
+    text: 'Pourquoi rebalancer périodiquement son portefeuille passif ?',
     options: [
-      'La volatilité historique d\'une action sur douze mois',
-      'La valorisation d\'une action rapportée à ses bénéfices annuels',
-      'Le rendement des dividendes versés aux actionnaires',
-      'Le volume d\'échanges moyen sur la journée',
+      'Pour générer plus de frais de transaction chez son courtier',
+      'Pour ramener l\'allocation à sa cible : vendre ce qui a monté, racheter ce qui a baissé',
+      'Pour suivre exclusivement les actifs en momentum récent',
+      'Pour répliquer un indice à la lettre, sans aucune marge de manœuvre',
     ],
     correctIndex: 1,
-    lessonTitle: 'Le ratio P/E',
-    lessonEmoji: '📈',
+    lessonTitle: 'Le rebalancing',
+    lessonEmoji: '⚖️',
     lesson:
-      'Le PER (Price / Earnings) compare le prix d\'une action à son bénéfice par action. ' +
-      'Un PER de 15 signifie 15 années de bénéfices pour rentabiliser l\'achat. Plus il est ' +
-      'bas, plus l\'action paraît bon marché — mais ça peut aussi signaler une entreprise en ' +
-      'difficulté. À comparer entre entreprises d\'un même secteur.',
+      'Rebalancer, c\'est ramener périodiquement (en général 1 fois/an) ton portefeuille à son ' +
+      'allocation cible — par exemple 70 % actions / 30 % obligations. Quand un actif a ' +
+      'surperformé, tu en vends une partie pour racheter ce qui a baissé. Ça discipline les ' +
+      'ventes en haut de cycle et les achats en creux, sans avoir à prédire le marché. Couplé ' +
+      'au DCA, c\'est le geste qui fait le rendement passif sur 20 ans.',
   },
   {
     id: 'bourse-dca-definition',
@@ -192,23 +198,28 @@ const QUIZ_CRYPTO: ReadonlyArray<QuizQuestion> = [
       'reprends le contrôle réel de tes actifs.',
   },
   {
-    id: 'crypto-defi-definition',
-    tag: 'defi',
-    text: 'La DeFi (Finance Décentralisée) désigne…',
+    // Content polish — remplace crypto-defi-definition (off-target speculatif)
+    // par la discipline de prise de gains, plus alignée FIRE/sécurisation
+    // patrimoine. Même index (Crypto[3]) → safe pour les colonnes
+    // quiz_crypto INTEGER[] existantes en DB.
+    id: 'crypto-prise-de-gains',
+    tag: 'prise-de-gains',
+    text: 'Pourquoi prendre régulièrement ses gains crypto plutôt que tout garder en allocation ?',
     options: [
-      'Un organisme de régulation internationale des marchés crypto',
-      'Des services financiers sans intermédiaire grâce aux smart contracts sur blockchain',
-      'Une monnaie numérique de banque centrale (CBDC)',
-      'Le déficit énergétique généré par les blockchains',
+      'C\'est inutile : la crypto se conserve uniquement long terme, jamais en sécurisation',
+      'Pour limiter l\'exposition à la volatilité et faire entrer un patrimoine effectif sur des supports plus stables',
+      'Pour bénéficier de frais réduits sur les retraits massifs',
+      'Parce que les exchanges l\'imposent au-delà d\'un certain seuil',
     ],
     correctIndex: 1,
-    lessonTitle: 'La DeFi',
-    lessonEmoji: '🌐',
+    lessonTitle: 'La prise de gains crypto',
+    lessonEmoji: '🪙',
     lesson:
-      'La DeFi (Decentralized Finance) regroupe des services financiers (prêt, échange, ' +
-      'assurance) gérés par des smart contracts sur blockchain, sans banque ni courtier. ' +
-      'Avantage : ouvert 24/7, accessible à tous. Risque : les bugs de smart contracts ont ' +
-      'déjà causé des pertes de centaines de millions — ce n\'est pas du sans-risque.',
+      'La crypto fait facilement +200 % en 6 mois… puis -70 % les 6 suivants. Garder 100 % ' +
+      'd\'un patrimoine grandi en crypto, c\'est laisser le marché décider du capital effectif ' +
+      'que tu détiens vraiment. La discipline FIRE-compatible : à chaque palier (par exemple ' +
+      'quand la crypto dépasse 10 % du patrimoine total), arbitre une partie vers PEA, AV ou ' +
+      'livret. Tu sécurises un capital réel sans renier la conviction long terme.',
   },
 ]
 
