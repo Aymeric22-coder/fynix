@@ -43,7 +43,7 @@ export function KpiGrid({ kpis }: { kpis: KPIs }) {
       <StatCard
         label="Performance (CAGR)"
         value={kpis.cagr !== null ? formatPercent(kpis.cagr, { sign: true }) : '—'}
-        sub={`Fiabilité données : ${kpis.confidence_score.toFixed(0)} %`}
+        sub={`Fiabilité données : ${formatPercent(kpis.confidence_score, { decimals: 0 })}`}
         icon={TrendingUp}
         trend={kpis.cagr ?? undefined}
       />

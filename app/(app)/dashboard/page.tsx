@@ -442,13 +442,16 @@ export default async function DashboardPage() {
               accent: false,
             },
             {
+              // Audit UX — empty fallback explicite "Pas encore valorise"
+              // au lieu d'un em-dash cryptique. Sub guide vers l'action
+              // (refresh) plutot qu'une formule passive "en attente".
               label: 'Plus-value latente',
               value: portfolioResult.summary.totalUnrealizedPnL !== null
                 ? formatCurrency(portfolioResult.summary.totalUnrealizedPnL, 'EUR', { compact: true, sign: true })
-                : '—',
+                : 'Pas encore valorisé',
               sub: portfolioResult.summary.totalUnrealizedPnLPct !== null
                 ? `${portfolioResult.summary.totalUnrealizedPnLPct >= 0 ? '+' : ''}${portfolioResult.summary.totalUnrealizedPnLPct.toFixed(2)} %`
-                : 'en attente de prix',
+                : 'Actualise les prix depuis /analyse',
               accent: (portfolioResult.summary.totalUnrealizedPnL ?? 0) >= 0
                       && portfolioResult.summary.totalUnrealizedPnL !== null,
             },
