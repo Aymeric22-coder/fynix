@@ -18,13 +18,13 @@ import { ok, err, withAuth, parseBody } from '@/lib/utils/api'
 import type { User } from '@supabase/supabase-js'
 import type { Profile } from '@/types/database.types'
 
-// CS1 — `tmi_rate` est désormais saisissable via wizard (Step9) ET /parametres.
+// CS1 — `tmi_rate` est désormais saisissable via wizard (Step 4 post-CS10) ET /parametres.
 // Retiré de l'Omit pour autoriser l'écriture via cette route. Les autres
-// champs « gérés ailleurs » (display_name, reference_currency, fiscal_situation)
-// restent exclus.
+// champs « gérés ailleurs » (display_name, reference_currency) restent exclus.
+// Consolidation 1 — `fiscal_situation` DROP COLUMN (migration 052), retiré de l'Omit.
 type WritableFields = Omit<Profile,
   | 'id' | 'created_at' | 'updated_at' | 'profile_completed_at'
-  | 'display_name' | 'reference_currency' | 'fiscal_situation'
+  | 'display_name' | 'reference_currency'
 >
 
 export const GET = withAuth(async (_req: Request, user: User) => {
@@ -46,8 +46,8 @@ export const PUT = withAuth(async (req: Request, user: User) => {
   const supabase = await createServerClient()
 
   // Liste blanche stricte : on ne laisse passer QUE les champs du questionnaire.
-  // Évite qu'un client puisse écrire display_name / fiscal_situation
-  // (gérés ailleurs) ou créer/modifier id/timestamps.
+  // Évite qu'un client puisse écrire display_name (géré ailleurs) ou
+  // créer/modifier id/timestamps.
   // CS1 — tmi_rate est désormais saisissable via wizard (Step9) ET /parametres.
   const allowed: (keyof WritableFields)[] = [
     'prenom', 'age', 'situation_familiale', 'enfants', 'statut_pro',

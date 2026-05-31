@@ -166,7 +166,8 @@ export interface Profile {
   display_name: string | null
   reference_currency: CurrencyCode
   tmi_rate: number | null
-  fiscal_situation: string | null
+  // CS1+consolidation 1 — `fiscal_situation` DROP COLUMN (migration 052).
+  // Colonne morte (était lue uniquement par /parametres, retirée en CS1).
   created_at: string
   updated_at: string
 
@@ -190,7 +191,8 @@ export interface Profile {
   depenses_courantes:   number | null
 
   epargne_mensuelle:    number | null
-  invest_mensuel:       number | null
+  // QW1+consolidation 1 — `invest_mensuel` DROP COLUMN (migration 052).
+  // Champ mort en aval depuis QW1, retiré du wizard puis de la DB.
   enveloppes:           string[] | null
 
   quiz_bourse:          number[] | null

@@ -85,7 +85,7 @@ const QUIZ_BOURSE: ReadonlyArray<QuizQuestion> = [
       'Le volume d\'échanges moyen sur la journée',
     ],
     correctIndex: 1,
-    lessonTitle: 'Le PER (Price/Earnings)',
+    lessonTitle: 'Le ratio P/E',
     lessonEmoji: '📈',
     lesson:
       'Le PER (Price / Earnings) compare le prix d\'une action à son bénéfice par action. ' +
@@ -123,7 +123,7 @@ const QUIZ_BOURSE: ReadonlyArray<QuizQuestion> = [
       'Le PEA — Plan d\'Épargne en Actions',
     ],
     correctIndex: 3,
-    lessonTitle: 'Le PEA fiscalement',
+    lessonTitle: 'La fiscalité du PEA',
     lessonEmoji: '🏦',
     lesson:
       'Le PEA (Plan d\'Épargne en Actions) exonère d\'impôt sur le revenu les plus-values ' +

@@ -18,11 +18,14 @@ export const REQUIRED_STEPS: ReadonlyArray<number> = [1, 9]
  *    Revenus (2)            : inchangé
  *    Charges (3)            : inchangé
  *    Fiscalité (9 → 4)      : ID changé
+ *    Capacité (5)           : Sprint consolidation 1 — ajout (était
+ *                             ni REQUIRED ni SKIPPABLE → bouton Skip
+ *                             absent, UX ambigu)
  *    Quiz Bourse (5 → 6)    : ID changé
  *    Quiz Crypto (6 → 7)    : ID changé
  *    Quiz Immo (7 → 8)      : ID changé
  *    Projets de vie (10)    : inchangé */
-export const SKIPPABLE_STEPS: ReadonlyArray<number> = [2, 3, 4, 6, 7, 8, 10]
+export const SKIPPABLE_STEPS: ReadonlyArray<number> = [2, 3, 4, 5, 6, 7, 8, 10]
 
 /**
  * Liste des champs manquants pour l'étape donnée. Vide = étape valide.

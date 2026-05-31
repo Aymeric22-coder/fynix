@@ -298,6 +298,24 @@ describe('adjustCibleFamilleDetail — recompute live slider', () => {
     expect(d3000.enfantsDelta).toBe(600)
     expect(d7000.enfantsDelta).toBe(600)
   })
+
+  // Sprint consolidation 1 (item 5) — Documentation comportementale.
+  // Cf. JSDoc de `adjustCibleFamilleDetail`. L'asymétrie est volontaire
+  // tant que `birth_date` des enfants existants n'est pas collectée.
+  it('limitation connue : enfants existants gonflent la cible de manière PERMANENTE (cf. JSDoc)', () => {
+    // Un enfant existant déclaré en Step 1 (sans birth_date) → gonflage
+    // permanent. À l'inverse, un enfant futur via life_event naissance
+    // n'agirait QUE 22 ans sur l'épargne via buildLifeEventVectors.
+    const profil = { enfants: '2', situation_familiale: 'Célibataire',
+      revenu_conjoint: 0, revenu_passif_cible: 3000 } as const
+    const d = adjustCibleFamilleDetail(profil)
+    // Le delta enfants est appliqué intégralement, sans fenêtre temporelle.
+    expect(d.enfantsDelta).toBe(600)
+    expect(d.ajuste).toBe(3600)
+    // Note : si à l'avenir on collecte birth_date et que l'enfant a >= 22 ans,
+    // ce test deviendra `enfantsDelta = 0`. Le test sera mis à jour à ce
+    // moment-là. Voir JSDoc `adjustCibleFamilleDetail`.
+  })
 })
 
 describe('buildCibleFoyerAriaLabel', () => {

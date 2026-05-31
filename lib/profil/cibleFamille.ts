@@ -88,6 +88,27 @@ function labelEnfants(rawEnfants: string | null | undefined, nbNorm: number): st
  * Garantie : `enfantsDelta + coupleDelta === ajuste − brut` (source de
  * vérité = legacy). Si l'arrondi individuel des composants laisse un reste
  * (≤ 1 € en pratique), il est absorbé par le composant pertinent.
+ *
+ * ASYMÉTRIE CONNUE (consolidation Sprint 1) :
+ *
+ * - Enfants EXISTANTS (Step 1 `enfants`) → gonflage PERMANENT de la cible
+ *   foyer FIRE. C'est le comportement actuel, par défaut, car on ne
+ *   collecte PAS la birth_date des enfants existants dans Step 1.
+ * - Enfants FUTURS (CS5 life_event « naissance », table `life_events`) →
+ *   impact UNIQUEMENT sur l'épargne mensuelle pendant 22 ans à partir de
+ *   `occurrence_date` (`buildLifeEventVectors` dans `lifeEvents.ts`). La
+ *   cible foyer FIRE n'est PAS gonflée par les enfants futurs.
+ *
+ * Cette asymétrie est volontaire et acceptée : un enfant existant est
+ * supposé "à charge à vie" du point de vue du dimensionnement FIRE
+ * (rente passive devant subvenir au foyer indéfiniment), alors que les
+ * enfants futurs sont modélisés au plus juste sur leur fenêtre réelle
+ * de prise en charge (22 ans INSEE).
+ *
+ * Future amélioration (out of scope) : collecter `birth_date` des enfants
+ * existants dans Step 1, puis basculer cette fonction sur une fenêtre
+ * 22 ans post-naissance symétrique avec `life_events.naissance`. Tant
+ * que les birth_dates ne sont pas collectées, l'asymétrie reste.
  */
 export function adjustCibleFamilleDetail(p: ProfileInput): CibleFoyerDetail {
   const brut = Math.max(0, n(p.revenu_passif_cible))

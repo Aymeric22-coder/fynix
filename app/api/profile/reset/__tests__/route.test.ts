@@ -148,11 +148,15 @@ describe('POST /api/profile/reset', () => {
     expect(payload.onboarding_quick_data).toBeNull()
   })
 
-  it('wipe les colonnes legacy (QW1 invest_mensuel + CS1 fiscal_*)', async () => {
+  it('wipe les colonnes legacy CS1 encore présentes en DB', async () => {
+    // Consolidation 1 — invest_mensuel et fiscal_situation DROP COLUMN
+    // (migration 052) : retirés du payload de reset. Les 2 autres legacy
+    // (professional_income_eur, foyer_fiscal_parts) sont CONSERVÉES en
+    // DB car encore lues en aval (cf. /immobilier et tax-estimate).
     await POST(req(), {} as never)
     const payload = updates[0]!
-    expect(payload.invest_mensuel).toBeNull()
-    expect(payload.fiscal_situation).toBeNull()
+    expect('invest_mensuel'   in payload).toBe(false)
+    expect('fiscal_situation' in payload).toBe(false)
     expect(payload.professional_income_eur).toBe(0)
     expect(payload.foyer_fiscal_parts).toBe(1.0)
   })

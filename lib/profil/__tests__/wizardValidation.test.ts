@@ -18,10 +18,18 @@ describe('constantes wizard', () => {
   it('REQUIRED_STEPS = [1, 9]', () => {
     expect([...REQUIRED_STEPS]).toEqual([1, 9])
   })
-  // Renumérotation post-CS10 : Fiscalité ID 4, Capacité 5, Quizzes 6/7/8,
-  // Projets de vie 10. Toutes skippables.
-  it('SKIPPABLE_STEPS = [2, 3, 4, 6, 7, 8, 10]', () => {
-    expect([...SKIPPABLE_STEPS]).toEqual([2, 3, 4, 6, 7, 8, 10])
+  // Renumérotation post-CS10 + Sprint consolidation 1 :
+  // Fiscalité ID 4, Capacité 5, Quizzes 6/7/8, Projets de vie 10.
+  // Toutes skippables (Step 5 ajouté en consolidation 1).
+  it('SKIPPABLE_STEPS = [2, 3, 4, 5, 6, 7, 8, 10]', () => {
+    expect([...SKIPPABLE_STEPS]).toEqual([2, 3, 4, 5, 6, 7, 8, 10])
+  })
+
+  // Sprint consolidation 1 — Step 5 Capacité doit être SKIPPABLE
+  // (avant : ni REQUIRED ni SKIPPABLE → bouton Skip absent, UX ambigu).
+  it('Step 5 (Capacité d\'investissement) est SKIPPABLE', () => {
+    expect(SKIPPABLE_STEPS).toContain(5)
+    expect(REQUIRED_STEPS).not.toContain(5)
   })
   it('aucune étape n\'est à la fois requise et skippable', () => {
     for (const r of REQUIRED_STEPS) expect(SKIPPABLE_STEPS).not.toContain(r)

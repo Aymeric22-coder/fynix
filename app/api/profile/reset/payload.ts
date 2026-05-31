@@ -18,8 +18,10 @@
  *   - Les colonnes saisies par l'onboarding 60s : `onboarding_quick_done`
  *     (→ false), `onboarding_quick_data` (→ null).
  *   - Les colonnes legacy conservées en DB mais retirées de l'UI
- *     (`invest_mensuel` retiré en QW1, `fiscal_situation` /
- *     `professional_income_eur` / `foyer_fiscal_parts` retirés en CS1).
+ *     (`professional_income_eur` / `foyer_fiscal_parts` retirés en CS1
+ *     mais encore lus en aval — cf. /immobilier et /portefeuille).
+ *     Consolidation 1 — `invest_mensuel` et `fiscal_situation` DROP COLUMN
+ *     (migration 052), retirés du payload.
  *
  * Sont PRÉSERVÉS (absents du payload donc non touchés par l'UPDATE) :
  *   - `id`, `display_name`, `reference_currency`, `email_monthly_report`,
@@ -46,8 +48,8 @@ export const RESET_WIPE_PAYLOAD = {
   // ── Wizard Step 4 ───────────────────────────────────────────────────
   epargne_mensuelle:   null,
   enveloppes:          [],
-  // ── Legacy QW1 (UI retirée, colonne DB conservée) ────────────────────
-  invest_mensuel:      null,
+  // QW1+consolidation 1 — `invest_mensuel` DROP COLUMN (migration 052) :
+  // retiré du payload (la colonne n'existe plus en DB).
   // ── Wizard Step 5/6/7 ───────────────────────────────────────────────
   quiz_bourse:                 [],
   quiz_crypto:                 [],
@@ -66,8 +68,10 @@ export const RESET_WIPE_PAYLOAD = {
   tmi_rate:            null,
   // ── Wizard Step 10 (CS5) ────────────────────────────────────────────
   proprietaire_rp_status: null,
-  // ── Legacy /parametres CS1 (UI retirée, colonne DB conservée) ───────
-  fiscal_situation:        null,
+  // ── Legacy /parametres CS1 (UI retirée, colonnes DB conservées car
+  //    encore lues en aval : `professional_income_eur` dans /immobilier,
+  //    `foyer_fiscal_parts` dans tax-estimate). Consolidation 1 :
+  //    `fiscal_situation` DROP COLUMN (migration 052), retiré du payload.
   professional_income_eur: 0,         // ramené au défaut DB
   foyer_fiscal_parts:      1.0,       // ramené au défaut DB
   // ── Sentinelles wizard ──────────────────────────────────────────────
