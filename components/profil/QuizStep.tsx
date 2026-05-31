@@ -14,6 +14,21 @@
  *   - Le tableau de réponses quiz_X garde son sentinel [-1,-1,...] (= "non
  *     répondu"), cohérent avec le pattern existant. C'est le boost dans
  *     experienceScore qui prend le relais (~70 % du score Expert).
+ *
+ * Fix QW10 — Lock du choix au premier clic (calibration honnête) :
+ *   Avant ce fix, un user pouvait cliquer une mauvaise réponse, voir la
+ *   bonne option highlightée verte + lire la micro-leçon, puis re-cliquer
+ *   sur la bonne réponse. Score final = correct → auto-déclaration tacite
+ *   d'expert sur le domaine, qui contourne la calibration et le bouton
+ *   Expert légitime.
+ *   La règle est maintenant : dès qu'une question a reçu une réponse
+ *   (quiz_X[i] !== -1, dérivé directement du tableau ; pas de nouveau
+ *   state local), elle est verrouillée. Tous ses boutons deviennent
+ *   non-cliquables (disabled + aria-disabled + tabIndex=-1) et la micro-
+ *   leçon devient permanente. Cohérent avec la reprise wizard : un quiz
+ *   déjà répondu en DB s'affiche locked.
+ *   Seul un reset profile (POST /api/profile/reset) peut "refaire" un
+ *   quiz, comportement existant inchangé.
  */
 'use client'
 
@@ -77,12 +92,19 @@ export function QuizStep({
   }
 
   function selectOption(qIndex: number, optIndex: number) {
+    // Fix QW10 — Lock : si la question a déjà reçu une réponse (sentinel
+    // -1 explicitement filtré), le clic est ignoré. Garde-fou défensif
+    // doublé du `disabled` sur le bouton — si jamais un focus clavier
+    // skippait le disabled, on bloque ici aussi.
+    const cur = answers[qIndex]
+    if (typeof cur === 'number' && cur >= 0) return
+
     // Étend le tableau jusqu'à qIndex, remplit les trous avec -1 (= "non répondu").
     // -1 ne matche aucune `ans` (toujours 0..3) donc le scoring le compte comme faux.
     const next: number[] = []
     for (let i = 0; i < Math.max(qIndex + 1, answers.length); i++) {
-      const cur = answers[i]
-      next[i] = typeof cur === 'number' ? cur : -1
+      const v = answers[i]
+      next[i] = typeof v === 'number' ? v : -1
     }
     next[qIndex] = optIndex
     onChange(next)
@@ -131,31 +153,58 @@ export function QuizStep({
         // QW10 — Calcul du feedback pédagogique. On compare la réponse
         // sélectionnée à correctIndex. Si différente (et != sentinel -1),
         // on colore correct/wrong et on affiche la micro-leçon en dessous.
+        // Fix QW10 — `locked` est dérivé directement du tableau quiz_X
+        //  (pas de state local). Une question répondue = verrouillée. La
+        //  reprise wizard hérite donc automatiquement de l'état locked.
         const selectedIdx = answers[qi]
         const hasAnswered = typeof selectedIdx === 'number' && selectedIdx >= 0
+        const locked      = hasAnswered  // alias sémantique pour la lecture
         const isCorrect   = hasAnswered && selectedIdx === q.correctIndex
         const isWrong     = hasAnswered && !isCorrect
         return (
-        <div key={q.id} className="space-y-3">
+        <div key={q.id} className="space-y-3" data-locked={locked ? 'true' : 'false'}>
           <p className="text-xs text-secondary uppercase tracking-widest">Question {qi + 1} / {quiz.length}</p>
           <p className="text-sm text-primary">{q.text}</p>
-          <div className="space-y-2">
+          <div className="space-y-2" role="radiogroup" aria-label={q.text}>
             {q.options.map((opt, oi) => {
               const selected      = selectedIdx === oi
               // QW10 — highlight correct/wrong UNIQUEMENT après une réponse.
               const isCorrectOpt  = hasAnswered && oi === q.correctIndex
               const isWrongOpt    = hasAnswered && selected && oi !== q.correctIndex
+              // Fix QW10 — option grisée si la question est locked et que
+              // CETTE option n'est ni la sélectionnée ni la bonne réponse.
+              // (La bonne reste verte, la sélectionnée fausse reste rouge,
+              // les autres distractrices passent en opacité réduite.)
+              const dimmed        = locked && !selected && !isCorrectOpt
               return (
                 <button
                   type="button"
                   key={oi}
+                  role="radio"
+                  aria-checked={selected}
+                  aria-disabled={locked}
+                  tabIndex={locked && !selected ? -1 : 0}
+                  disabled={locked}
                   onClick={() => selectOption(qi, oi)}
+                  aria-label={
+                    locked && selected
+                      ? `${opt} — verrouillé : ta réponse`
+                      : locked && isCorrectOpt
+                        ? `${opt} — bonne réponse`
+                        : undefined
+                  }
                   className={cn(
                     'w-full text-left flex items-start gap-3 px-3.5 py-3 rounded-lg border transition-colors',
+                    // Cursor : pas de pointer si locked, not-allowed sur les
+                    // boutons non-sélectionnés (signal visuel fort).
+                    locked
+                      ? (selected || isCorrectOpt ? 'cursor-default' : 'cursor-not-allowed')
+                      : 'hover:border-border-2',
                     isCorrectOpt    ? 'border-accent bg-accent-muted' :
                     isWrongOpt      ? 'border-danger/50 bg-danger-muted' :
                     selected        ? 'border-accent bg-accent-muted' :
-                                      'border-border bg-surface-2 hover:border-border-2',
+                                      'border-border bg-surface-2',
+                    dimmed && 'opacity-50',
                   )}
                 >
                   <span className={cn(
@@ -183,10 +232,12 @@ export function QuizStep({
             })}
           </div>
 
-          {/* QW10 — Micro-leçon inline. Visible UNIQUEMENT quand l'utilisateur
-              s'est trompé. Reste affichée tant que la réponse reste fausse —
-              disparaît dès qu'il sélectionne la bonne option (re-render naturel).
-              Pattern « moment pédagogique » Duolingo. */}
+          {/* QW10 — Micro-leçon inline. Affichée quand la réponse est
+              fausse ET reste affichée définitivement (la question étant
+              verrouillée au premier clic, l'utilisateur ne peut plus
+              "se corriger" — la leçon devient un compte-rendu permanent
+              au lieu d'un feedback transitoire).
+              Pattern « moment pédagogique » Duolingo, version honnête. */}
           {isWrong && (
             <div
               data-testid={`micro-lesson-${q.id}`}

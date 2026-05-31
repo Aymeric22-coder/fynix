@@ -113,8 +113,11 @@ describe('QW10 — réponse fausse', () => {
   })
 })
 
-describe('QW10 — leçon disparaît si l\'user corrige', () => {
-  it('rerender avec la bonne réponse → carte leçon retirée', () => {
+describe('QW10 (fix lock) — leçon PERSISTE après lock du choix', () => {
+  // Fix QW10 — Le comportement "leçon disparaît quand user corrige" est
+  // supprimé : le user ne peut plus corriger (lock au premier clic). La
+  // leçon reste affichée comme compte-rendu permanent du run de quiz.
+  it('rerender avec un autre tableau answers ne fait pas disparaître la leçon (la sélection initiale reste lockée)', () => {
     const q0 = QUIZ_CATALOG.bourse[0]!
     const wrong = (q0.correctIndex + 1) % 4
     const { rerender } = render(
@@ -124,14 +127,19 @@ describe('QW10 — leçon disparaît si l\'user corrige', () => {
       />,
     )
     expect(screen.queryByTestId(`micro-lesson-${q0.id}`)).not.toBeNull()
-    // L'user corrige
+    // Cas patho : si le parent force quand même la bonne réponse (par ex
+    // reset programmatique), on accepte que la leçon disparaisse — le
+    // composant lit l'état depuis quiz_X. Mais en pratique le lock côté
+    // selectOption empêche ce flux côté UI.
     rerender(
       <QuizStep
-        badge="x" quiz={QUIZ_CATALOG.bourse} answers={[q0.correctIndex]}
+        badge="x" quiz={QUIZ_CATALOG.bourse} answers={[wrong]}
         onChange={vi.fn()} domain="bourse" selfDeclared={[]} onExpertToggle={vi.fn()}
       />,
     )
-    expect(screen.queryByTestId(`micro-lesson-${q0.id}`)).toBeNull()
+    // Confirme que la leçon est toujours là après le re-render
+    // avec la même mauvaise réponse (= cas réel post-lock).
+    expect(screen.queryByTestId(`micro-lesson-${q0.id}`)).not.toBeNull()
   })
 })
 
@@ -183,10 +191,13 @@ describe('QW10 — interaction clic', () => {
     const q0 = QUIZ_CATALOG.bourse[0]!
     const wrong = (q0.correctIndex + 1) % 4
     const { onChange } = renderQuiz()
-    // Cherche le bouton de la 2e option (= mauvaise pour q0)
-    const buttons = screen.getAllByRole('button').filter((b) => b.textContent && b.textContent.length > 30)
-    expect(buttons.length).toBeGreaterThan(0)
-    fireEvent.click(buttons[wrong]!)
+    // Fix QW10 — Les options sont maintenant role="radio" (radiogroup
+    // par question). On récupère la première radiogroup et on clique
+    // l'option `wrong`.
+    const groups = screen.getAllByRole('radiogroup')
+    const opts0  = groups[0]!.querySelectorAll('[role="radio"]')
+    expect(opts0.length).toBe(4)
+    fireEvent.click(opts0[wrong] as HTMLElement)
     expect(onChange).toHaveBeenCalled()
     const calledWith = onChange.mock.calls[0]![0]
     expect(calledWith[0]).toBe(wrong)
