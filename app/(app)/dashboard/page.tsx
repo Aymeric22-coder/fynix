@@ -32,9 +32,10 @@ import {
 // V2.1 — `RealEstatePortfolioBlock` (4 KPIs) remplacé par `ImmoSummaryCompact` (1 ligne).
 // Le composant complet reste dans le repo (peut servir ailleurs), simplement plus consommé ici.
 import { ImmoSummaryCompact } from '@/components/dashboard/immo-summary-compact'
+import { PortefeuilleSummaryCompact } from '@/components/dashboard/portefeuille-summary-compact'
 import { genererActionsMensuelles } from '@/lib/analyse/recoMensuelles'
 import { calculerOpportunitesFiscales } from '@/lib/analyse/optimiseurFiscal'
-import { formatCurrency } from '@/lib/utils/format'
+// V2.1 — formatCurrency n'est plus consommé sur la page (bloc Récap inline supprimé).
 // V2.1 — ConfidenceBadge retire du Dashboard (wrapper Evolution supprime ; composant conserve pour /immobilier/[id]).
 
 export const metadata: Metadata = { title: 'Dashboard' }
@@ -249,53 +250,15 @@ export default async function DashboardPage() {
         )
       })()}
 
-      {/* Récap Portefeuille (si au moins une position) */}
-      {portfolioSummary.positionsCount > 0 && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {[
-            {
-              label: 'Valeur portefeuille',
-              value: formatCurrency(portfolioSummary.totalMarketValue, 'EUR', { compact: true }),
-              sub:   `${portfolioSummary.positionsCount} position(s) · ${portfolioSummary.valuedPositionsCount} valorisée(s)`,
-              accent: false,
-            },
-            {
-              label: 'Capital investi',
-              value: formatCurrency(portfolioSummary.totalCostBasis, 'EUR', { compact: true }),
-              sub:   'cost basis cumulé',
-              accent: false,
-            },
-            {
-              // Audit UX — empty fallback explicite "Pas encore valorise"
-              // au lieu d'un em-dash cryptique. Sub guide vers l'action
-              // (refresh) plutot qu'une formule passive "en attente".
-              label: 'Plus-value latente',
-              value: portfolioSummary.totalUnrealizedPnL !== null
-                ? formatCurrency(portfolioSummary.totalUnrealizedPnL, 'EUR', { compact: true, sign: true })
-                : 'Pas encore valorisé',
-              sub: portfolioSummary.totalUnrealizedPnLPct !== null
-                ? `${portfolioSummary.totalUnrealizedPnLPct >= 0 ? '+' : ''}${portfolioSummary.totalUnrealizedPnLPct.toFixed(2)} %`
-                : 'Actualise les prix depuis /analyse',
-              accent: (portfolioSummary.totalUnrealizedPnL ?? 0) >= 0
-                      && portfolioSummary.totalUnrealizedPnL !== null,
-            },
-            {
-              label: 'Fraîcheur prix',
-              value: `${Math.round(portfolioSummary.freshnessRatio * 100)} %`,
-              sub:   '< 24 h',
-              accent: portfolioSummary.freshnessRatio >= 0.8,
-            },
-          ].map((k) => (
-            <div key={k.label} className={`card p-4 ${k.accent ? 'border-accent/20' : ''}`}>
-              <p className="text-xs text-secondary uppercase tracking-wider mb-2">{k.label}</p>
-              <p className={`text-lg font-semibold financial-value ${k.accent ? 'text-accent' : 'text-primary'}`}>
-                {k.value}
-              </p>
-              <p className="text-xs text-muted mt-1">{k.sub}</p>
-            </div>
-          ))}
-        </div>
-      )}
+      {/* V2.1 — Résumé portefeuille compact (1 ligne, lien vers /portefeuille) */}
+      <PortefeuilleSummaryCompact
+        positionsCount={portfolioSummary.positionsCount}
+        valuedPositionsCount={portfolioSummary.valuedPositionsCount}
+        totalMarketValue={portfolioSummary.totalMarketValue}
+        totalUnrealizedPnL={portfolioSummary.totalUnrealizedPnL}
+        totalUnrealizedPnLPct={portfolioSummary.totalUnrealizedPnLPct}
+        freshnessRatio={portfolioSummary.freshnessRatio}
+      />
 
       {/* V2.1 — Wrapper Card Évolution + PatrimonyAreaChart supprimés.
           La courbe d'évolution est désormais rendue UNIQUEMENT par
