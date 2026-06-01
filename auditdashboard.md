@@ -1705,3 +1705,78 @@ Sprint le plus impactant visuellement de tout V2 : le Dashboard passe d'une enfi
 
 **Stratégie git** : master direct (4 commits + push), conforme à la stratégie V2 actée en V2.1-BIS.
 
+### V2.4 — Meilleur / Pire investissement par classe d'actif (Z8.5) — 2026-06-02
+
+Le Dashboard expose enfin une réponse claire à la question « quel est mon meilleur / pire investissement ? » — mais **par catégorie** (financier, crypto, immobilier, cash), sans mélange inter-classes (un PEA n'est jamais comparé à du Bitcoin, un T2 jamais à un livret A). Insertion entre Z8 (Top 5 actifs) et Z9 (Fiscalité), 2 cartes côte à côte (Champions 🏆 / Casseroles 🍳).
+
+**6 commits atomiques sur master** :
+
+| Sprint | SHA | Type | Message d'en-tête |
+|---|---|---|---|
+| ST1 | `912c587` | feat | V2.4 ST1 - moteur TWR par enveloppe |
+| ST2 | `f68576d` | feat | V2.4 ST2 - rendement immo annualise |
+| ST3 | `394ad4c` | feat | V2.4 ST3 - taux nominal cash |
+| ST4 | `c5479a8` | feat | V2.4 ST4 - pipeline investmentRankings |
+| ST5 | `91b1c1e` | feat | V2.4 ST5 - ZoneChampionsCasseroles (Z8.5) |
+| ST6 | `8ff10f9` | test | V2.4 ST6 - activer 2 squelettes Annexe A |
+
+**Décisions techniques majeures** :
+
+1. **Granularité par enveloppe (pas par position atomique)** (ST1) — un classement « financier » mélangerait sinon 17 lignes ETF/actions au lieu de 4-5 enveloppes cohérentes. Le moteur `computeTwrPerEnvelope` (`lib/portfolio/twr-per-envelope.ts`) groupe les positions par `envelopeId`, filtre strictement les transactions par `positionId` appartenant à l'enveloppe, et appelle `buildTwrSegments` + `computeTwr` séparément pour chaque bucket. Aucune contamination inter-enveloppes possible : un PEA gagnant +50 % et un CTO perdant −20 % restent strictement séparés (cf. test « pas de mélange inter-enveloppes »).
+2. **Pas de TWR ni pour l'immobilier, ni pour le cash** (ST2, ST3) — l'immobilier n'a pas de prix coté quotidien (un TWR sur estimations utilisateur n'aurait pas de sens), on utilise donc `PropertySimResult.simulation.kpis.netNetYield` (CF après impôt + capital remboursé / coût total opération, déjà annualisé). Le cash n'est pas coté non plus : on prend directement `cash_accounts.interest_rate` (taux contractuel). Cette distinction explique pourquoi `extrapole = false` est forcé sur immo+cash : ce sont des KPIs modèle, pas des back-compute.
+3. **4 catégories rigides** (ST4) — `financier | crypto | immobilier | cash`. Split financier/crypto via `envelope_type` : `'wallet_crypto'` → crypto, tout le reste → financier. Le composant `buildInvestmentRankings` renvoie **toujours 4 entrées** (même vides) pour stabiliser l'API ; la décision d'afficher / masquer une catégorie vide est déléguée à la couche UI.
+4. **Filtre minHoldingDays 90 j systématique** (ST1, ST2, ST3) — appliqué dans chaque moteur spécialisé (3 endroits, paramétrable). Pour les enveloppes : ancienneté = 1ʳᵉ transaction. Pour les biens : `assets.acquisition_date`. Pour les comptes cash : `cash_accounts.created_at`. Une catégorie entièrement sous le seuil renvoie `totalCandidates = 0` → la sous-section est auto-masquée par Z8.5.
+5. **Annualisation systématique** (ST1, ST2, ST3) — aucun chiffre brut non annualisé n'est exposé. Le moteur TWR par enveloppe pose un flag `extrapole: true` si l'historique est dans `[90, 365)` jours pour signaler honnêtement l'extrapolation (badge ⚠ « estimé sur N jours » dans Z8.5). Immo et cash sont annualisés par construction (yield et taux contractuel).
+6. **Top 2 best + top 2 worst par catégorie** (ST4) — paramétrable via `topN` (défaut 2). Tie-breaker déterministe sur `id` en cas d'égalité de rentabilité. Aucun « top 5 global mélangeant des classes » — cette décision est *encodée dans le type lui-même* (`InvestmentRanking[]` = exactement 4 buckets).
+7. **2 cartes côte à côte avec sous-sections catégorie** (ST5) — `grid grid-cols-1 md:grid-cols-2 gap-4`. Champions à gauche (icône `Trophy` accent), Casseroles à droite (icône `AlertTriangle` danger). Dans chaque carte, sous-bloc par catégorie avec libellé + lien « Voir » vers `/portefeuille` ou `/immobilier` ou `/cash`. Auto-masquage complet si aucune catégorie n'a de candidat.
+8. **Pas de touche au Top 5 atomique (Z8)** — décision V2.4 explicite : Z8 reste atomique pour ce sprint. La consolidation par enveloppe arrivera en V2.3 (BUG-5).
+
+**Nouveaux modules de calcul (purs)** :
+
+| Fichier | Lignes | Rôle |
+|---|---|---|
+| `lib/portfolio/twr-per-envelope.ts` | 150 | Groupement positions → enveloppes, TWR isolé par bucket |
+| `lib/real-estate/yield-per-property.ts` | 100 | Mapping `netNetYield` + filtre 90 j via `acquisition_date` |
+| `lib/cash/rate-per-account.ts` | 90 | Mapping `interest_rate` + filtre 90 j via `created_at` |
+| `lib/portfolio/investment-rankings.ts` | 130 | Agrégation 3 moteurs + split financier/crypto + top 2 |
+
+**Nouveau composant UI** :
+
+| Fichier | Lignes | Type |
+|---|---|---|
+| `components/dashboard/zone-champions-casseroles.tsx` | 195 | Server Component pur |
+
+**Modifications pipeline unifié** :
+
+- `lib/analyse/dashboard-pipeline/types.ts` : `investmentRankings: InvestmentRanking[]` ajouté au `DashboardData` ; `envelopeId` ajouté à `DashboardPortfolioPosition` ; `netNetYieldPct` + `acquisitionDate` ajoutés à `DashboardRealEstatePortfolio.properties[]` ; `interest_rate` + `created_at` + `bank_name` ajoutés à `DashboardCashAccountRow` ; nouveau type `DashboardEnvelopeMeta` + champ `envelopes?: DashboardEnvelopeMeta[]`.
+- `lib/analyse/dashboard-pipeline/load.ts` : 2 requêtes Supabase ajoutées (`financial_envelopes`, `real_estate_properties`) ; sélection enrichie sur `assets` (`acquisition_date`), `positions` (`envelope_id`), `cash_accounts` (`interest_rate, created_at, bank_name`) ; `netNetYieldPct` lu depuis `PropertySimResult.simulation.kpis.netNetYield`.
+- `lib/analyse/dashboard-pipeline/calc.ts` : helper `computeInvestmentRankings(inputs)` qui orchestre les 3 moteurs + appelle `buildInvestmentRankings`. Pas de side-effect sur le reste de `DashboardData`.
+
+**Réorganisation `dashboard/page.tsx`** :
+
+- Insertion `<ZoneChampionsCasseroles rankings={dashboardData.investmentRankings} />` entre Z8 (Top 5) et Z9 (Fiscalité).
+- Aucun changement sur les zones existantes Z1 → Z8 et Z9.
+
+**Tests** :
+
+- `lib/portfolio/__tests__/twr-per-envelope.test.ts` (V2.4 nouveau) : 7 tests dédiés
+- `lib/real-estate/__tests__/yield-per-property.test.ts` (V2.4 nouveau) : 6 tests dédiés
+- `lib/cash/__tests__/rate-per-account.test.ts` (V2.4 nouveau) : 5 tests dédiés
+- `lib/portfolio/__tests__/investment-rankings.test.ts` (V2.4 nouveau) : 8 tests dédiés
+- `lib/analyse/__tests__/dashboard-v1/specs/meilleurInvestParClasse.test.ts` (V2.4 activé) : 6 tests pipeline
+- `lib/analyse/__tests__/dashboard-v1/specs/filtreAnciennete90j.test.ts` (V2.4 activé) : 5 tests pipeline
+- **Total V2.4 : 37 tests ajoutés.**
+
+**Vérifications** :
+
+- `npx vitest run` : 172 fichiers · 2 392 tests · 25 todo · 3 skipped · 0 échec
+- `npx tsc --noEmit` : silencieux
+- `npm run build` : à valider avant push (cf. mémoire `feedback_pre_deploy_check`)
+
+**Points ouverts pour V2.3** (sprint suivant) :
+
+- Top consolidé par enveloppe (BUG-5) : Z8 reste atomique en V2.4. La même infra `EnvelopeTwrResult[]` produite par V2.4 ST1 servira de base au sprint V2.3 (top par enveloppe avec drill-down + indication MV au lieu de TWR).
+- Pas de tooltip « Comment c'est calculé ? » par carte (envisagé dans le squelette V1.0, non-bloquant). Peut être ajouté en V2.5 si retour utilisateur.
+
+**Stratégie git** : master direct (6 commits + push), conforme à la stratégie V2 actée en V2.1-BIS.
+
