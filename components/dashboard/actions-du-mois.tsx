@@ -1,11 +1,14 @@
 /**
- * Actions de ce mois — 3 propositions concrètes affichées en tête du
- * Dashboard, juste après le FIRE Progress Hero.
+ * Actions de ce mois — propositions concrètes affichées sur le Dashboard.
  *
  * La logique métier vit dans `lib/analyse/recoMensuelles.ts` (fonction
  * pure `genererActionsMensuelles`). Ce composant ne fait que l'affichage.
  *
  * Server Component : on reçoit la liste déjà calculée depuis la page.
+ *
+ * V2.2 — Le prop `filter` permet de séparer les actions fiscales (rendues
+ * dans la zone Fiscalité repliable) des actions non-fiscales (rendues dans
+ * la zone Pilotage). Cf. architecture Dashboard V2.
  */
 
 import Link from 'next/link'
@@ -14,8 +17,18 @@ import {
 } from 'lucide-react'
 import type { ActionMensuelle, ActionMensuelleType } from '@/lib/analyse/recoMensuelles'
 
+/**
+ * Filtre des actions à afficher :
+ *   - `'all'` (défaut, rétrocompat) : toutes les actions, encart « tout est en ordre »
+ *     si la liste est vide.
+ *   - `'fiscal-only'` : seulement `type === 'fiscal'`. `return null` si vide.
+ *   - `'non-fiscal'`  : tout sauf `type === 'fiscal'`. `return null` si vide.
+ */
+export type ActionFilter = 'all' | 'fiscal-only' | 'non-fiscal'
+
 interface Props {
   actions: ActionMensuelle[]
+  filter?: ActionFilter
 }
 
 const ICON_BY_TYPE: Record<ActionMensuelleType, LucideIcon> = {
@@ -25,17 +38,34 @@ const ICON_BY_TYPE: Record<ActionMensuelleType, LucideIcon> = {
   fiscal:      Receipt,
 }
 
-export function ActionsDuMois({ actions }: Props) {
+function applyFilter(actions: ActionMensuelle[], filter: ActionFilter): ActionMensuelle[] {
+  switch (filter) {
+    case 'fiscal-only': return actions.filter((a) => a.type === 'fiscal')
+    case 'non-fiscal':  return actions.filter((a) => a.type !== 'fiscal')
+    case 'all':
+    default:            return actions
+  }
+}
+
+export function ActionsDuMois({ actions, filter = 'all' }: Props) {
+  const visible = applyFilter(actions, filter)
+
+  // V2.2 — Pour les modes filtrés, on masque entièrement le widget si vide
+  // (pas d'encart « rien à signaler » qui prendrait de la place pour rien
+  // dans une zone composite type Pilotage / Fiscalité).
+  if (filter !== 'all' && visible.length === 0) return null
+
+  // Sous-titre adapté au mode.
+  const subtitle = visible.length > 0
+    ? `${visible.length} action${visible.length > 1 ? 's' : ''} priorisée${visible.length > 1 ? 's' : ''} d'après vos dérives constatées`
+    : 'Aucune dérive détectée — rien à corriger ce mois'
+
   return (
     <section className="card p-6">
       <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
         <div>
           <h2 className="text-sm font-medium text-primary">Actions de ce mois</h2>
-          <p className="text-xs text-secondary mt-0.5">
-            {actions.length > 0
-              ? `${actions.length} action${actions.length > 1 ? 's' : ''} priorisée${actions.length > 1 ? 's' : ''} d'après vos dérives constatées`
-              : 'Aucune dérive détectée — rien à corriger ce mois'}
-          </p>
+          <p className="text-xs text-secondary mt-0.5">{subtitle}</p>
         </div>
         <Link
           href="/analyse?tab=optimiser"
@@ -46,7 +76,7 @@ export function ActionsDuMois({ actions }: Props) {
         </Link>
       </div>
 
-      {actions.length === 0 ? (
+      {visible.length === 0 ? (
         <div className="bg-accent-muted border border-accent/30 rounded-lg px-4 py-6 text-center">
           <p className="text-sm text-primary">Tout est en ordre ce mois-ci 🎯</p>
           <p className="text-xs text-secondary mt-1">
@@ -55,7 +85,7 @@ export function ActionsDuMois({ actions }: Props) {
         </div>
       ) : (
         <ol className="space-y-3">
-          {actions.map((a, idx) => (
+          {visible.map((a, idx) => (
             <ActionRow key={a.id} action={a} index={idx + 1} />
           ))}
         </ol>
