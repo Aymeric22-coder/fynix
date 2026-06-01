@@ -19,6 +19,8 @@ export interface DashboardAssetRow {
   acquisition_price:  number | null
   confidence:         string | null          // 'low' | 'medium' | 'high'
   last_valued_at:     string | null
+  /** V2.4 P0.7 — Date d'acquisition (lue pour le filtre 90 j immobilier). */
+  acquisition_date?:  string | null
 }
 
 export interface DashboardDebtRow {
@@ -62,6 +64,16 @@ export interface DashboardPortfolioPosition {
   /** Prix moyen d'acquisition (fallback). Combiné à `acquisitionDate` pour
    *  générer une transaction synthétique. */
   averagePriceEur?:  number
+  // ── V2.4 P0.7 — Enveloppe de la position ────────────────────────────
+  /** ID de l'enveloppe (PEA / CTO / AV / PER / wallet crypto…). `null` si position orpheline. */
+  envelopeId?:       string | null
+}
+
+/** Métadonnée enveloppe pour libellé + catégorisation Z8.5 (V2.4 P0.7). */
+export interface DashboardEnvelopeMeta {
+  id:           string
+  name:         string                       // « PEA Boursorama »
+  envelopeType: string                       // 'pea' | 'cto' | 'wallet_crypto' | …
 }
 
 export interface DashboardRealEstatePortfolio {
@@ -69,20 +81,32 @@ export interface DashboardRealEstatePortfolio {
     propertyId:    string
     propertyName?: string
     assetId:       string
-    simulation: { incompleteData: boolean }
+    simulation: {
+      incompleteData: boolean
+      /** V2.4 P0.7 — netNetYield % annuel (cf. PropertyKPIs.netNetYield). */
+      netNetYieldPct?: number
+    }
+    /** V2.4 P0.7 — Date d'acquisition (assets.acquisition_date). */
+    acquisitionDate?: string | null
     driftAlerts?: unknown[]
   }>
   totalCapitalRemaining: number
   totalMonthlyCFYear1:   number
 }
 
-/** Sous-ensemble de `cash_accounts` consommé par le pipeline (V2.1-BIS). */
+/** Sous-ensemble de `cash_accounts` consommé par le pipeline (V2.1-BIS + V2.4). */
 export interface DashboardCashAccountRow {
   id:           string
   asset_id:     string | null
   balance:      number | string | null
   currency:     string | null
   account_type: string | null
+  /** V2.4 P0.7 — Taux nominal annuel (% NUMERIC). */
+  interest_rate?: number | string | null
+  /** V2.4 P0.7 — Date d'ouverture pour filtre 90 j. */
+  created_at?:   string | null
+  /** V2.4 P0.7 — Nom de la banque pour libellé Z8.5. */
+  bank_name?:    string | null
 }
 
 export interface DashboardPipelineInputs {
@@ -94,6 +118,8 @@ export interface DashboardPipelineInputs {
   realEstatePortfolio: DashboardRealEstatePortfolio
   /** V2.1-BIS — `cash_accounts` du user (table moderne dédiée). */
   cashAccounts?:       DashboardCashAccountRow[]
+  /** V2.4 P0.7 — Méta enveloppes (libellé + type) pour Z8.5. */
+  envelopes?:          DashboardEnvelopeMeta[]
   // ── V1.3 P0.3 — Inputs TWR ──────────────────────────────────────────
   /** Transactions du portefeuille financier (sous-ensemble dédié au TWR). */
   transactionsPortefeuille?: import('@/lib/portfolio/transaction-segments').TransactionForTwr[]
@@ -236,4 +262,13 @@ export interface DashboardData {
     totalEur:       number
     accountsCount:  number
   }
+
+  // ── V2.4 P0.7 — Classement Champions / Casseroles (Z8.5) ────────────
+  /**
+   * Top 2 best + top 2 worst par catégorie d'investissement. Toujours 4
+   * entrées (financier / crypto / immobilier / cash), même si vide.
+   * Filtre minHoldingDays 90 j appliqué en amont par les helpers
+   * spécialisés (cf. `lib/portfolio/investment-rankings.ts`).
+   */
+  investmentRankings: import('@/lib/portfolio/investment-rankings').InvestmentRanking[]
 }

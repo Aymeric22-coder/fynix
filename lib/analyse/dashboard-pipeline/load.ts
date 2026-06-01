@@ -33,6 +33,8 @@ interface PositionMetaRow {
   quantity:         number | string | null
   average_price:    number | string | null
   acquisition_date: string | null
+  /** V2.4 P0.7 — Enveloppe rattachée (PEA / CTO / AV / wallet_crypto…). */
+  envelope_id:      string | null
 }
 
 const num = (v: number | string | null | undefined): number => {
@@ -53,10 +55,12 @@ export async function loadDashboardInputs(
     portfolioResult, realEstatePortfolio,
     transactionsRes, positionsMetaRes,
     cashAccountsRes,
+    envelopesRes, realEstatePropsRes,
   ] = await Promise.all([
+    // V2.4 P0.7 — on récupère aussi `acquisition_date` pour le filtre 90 j immobilier.
     supabase
       .from('assets')
-      .select('id,name,asset_type,current_value,acquisition_price,confidence,last_valued_at')
+      .select('id,name,asset_type,current_value,acquisition_price,confidence,last_valued_at,acquisition_date')
       .eq('user_id', userId)
       .eq('status', 'active')
       .in('asset_type', ['real_estate', 'cash', 'other']),
@@ -83,15 +87,27 @@ export async function loadDashboardInputs(
       .in('transaction_type', ['purchase', 'sale', 'dividend'])
       .order('executed_at', { ascending: true }),
     // V1.4 — Méta positions pour alimenter currentQuantity / acquisitionDate / averagePriceEur (fallback TWR legacy).
+    // V2.4 P0.7 — on ajoute `envelope_id` pour rattacher chaque position à son enveloppe.
     supabase
       .from('positions')
-      .select('id,quantity,average_price,acquisition_date')
+      .select('id,quantity,average_price,acquisition_date,envelope_id')
       .eq('user_id', userId),
     // V2.1-BIS — `cash_accounts` pour la ligne compacte Cash. On agrège
     // avec `assets.cash` côté `calc.ts` (dédup par `asset_id`).
+    // V2.4 P0.7 — on ajoute interest_rate + created_at + bank_name pour Z8.5.
     supabase
       .from('cash_accounts')
-      .select('id,asset_id,balance,currency,account_type')
+      .select('id,asset_id,balance,currency,account_type,interest_rate,created_at,bank_name')
+      .eq('user_id', userId),
+    // V2.4 P0.7 — Méta enveloppes (libellé + type) pour Z8.5.
+    supabase
+      .from('financial_envelopes')
+      .select('id,name,envelope_type')
+      .eq('user_id', userId),
+    // V2.4 P0.7 — Lien property_id → asset_id pour récupérer acquisition_date côté asset.
+    supabase
+      .from('real_estate_properties')
+      .select('id,asset_id')
       .eq('user_id', userId),
   ])
 
@@ -138,6 +154,8 @@ export async function loadDashboardInputs(
       currentQuantity:  meta ? num(meta.quantity) : undefined,
       acquisitionDate:  meta?.acquisition_date ?? undefined,
       averagePriceEur:  meta ? num(meta.average_price) : undefined,
+      // V2.4 P0.7 — Rattachement à l'enveloppe (pour le TWR par enveloppe).
+      envelopeId:       meta?.envelope_id ?? null,
     }
   })
 
@@ -161,19 +179,41 @@ export async function loadDashboardInputs(
     })
 
   // ── Mapping real estate portfolio ───────────────────────────────────
+  // V2.4 P0.7 — On enrichit chaque bien avec netNetYield (pour le ranking
+  // immobilier Z8.5) et acquisitionDate (lue côté `assets`, cf. select ci-dessus).
+  const assetsById = new Map((assetsRes.data ?? []).map((a) => [a.id as string, a]))
   const realEstate = {
-    properties: realEstatePortfolio.properties.map((p) => ({
-      propertyId:   p.propertyId,
-      propertyName: p.propertyName,
-      assetId:      p.assetId,
-      // Force boolean : `incompleteData` peut être `undefined` côté
-      // PropertySimResult ; le bloc inline le traite comme falsy via `!`.
-      simulation: { incompleteData: !!p.simulation.incompleteData },
-      driftAlerts:  p.driftAlerts ?? [],
-    })),
+    properties: realEstatePortfolio.properties.map((p) => {
+      const asset = assetsById.get(p.assetId)
+      const acquisitionDate = (asset as { acquisition_date?: string | null } | undefined)?.acquisition_date ?? null
+      return {
+        propertyId:   p.propertyId,
+        propertyName: p.propertyName,
+        assetId:      p.assetId,
+        // Force boolean : `incompleteData` peut être `undefined` côté
+        // PropertySimResult ; le bloc inline le traite comme falsy via `!`.
+        simulation: {
+          incompleteData: !!p.simulation.incompleteData,
+          netNetYieldPct: p.simulation.kpis?.netNetYield,
+        },
+        acquisitionDate,
+        driftAlerts:  p.driftAlerts ?? [],
+      }
+    }),
     totalCapitalRemaining: realEstatePortfolio.totalCapitalRemaining,
     totalMonthlyCFYear1:   realEstatePortfolio.totalMonthlyCFYear1,
   }
+
+  // ── V2.4 P0.7 — Méta enveloppes (libellé + type) pour Z8.5 ──────────
+  const envelopes = (envelopesRes.data ?? []).map((e) => ({
+    id:           e.id as string,
+    name:         e.name as string,
+    envelopeType: e.envelope_type as string,
+  }))
+  // realEstatePropsRes n'est plus exploitée directement ici (les biens
+  // viennent déjà de computeRealEstatePortfolio). Conservée dans la
+  // chaîne `await` pour fail fast en cas d'erreur Supabase.
+  void realEstatePropsRes
 
   return {
     assets:              assetsRes.data ?? [],
@@ -183,6 +223,7 @@ export async function loadDashboardInputs(
     portfolioPositions,
     realEstatePortfolio: realEstate,
     cashAccounts:        cashAccountsRes.data ?? [],
+    envelopes,
     transactionsPortefeuille,
     asOfDate: new Date(),
   }
