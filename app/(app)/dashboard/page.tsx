@@ -3,7 +3,7 @@ import { createServerClient }    from '@/lib/supabase/server'
 import { KpiGrid }               from '@/components/dashboard/kpi-grid'
 import { AlertsPanel }           from '@/components/dashboard/alerts-panel'
 import { TopAssetsList }         from '@/components/dashboard/top-assets-list'
-import { PatrimonyAreaChart }    from '@/components/charts/area-chart'
+// V2.1 — PatrimonyAreaChart supprime (doublon avec PatrimoineEvolutionChart).
 // V1.4 — Le pipeline unifié remplace le bloc inline 207-326 historique.
 // `loadDashboardInputs` charge en parallèle tout ce dont la page a besoin
 // (assets / debts / snapshots / portfolio / immo / transactions) ;
@@ -33,7 +33,7 @@ import { RealEstatePortfolioBlock } from '@/components/dashboard/real-estate-por
 import { genererActionsMensuelles } from '@/lib/analyse/recoMensuelles'
 import { calculerOpportunitesFiscales } from '@/lib/analyse/optimiseurFiscal'
 import { formatCurrency } from '@/lib/utils/format'
-import { ConfidenceBadge }       from '@/components/shared/confidence-badge'
+// V2.1 — ConfidenceBadge retire du Dashboard (wrapper Evolution supprime ; composant conserve pour /immobilier/[id]).
 
 export const metadata: Metadata = { title: 'Dashboard' }
 
@@ -52,7 +52,7 @@ export default async function DashboardPage() {
   // Aliases conservant le nommage du JSX existant (RealEstatePortfolioBlock,
   // récap portefeuille, etc.) → diff minimal sur le rendu.
   const assets           = inputs.assets
-  const snapshots        = inputs.snapshots
+  // V2.1 — `snapshots` n'est plus consommé sur la page (wrapper Évolution supprimé).
   const portfolio        = inputs.realEstatePortfolio
   const portfolioSummary = inputs.portfolioSummary
 
@@ -181,7 +181,7 @@ export default async function DashboardPage() {
   const alerts    = dashboardData.alerts
   const topAssets = dashboardData.topAssets
   const driftSummaries = dashboardData.realEstateDriftSummaries
-  const confScore = kpis.confidence_score
+  // V2.1 — `confScore` n'est plus consommé (wrapper Évolution + ConfidenceBadge supprimés).
 
   // Empty state : aucun actif renseigne (assets + positions + biens immo).
   const isEmpty =
@@ -297,21 +297,11 @@ export default async function DashboardPage() {
         </div>
       )}
 
-      {/* Timeline patrimoine — pleine largeur depuis la refonte 3-onglets de
-          /analyse : le donut Allocation a été retiré d'ici car il fait doublon
-          avec la « Répartition patrimoniale » de /analyse > « Où j'en suis ». */}
-      <div className="card p-6">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h2 className="text-sm font-medium text-primary">Évolution du patrimoine</h2>
-            <p className="text-xs text-secondary mt-0.5">
-              {snapshots.length} point{snapshots.length > 1 ? 's' : ''} · Patrimoine net + brut
-            </p>
-          </div>
-          <ConfidenceBadge level={confScore >= 80 ? 'high' : confScore >= 50 ? 'medium' : 'low'} />
-        </div>
-        <PatrimonyAreaChart data={dashboardData.timeline} />
-      </div>
+      {/* V2.1 — Wrapper Card Évolution + PatrimonyAreaChart supprimés.
+          La courbe d'évolution est désormais rendue UNIQUEMENT par
+          `PatrimoineEvolutionChart` (plus haut, 5 séries + ligne FIRE +
+          tooltip détaillé). Le ConfidenceBadge est retiré du Dashboard
+          (sera réintégré en V2.2 dans la zone KPIs si décision produit). */}
 
       {/* Top actifs */}
       {topAssets.length > 0 && (
