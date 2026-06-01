@@ -33,6 +33,7 @@ import {
 // Le composant complet reste dans le repo (peut servir ailleurs), simplement plus consommé ici.
 import { ImmoSummaryCompact } from '@/components/dashboard/immo-summary-compact'
 import { PortefeuilleSummaryCompact } from '@/components/dashboard/portefeuille-summary-compact'
+import { CashSummaryCompact } from '@/components/dashboard/cash-summary-compact'
 import { genererActionsMensuelles } from '@/lib/analyse/recoMensuelles'
 import { calculerOpportunitesFiscales } from '@/lib/analyse/optimiseurFiscal'
 // V2.1 — formatCurrency n'est plus consommé sur la page (bloc Récap inline supprimé).
@@ -258,6 +259,14 @@ export default async function DashboardPage() {
         totalUnrealizedPnL={portfolioSummary.totalUnrealizedPnL}
         totalUnrealizedPnLPct={portfolioSummary.totalUnrealizedPnLPct}
         freshnessRatio={portfolioSummary.freshnessRatio}
+      />
+
+      {/* V2.1-BIS — Résumé cash compact (1 ligne, lien vers /cash).
+          Position validée par produit : Immo → Portefeuille → Cash, par poids
+          décroissant typique. La ligne disparaît si aucun cash (return null). */}
+      <CashSummaryCompact
+        totalEur={dashboardData.cashSummary.totalEur}
+        accountsCount={dashboardData.cashSummary.accountsCount}
       />
 
       {/* V2.1 — Wrapper Card Évolution + PatrimonyAreaChart supprimés.
