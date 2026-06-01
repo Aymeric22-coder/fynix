@@ -3,7 +3,7 @@ import { createServerClient }    from '@/lib/supabase/server'
 import { KpiGrid }               from '@/components/dashboard/kpi-grid'
 import { AlertsPanel }           from '@/components/dashboard/alerts-panel'
 import { TopAssetsList }         from '@/components/dashboard/top-assets-list'
-import { PatrimonyAreaChart }    from '@/components/charts/area-chart'
+// V2.1 — PatrimonyAreaChart supprime (doublon avec PatrimoineEvolutionChart).
 // V1.4 — Le pipeline unifié remplace le bloc inline 207-326 historique.
 // `loadDashboardInputs` charge en parallèle tout ce dont la page a besoin
 // (assets / debts / snapshots / portfolio / immo / transactions) ;
@@ -29,11 +29,14 @@ import {
   RealEstateAlertsPanel,
   type PropertyDriftSummary,
 } from '@/components/dashboard/real-estate-alerts-panel'
-import { RealEstatePortfolioBlock } from '@/components/dashboard/real-estate-portfolio-block'
+// V2.1 — `RealEstatePortfolioBlock` (4 KPIs) remplacé par `ImmoSummaryCompact` (1 ligne).
+// Le composant complet reste dans le repo (peut servir ailleurs), simplement plus consommé ici.
+import { ImmoSummaryCompact } from '@/components/dashboard/immo-summary-compact'
+import { PortefeuilleSummaryCompact } from '@/components/dashboard/portefeuille-summary-compact'
 import { genererActionsMensuelles } from '@/lib/analyse/recoMensuelles'
 import { calculerOpportunitesFiscales } from '@/lib/analyse/optimiseurFiscal'
-import { formatCurrency } from '@/lib/utils/format'
-import { ConfidenceBadge }       from '@/components/shared/confidence-badge'
+// V2.1 — formatCurrency n'est plus consommé sur la page (bloc Récap inline supprimé).
+// V2.1 — ConfidenceBadge retire du Dashboard (wrapper Evolution supprime ; composant conserve pour /immobilier/[id]).
 
 export const metadata: Metadata = { title: 'Dashboard' }
 
@@ -52,7 +55,7 @@ export default async function DashboardPage() {
   // Aliases conservant le nommage du JSX existant (RealEstatePortfolioBlock,
   // récap portefeuille, etc.) → diff minimal sur le rendu.
   const assets           = inputs.assets
-  const snapshots        = inputs.snapshots
+  // V2.1 — `snapshots` n'est plus consommé sur la page (wrapper Évolution supprimé).
   const portfolio        = inputs.realEstatePortfolio
   const portfolioSummary = inputs.portfolioSummary
 
@@ -181,7 +184,7 @@ export default async function DashboardPage() {
   const alerts    = dashboardData.alerts
   const topAssets = dashboardData.topAssets
   const driftSummaries = dashboardData.realEstateDriftSummaries
-  const confScore = kpis.confidence_score
+  // V2.1 — `confScore` n'est plus consommé (wrapper Évolution + ConfidenceBadge supprimés).
 
   // Empty state : aucun actif renseigne (assets + positions + biens immo).
   const isEmpty =
@@ -231,15 +234,13 @@ export default async function DashboardPage() {
         unvaluedPositionsLabel={dashboardData.unvaluedPositionsLabel}
       />
 
-      {/* Bloc immobilier consolide */}
-      {portfolio.properties.length > 0 && (() => {
-        // Filtre les assets de type real_estate (le dashboard charge deja
-        // les assets actifs : on additionne current_value et acquisition_price).
-        const reAssets = assets.filter(a => a.asset_type === 'real_estate')
+      {/* V2.1 — Résumé immobilier compact (1 ligne, lien vers /immobilier) */}
+      {(() => {
+        const reAssets = assets.filter((a) => a.asset_type === 'real_estate')
         const totalCurrentValue    = reAssets.reduce((s, a) => s + (a.current_value as number | null ?? 0), 0)
         const totalAcquisitionCost = reAssets.reduce((s, a) => s + (a.acquisition_price as number | null ?? 0), 0)
         return (
-          <RealEstatePortfolioBlock
+          <ImmoSummaryCompact
             propertyCount={portfolio.properties.length}
             totalCurrentValue={totalCurrentValue}
             totalAcquisitionCost={totalAcquisitionCost}
@@ -249,69 +250,21 @@ export default async function DashboardPage() {
         )
       })()}
 
-      {/* Récap Portefeuille (si au moins une position) */}
-      {portfolioSummary.positionsCount > 0 && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {[
-            {
-              label: 'Valeur portefeuille',
-              value: formatCurrency(portfolioSummary.totalMarketValue, 'EUR', { compact: true }),
-              sub:   `${portfolioSummary.positionsCount} position(s) · ${portfolioSummary.valuedPositionsCount} valorisée(s)`,
-              accent: false,
-            },
-            {
-              label: 'Capital investi',
-              value: formatCurrency(portfolioSummary.totalCostBasis, 'EUR', { compact: true }),
-              sub:   'cost basis cumulé',
-              accent: false,
-            },
-            {
-              // Audit UX — empty fallback explicite "Pas encore valorise"
-              // au lieu d'un em-dash cryptique. Sub guide vers l'action
-              // (refresh) plutot qu'une formule passive "en attente".
-              label: 'Plus-value latente',
-              value: portfolioSummary.totalUnrealizedPnL !== null
-                ? formatCurrency(portfolioSummary.totalUnrealizedPnL, 'EUR', { compact: true, sign: true })
-                : 'Pas encore valorisé',
-              sub: portfolioSummary.totalUnrealizedPnLPct !== null
-                ? `${portfolioSummary.totalUnrealizedPnLPct >= 0 ? '+' : ''}${portfolioSummary.totalUnrealizedPnLPct.toFixed(2)} %`
-                : 'Actualise les prix depuis /analyse',
-              accent: (portfolioSummary.totalUnrealizedPnL ?? 0) >= 0
-                      && portfolioSummary.totalUnrealizedPnL !== null,
-            },
-            {
-              label: 'Fraîcheur prix',
-              value: `${Math.round(portfolioSummary.freshnessRatio * 100)} %`,
-              sub:   '< 24 h',
-              accent: portfolioSummary.freshnessRatio >= 0.8,
-            },
-          ].map((k) => (
-            <div key={k.label} className={`card p-4 ${k.accent ? 'border-accent/20' : ''}`}>
-              <p className="text-xs text-secondary uppercase tracking-wider mb-2">{k.label}</p>
-              <p className={`text-lg font-semibold financial-value ${k.accent ? 'text-accent' : 'text-primary'}`}>
-                {k.value}
-              </p>
-              <p className="text-xs text-muted mt-1">{k.sub}</p>
-            </div>
-          ))}
-        </div>
-      )}
+      {/* V2.1 — Résumé portefeuille compact (1 ligne, lien vers /portefeuille) */}
+      <PortefeuilleSummaryCompact
+        positionsCount={portfolioSummary.positionsCount}
+        valuedPositionsCount={portfolioSummary.valuedPositionsCount}
+        totalMarketValue={portfolioSummary.totalMarketValue}
+        totalUnrealizedPnL={portfolioSummary.totalUnrealizedPnL}
+        totalUnrealizedPnLPct={portfolioSummary.totalUnrealizedPnLPct}
+        freshnessRatio={portfolioSummary.freshnessRatio}
+      />
 
-      {/* Timeline patrimoine — pleine largeur depuis la refonte 3-onglets de
-          /analyse : le donut Allocation a été retiré d'ici car il fait doublon
-          avec la « Répartition patrimoniale » de /analyse > « Où j'en suis ». */}
-      <div className="card p-6">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h2 className="text-sm font-medium text-primary">Évolution du patrimoine</h2>
-            <p className="text-xs text-secondary mt-0.5">
-              {snapshots.length} point{snapshots.length > 1 ? 's' : ''} · Patrimoine net + brut
-            </p>
-          </div>
-          <ConfidenceBadge level={confScore >= 80 ? 'high' : confScore >= 50 ? 'medium' : 'low'} />
-        </div>
-        <PatrimonyAreaChart data={dashboardData.timeline} />
-      </div>
+      {/* V2.1 — Wrapper Card Évolution + PatrimonyAreaChart supprimés.
+          La courbe d'évolution est désormais rendue UNIQUEMENT par
+          `PatrimoineEvolutionChart` (plus haut, 5 séries + ligne FIRE +
+          tooltip détaillé). Le ConfidenceBadge est retiré du Dashboard
+          (sera réintégré en V2.2 dans la zone KPIs si décision produit). */}
 
       {/* Top actifs */}
       {topAssets.length > 0 && (

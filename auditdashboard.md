@@ -1374,3 +1374,231 @@ La cible théorique V1 (77 / 100) supposait aussi P0.5 (top consolidé par envel
 | Code mort Dashboard | bloc inline 243 l. + endpoint `/api/dashboard` | supprimé |
 | Note Dashboard estimée | 42 / 100 🟠 | ~70 / 100 🟡 |
 
+---
+
+## Phase 7 — Mini-audit V2 (refonte visuelle et narrative)
+
+> **Statut** : audit de planification — aucun code touché.
+> **Vision V2** : Dashboard comme **récit narratif en cascade** (FIRE → Dynamique → Motivation → KPIs + pilotage → Synthèses immo/portefeuille → Top → Champions/pires → Fiscalité repliée). Fiscalité = optimisation, pas pilotage → reléguée derrière un toggle.
+
+### 7.1 Cartographie des composants à toucher (zone par zone)
+
+| Zone | Contenu cible | Composant(s) actuel(s) impacté(s) | Action | Risque de régression |
+|---|---|---|---|---|
+| **Z1 — Trajectoire FIRE** | Patrimoine net / cible / âge projeté / revenu passif | `components/dashboard/fire-progress-hero.tsx` (FIREProgressHero) | **Conservé tel quel** (déjà bien dimensionné depuis Sprint 1). | Faible — composant pur, props inchangées |
+| **Z2 — Évolution patrimoine** | Un seul graphe net + brut + détails ; cible FIRE en référence | `components/dashboard/patrimoine-evolution-chart.tsx` (PatrimoineEvolutionChart, **client**) + `components/charts/area-chart.tsx` (PatrimonyAreaChart, **serveur**) | **Garder `PatrimoineEvolutionChart`** (5 séries net/brut/portefeuille/immo/cash + ligne FIRE + tooltip riche). **Supprimer `PatrimonyAreaChart`** (utilisé UNIQUEMENT par le Dashboard, confirmé par grep). Retirer aussi le wrapper `<div className="card p-6">` inline + le `ConfidenceBadge` qui l'accompagne (lignes 303-314 de `dashboard/page.tsx`). | Faible — `PatrimoineEvolutionChart` déjà utilisé en prod, `PatrimonyAreaChart` n'a aucun autre consommateur |
+| **Z3 — Jalons** | Badges des seuils franchis | `components/dashboard/trophees-card.tsx` (TropheesCard) | **Conservé tel quel.** | Faible |
+| **Z4 — KPIs + Alertes + Actions non-fiscales** | 4 cartes KPIs (V1) + alertes consolidées + actions de pilotage non fiscales | `components/dashboard/kpi-grid.tsx` (KpiGrid V1) **conservé tel quel** · `components/dashboard/unvalued-positions-badge.tsx` **conservé** · `components/dashboard/alerts-panel.tsx` (AlertsPanel) **conservé** · `components/dashboard/real-estate-alerts-panel.tsx` (RealEstateAlertsPanel) **conservé** · `components/dashboard/actions-du-mois.tsx` (ActionsDuMois) **split** (cf. décision 1) | **Fusion VISUELLE** sous une carte unique « Pilotage » regroupant KPIs / Alertes / Actions non-fiscales ; les composants restent indépendants mais sont disposés dans un même `<section>` aéré. ActionsDuMois filtré sur `action.type !== 'fiscal'`. | Moyen — il faut bien découpler ActionsDuMois en deux instances filtrées (cf. Z9) |
+| **Z5 — Résumé Immobilier compact** | 1 ligne « Immo : 410 k€ · +864 €/m · CRD 351 k€ · [Voir →] » | `components/dashboard/real-estate-portfolio-block.tsx` (RealEstatePortfolioBlock — 4 KPIs) | **Nouveau composant** `RealEstateSummaryLine` à créer. **Suppression** du composant actuel à 4 KPIs (déjà doublon de la page `/immobilier`). | Faible — la perte d'info (PV latente, ratio dette) est compensée par la page dédiée |
+| **Z6 — Résumé Portefeuille compact** | 1 ligne « Portefeuille : 56,2 k€ · +2,4 k€ PV · 17 positions · [Voir →] » | Bloc inline JSX dans `dashboard/page.tsx:252-298` (4 KPIs) | **Nouveau composant** `PortfolioSummaryLine` à créer. **Suppression** du bloc inline (déjà doublon de la page `/portefeuille`). | Faible |
+| **Z7 — Top 5 investissements consolidé** | 1 ligne = 1 enveloppe (PEA total, CTO total…) ou 1 bien immo. Drill-down au clic | `components/dashboard/top-assets-list.tsx` (TopAssetsList) | **Nouveau composant** `TopInvestmentsList` à créer (consolidation par `envelope_id` + biens immo entiers). L'ancien `TopAssetsList` reste utilisé par la liste atomique en drill-down. **BUG-5 réglé.** Nécessite enrichissement de `DashboardData.topAssets` côté pipeline (clé d'enveloppe agrégée) — petit refacto `calc.ts`. | Moyen — refacto pipeline + nouveau composant + nouveau champ `DashboardData` |
+| **Z8 — Meilleur / Pire investissement** | 2 cartes côte à côte, métrique par classe, filtre 90 j, pas de podium inter-classes | Aucun composant existant | **Nouveau composant** `BestWorstInvestments`. Consomme TWR (déjà calculé par classe). Logique pure dans `lib/finance/best-worst.ts`. **P0.7 livré ici.** | Élevé — nouvelle logique métier, dépend d'un TWR par position (pas par portefeuille) → besoin d'étendre l'assembleur de segments. Cf. risques 7.5 |
+| **Z9 — Fiscalité repliée** | Toggle qui révèle `FiscalKpiBanner` + `CalendrierFiscal` + ActionsDuMois fiscales | `components/dashboard/fiscal-kpi-banner.tsx` **conservé** · `components/dashboard/calendrier-fiscal.tsx` **conservé** · `components/dashboard/actions-du-mois.tsx` **2ᵉ instance filtrée** sur `action.type === 'fiscal'` | **Nouveau composant** `FiscaliteToggle` qui wrap les 3 composants + ajoute l'état ouvert/fermé (avec persistance `localStorage` recommandée). | Moyen — UI state à gérer côté client, persistance optionnelle |
+
+#### Récapitulatif impact
+
+- **Conservés tels quels** : 6 composants (`FIREProgressHero`, `TropheesCard`, `KpiGrid`, `UnvaluedPositionsBadge`, `AlertsPanel`, `RealEstateAlertsPanel`, `PatrimoineEvolutionChart`, `FiscalKpiBanner`, `CalendrierFiscal`) — l'investissement V1 est préservé.
+- **Modifiés** : 1 (`ActionsDuMois` → split en 2 instances filtrées par type d'action).
+- **Supprimés** : 3 (`PatrimonyAreaChart`, `RealEstatePortfolioBlock`, bloc inline Récap Portefeuille).
+- **Nouveaux** : 5 (`RealEstateSummaryLine`, `PortfolioSummaryLine`, `TopInvestmentsList`, `BestWorstInvestments`, `FiscaliteToggle`).
+- **Section pipeline impactée** : `calc.ts` enrichi (topConsolidé par enveloppe + meilleur/pire par classe).
+
+### 7.2 Composants à créer
+
+| Composant | Emplacement | Données consommées | Effort | Justification |
+|---|---|---|---|---|
+| `RealEstateSummaryLine` | `components/dashboard/real-estate-summary-line.tsx` | `portfolio.properties.length` · `assets.filter(real_estate).current_value` (somme) · `portfolio.totalMonthlyCFYear1` · `portfolio.totalCapitalRemaining` | **XS (0,3 j)** | Composant d'affichage pur, ~30 lignes JSX. Les 4 props déjà disponibles dans `dashboardData`/`inputs`. |
+| `PortfolioSummaryLine` | `components/dashboard/portfolio-summary-line.tsx` | `portfolioSummary.totalMarketValue` · `totalUnrealizedPnL` · `positionsCount` | **XS (0,3 j)** | Idem. |
+| `TopInvestmentsList` | `components/dashboard/top-investments-list.tsx` | Nouveau champ `dashboardData.topConsolidated` (à ajouter au pipeline) | **M (1,5 j)** | Refacto pipeline (`calc.ts`) pour grouper positions par `envelope_id` + biens immo entiers + livrets séparés (cf. décision V1 sur regroupement par produit). Drill-down au clic = expand vers `TopAssetsList` atomique. Tests à activer : `topConsolide.test.ts` (squelette V1.0 en attente). |
+| `BestWorstInvestments` | `components/dashboard/best-worst-investments.tsx` | Nouveau champ `dashboardData.bestWorstByClass` | **L (3 j)** | Métrique par classe d'actif (TWR pour financier, rendement net annualisé pour immo, taux servi pour cash) ; logique pure dans `lib/finance/best-worst.ts` ; filtre 90 j ; pas de podium inter-classes (annexe C). Nécessite TWR **par position** (l'assembleur V1 calcule un TWR portefeuille agrégé) → extension `lib/portfolio/transaction-segments.ts`. Tests à activer : `meilleurInvestParClasse.test.ts` + `filtreAnciennete90j.test.ts` (squelettes V1.0). |
+| `FiscaliteToggle` | `components/dashboard/fiscalite-toggle.tsx` | enfants React (`children`) + `localStorage` (clé `dashboard_fiscalite_open`) | **S (0,5 j)** | Wrapper client avec état ouvert/fermé + animation `details/summary` natif HTML (accessible) ou `useState` + transition CSS. Persistance optionnelle. |
+
+**Total nouveaux composants** : **5,6 j** (avec marges incluses).
+
+### 7.3 Composants à supprimer
+
+| Composant / bloc | Justification | Confirmation |
+|---|---|---|
+| `components/charts/area-chart.tsx` (`PatrimonyAreaChart`) | Doublon du graphe Évolution. `PatrimoineEvolutionChart` est plus riche (5 séries + ligne FIRE + tooltip détaillé). | `grep` confirmé : utilisé UNIQUEMENT dans `dashboard/page.tsx:6,313` → orphelin après suppression de l'import et de la balise. |
+| Wrapper `<div className="card p-6">` Évolution (page.tsx:303-314) | L'ancien wrapper avec `ConfidenceBadge` et titre dupliqué devient obsolète une fois `PatrimoineEvolutionChart` autoportant. | Inline, suppression locale. |
+| `components/dashboard/real-estate-portfolio-block.tsx` | 4 KPIs immo en doublon de la page `/immobilier` qui les affiche déjà. Remplacé par `RealEstateSummaryLine`. | Confirmer aucun autre consommateur (grep avant suppression V2.1 sprint). |
+| Bloc inline Récap Portefeuille (page.tsx:252-298) | 4 KPIs portefeuille en doublon de la page `/portefeuille`. Remplacé par `PortfolioSummaryLine`. | Inline, suppression locale. |
+| `dashboard-caracterisation.test.ts` | Déjà supprimé en V1.4 (`git rm`). | RAS, mention pour rappel. |
+
+**Effort de suppression** : ~0,3 j (sécurisé par `tsc --noEmit` + grep avant chaque suppression).
+
+### 7.4 Découpage en sprints V2.1 → V2.4
+
+> **Principe directeur** : chaque sprint **livrable et déployable en prod** sans casser le Dashboard. Aucun big-bang. À la fin de chaque sprint, l'utilisateur peut voir un Dashboard intermédiaire cohérent.
+
+| Sprint | Périmètre | Effort | Critère de validation | Dépendances |
+|---|---|---|---|---|
+| **V2.1 — Purge + compactage** | (a) Suppression `PatrimonyAreaChart` + wrapper inline Évolution. (b) Création `RealEstateSummaryLine` + `PortfolioSummaryLine`. (c) Suppression `RealEstatePortfolioBlock` + bloc inline Récap Portefeuille. (d) Réordonnancement initial du JSX en Z1 → Z3 → KPIs → Z5 → Z6 → ancien graphe + Top assets (zones intermédiaires conservées pour ne rien perdre temporairement). | **2 j** | Build OK, Vitest OK, prod déployée sans régression visuelle majeure. Tu vois 2 lignes compactes immo/portefeuille au lieu des 2×4 cartes. Plus de doublon graphe. | Aucune — sprint le plus simple, ROI visuel immédiat. |
+| **V2.2 — Réordonnancement narratif + Z4 fusion + Z9 toggle** | (a) Reordonnancement JSX sur la cible Z1→Z9. (b) Création `FiscaliteToggle` wrapping `FiscalKpiBanner` + `CalendrierFiscal` + ActionsDuMois filtré fiscal. (c) Split `ActionsDuMois` en 2 props : `filter?: 'fiscal-only' | 'non-fiscal' | 'all'` (défaut all). (d) Fusion visuelle Z4 (KPIs + AlertsPanel + RealEstateAlertsPanel + ActionsDuMois non-fiscal) dans une `<section className="card p-6 space-y-4">`. | **2,5 j** | Le Dashboard raconte une histoire en cascade. La fiscalité est masquée par défaut, dépliable au clic. ROI narratif maximal. | V2.1 (purge) |
+| **V2.3 — Top consolidé par enveloppe (Z7)** | (a) Refacto `calc.ts` : ajout `topConsolidated` dans `DashboardData` (groupement par `envelope_id` + biens immo entiers + livrets séparés). (b) Nouveau composant `TopInvestmentsList` avec drill-down `<details>` natif vers `TopAssetsList` atomique (réutilisé). (c) Remplacement du `TopAssetsList` racine par `TopInvestmentsList`. (d) Activation du test `topConsolide.test.ts` (squelette V1.0). | **3 j** | Top 5 du Dashboard montre des lignes lisibles (« PEA 80 k€ » au lieu de « Apple 22 k€ »). Drill-down fonctionnel. Test vert. **BUG-5 livré.** | V2.2 (sinon double refacto JSX) |
+| **V2.4 — Meilleur / Pire investissement (Z8)** | (a) Extension `lib/portfolio/transaction-segments.ts` pour calculer un TWR **par position**. (b) Nouveau `lib/finance/best-worst.ts` (logique pure : tri par TWR ou rendement net immo, filtre 90 j, pas de podium inter-classes). (c) Ajout `dashboardData.bestWorstByClass` au pipeline. (d) Nouveau composant `BestWorstInvestments` (2 cartes côte à côte). (e) Activation des tests `meilleurInvestParClasse.test.ts` + `filtreAnciennete90j.test.ts`. | **4 j** | Le Dashboard affiche le meilleur et le pire par classe avec métriques explicites. Tests verts. **P0.7 livré.** | V2.3 (pour ordre JSX cohérent) |
+
+**Effort total V2 : ~11,5 j**, soit ≈ 2,5 semaines temps plein ou ≈ 5 semaines mi-temps.
+
+#### Note sur la séparation V2.3 / V2.4
+
+Tu pourrais être tenté de fusionner V2.3 et V2.4 en un seul sprint « Top + Best/Worst » puisque tous deux touchent à la même zone visuelle. Recommandation : **garde-les séparés**. V2.3 délivre 100 % de valeur dès la fin du sprint (top lisible), V2.4 ajoute la couche analytique. Si V2.4 dérape (TWR par position plus complexe que prévu), V2.3 reste en prod sans dette.
+
+#### V2.5 (optionnelle) — Polish + tests d'intégration
+
+Si tu veux clôturer V2 proprement après les 4 sprints livrables :
+- Test Playwright minimal sur le rendu page Dashboard (1 user seedé, captures vs golden). Couvre la leçon V1.4-BIS.
+- Floor protection `computeCroissancePatrimoine` (cap absolu pour éviter +132 M % résiduels).
+- Tooltip pédagogique « fonds_euros → obligations » dans le donut allocation (si on le réactive en V2.5 ou en V3).
+
+Effort : 2 j. Total V2 + V2.5 : **~13,5 j**.
+
+### 7.5 Risques et points ouverts
+
+#### Affichage conditionnel par profil
+
+- **Profil sans immo** (Débutant, Boursier) : Z5 doit être **conditionnellement masquée**. Critère : `portfolio.properties.length === 0`. Trivial à implémenter, à ne pas oublier dans V2.1.
+- **Profil sans portefeuille** (Débutant si seulement Livret A, ou utilisateur novice) : Z6 doit être **masquée**. Critère : `portfolioSummary.positionsCount === 0`. Idem.
+- **Profil sans aucun investissement valorisable** : Z7 (Top) ne peut afficher que des livrets/cash, ou rien. Garde-fou : si `topConsolidated.length === 0` → masquer Z7 entièrement. Si seulement 1-2 lignes → afficher les 2, pas de message « Top vide ».
+- **Profil sans historique transactions** (cas réel actuel) : Z8 doit afficher un état « Pas assez d'historique pour identifier vos meilleurs/pires investissements » (cohérent avec les labels TWR null V1.3).
+
+#### Mobile responsive
+
+- **Empilement vertical** : naturellement compatible avec mobile (toutes les zones sont déjà des cartes empilées). Aucun risque structurel.
+- **Z4 fusionnée** (KPIs + Alertes + Actions) : sur mobile, la grille KpiGrid actuelle passe en `grid-cols-2` (déjà géré par Tailwind). Les alertes restent en pleine largeur. Pas de refonte spécifique nécessaire.
+- **Z7 drill-down** : utiliser `<details>` natif HTML est plus fiable que `useState` sur mobile (gère le toucher + l'accessibilité). Recommandation forte pour V2.3.
+- **Point d'attention** : Z8 (2 cartes côte à côte) doit basculer en empilement vertical < 640 px. À tester explicitement.
+
+#### Tests Playwright (leçon V1.4-BIS)
+
+Recommandation : **ajouter en V2.5 (optionnel) un test d'intégration page-niveau** :
+- Seed user fixture en base de test (1 par profil archétype)
+- Charger `/dashboard` via Playwright
+- Asserter présence/absence des zones selon profil
+- Snapshot DOM des labels critiques (« Cash-flow immobilier (Y1 simulé) », « Performance », pas de « CAGR » ni « Sur-exposition asset:* »)
+- Effort : ~1,5 j inclus dans V2.5
+
+C'est ce qui aurait évité V1.4-BIS. Non bloquant pour V2.1-V2.4 mais à acter dès maintenant comme cible.
+
+#### Refacto pipeline pour Top consolidé (V2.3)
+
+Le passage de `topAssets` (atomique) à `topConsolidated` (par enveloppe) nécessite :
+- Lecture des `positions.envelope_id` dans `loadDashboardInputs` (déjà fait en V1.4 pour les transactions, à compléter)
+- Groupement dans `calc.ts` : `Map<envelopeKey, { label, valueEur, atomicPositions: [] }>`
+- Le `TopAssetsList` actuel n'est pas supprimé : il devient le composant de drill-down (chaque ligne de `TopInvestmentsList` peut expand vers la liste atomique).
+- **Risque** : utilisateurs avec `envelope_id IS NULL` sur ≥ 50 % de leurs positions → fallback agrégation par `asset_class` (cf. décision V1.0 §5.5).
+
+#### Refacto pipeline pour Best/Worst (V2.4)
+
+Le plus risqué du chantier V2. Aujourd'hui le moteur TWR (`lib/portfolio/transaction-segments.ts`) calcule un TWR **global du portefeuille tracé**. Pour Best/Worst, il faut un TWR **par position**.
+
+- **Option A — refacto profond** : modifier l'assembleur pour produire `Map<positionId, TwrSegment[]>` au lieu d'un tableau plat. Coût ~1,5 j. Réutilise le moteur pur `computeTwr()` inchangé.
+- **Option B — calcul à part** : nouveau module `lib/finance/twr-per-position.ts` qui appelle `computeTwr()` N fois (une par position). Coût ~0,8 j mais code dupliqué avec l'assembleur global. **Déconseillé.**
+
+Recommandation : **Option A**, intégrée dans l'effort de 4 j de V2.4.
+
+#### Persistance localStorage du toggle Fiscalité
+
+- Si stocké : meilleure UX (l'utilisateur retrouve son état au reload).
+- Si non stocké : sécurité produit (la fiscalité reste « surprise » à chaque session).
+- Recommandation : **stocker** (UX > novelty), avec clé namespacée `fynix:dashboard:fiscalite_open` pour éviter collisions futures.
+
+### 7.6 Scoring cible post-V2
+
+| Critère | Poids | Note V1 | Note cible V2 | Justification |
+|---|---|---:|---:|---|
+| Justesse des calculs | 25 % | 8 | **8** | Inchangé — V1 a déjà réglé les bugs structurels. |
+| Lisibilité + 2 secondes (moy) | 20 % | 6,5 | **9** | Refonte narrative en cascade + zones aérées + fiscalité repliée = 2 secondes pour répondre à « combien et comment ça évolue ». |
+| Pertinence des informations | 15 % | 6 | **8,5** | Compactage immo/portefeuille + top consolidé + best/worst = chaque widget répond à une question spécifique. |
+| Moyenne notes profils | 20 % | 5,5 | **7,8** | Affichage conditionnel (zones immo/portefeuille masquées si non concerné) → Débutant +2, Boursier +2, HNW +1. |
+| Effet carte de visite | 10 % | 4 | **7** | Hiérarchie narrative + fiscalité masquée par défaut = présentable à un tiers même sans mode présentation (P2.1 reporté). |
+| Équilibre fiscalité | 5 % | 6 | **9** | Fiscalité strictement repliée derrière toggle. |
+| Personnalisation | 5 % | 6 | **7,5** | Affichage conditionnel des zones (P0.11 promu, livré transversalement dans V2). |
+
+#### Calcul pondéré
+
+| Critère | Poids | Note cible | Sous-total |
+|---|---|---|---|
+| Justesse calculs | 25 % | 8,0 | 20,0 |
+| Lisibilité + 2 sec | 20 % | 9,0 | 18,0 |
+| Pertinence | 15 % | 8,5 | 12,75 |
+| Moyenne profils | 20 % | 7,8 | 15,6 |
+| Carte de visite | 10 % | 7,0 | 7,0 |
+| Équilibre fiscalité | 5 % | 9,0 | 4,5 |
+| Personnalisation | 5 % | 7,5 | 3,75 |
+| **Total V2** | | | **81,6 / 100 🟢** |
+
+**Verdict** : V2 franchit le seuil 80 🟢 « Solide » avec un buffer raisonnable. La barre est atteinte **sans** le mode présentation (P2.1, gardé pour V3/V4) ni la fenêtre temporelle (P1.2). Si l'un des deux est ajouté à V2.5+, on monte vers 84-85.
+
+**Conditions de la cible 81,6** :
+- Tous les sprints V2.1 → V2.4 livrés
+- Tests Playwright en V2.5 NON requis pour le score (couvre la sécurité, pas l'UX)
+- Affichage conditionnel par profil correctement implémenté (Z5, Z6, Z7, Z8 masquables)
+
+Si V2.4 dérape (Best/Worst plus complexe que prévu) et est repoussé en V3, la note tombe à **~76/100 🟡** — toujours largement au-dessus du 70 actuel.
+
+---
+
+### Note clôture audit V2
+
+Aucun code touché. La cartographie pose une base solide pour V2.1. Les 5 points figés par l'utilisateur (ordre zones, séparation actions, compactage immo/portefeuille, toggle fiscalité unique, pas de mode présentation en V2) sont **respectés à 100 %**. Aucune décision n'a été réinventée — seules des questions ouvertes (drill-down `details` natif vs `useState`, persistance localStorage, fallback `envelope_id` null) ont été instruites avec recommandations.
+
+---
+
+### V2.1 — Purge + compactage — 2026-06-02
+
+Sprint le plus simple du chantier V2. Aucune logique métier touchée, uniquement de l'extraction de composants et de la suppression de doublon visuel.
+
+**3 commits atomiques sur la branche `feat/dashboard-v2-1-purge-compactage`** :
+
+| Sprint | SHA | Type | Message d'en-tête |
+|---|---|---|---|
+| V2.1 ST1 | `daa73a6` | refactor | supprimer doublon graphe d'évolution |
+| V2.1 ST2 | `c655fd1` | refactor | compactage immobilier en 1 ligne |
+| V2.1 ST3 | `78b74ee` | refactor | compactage portefeuille en 1 ligne |
+
+**Décisions clés** :
+
+1. **Garde `PatrimoineEvolutionChart`** (client autonome, 5 séries net/brut/portefeuille/immo/cash + ligne FIRE + tooltip détaillé avec progression FIRE), supprime `PatrimonyAreaChart` (3 séries seulement, orphelin hors Dashboard confirmé par grep).
+2. **Fichier `components/charts/area-chart.tsx` supprimé** (confirmé orphelin).
+3. **`RealEstatePortfolioBlock` conservé dans le repo** (instructions du brief — peut servir ailleurs), mais plus consommé par le Dashboard. Aucune référence trouvée hors `dashboard/page.tsx` au moment de l'opération.
+4. **Bloc inline Récap Portefeuille extrait** dans un nouveau composant testable et réutilisable (`PortefeuilleSummaryCompact`).
+5. **Aucun réordonnancement** des widgets (= V2.2). Aucune touche à la fiscalité (= V2.2). Aucune touche au top 5 (= V2.3).
+
+**Nouveaux composants créés** :
+
+- `components/dashboard/immo-summary-compact.tsx` (~105 lignes) — 1 ligne aérée immobilier
+- `components/dashboard/portefeuille-summary-compact.tsx` (~118 lignes) — 1 ligne aérée portefeuille
+
+Les deux retournent `null` quand le profil n'a pas de données concernées (pas d'immo, pas de portefeuille) → préparation de l'affichage conditionnel V2.
+
+**Suppressions** :
+
+- `components/charts/area-chart.tsx` (131 lignes, orphelin)
+- Wrapper Card "Évolution du patrimoine" + `ConfidenceBadge` inline (page.tsx)
+- Bloc inline Récap Portefeuille (page.tsx, 45 lignes JSX + map sur 4 cartes)
+- Variables désormais mortes : `snapshots`, `confScore`, import `formatCurrency`
+
+**Vérifications** :
+
+- `npx vitest run` : 166 fichiers · 2 355 tests · 38 todo · 0 échec
+- `npx tsc --noEmit` : silencieux
+- `npm run build` : succès, bundle `/dashboard` reste autour de 7,5 kB
+- `git diff master..HEAD` : 6 fichiers, +234 / −186 lignes nettes
+
+**URL preview Vercel** :
+
+- Branch alias stable : https://fynix-git-feat-dashboard-v2-1-7afd39-aymeric22-coders-projects.vercel.app/dashboard
+- Deployment direct : https://fynix-8j0wqzdn3-aymeric22-coders-projects.vercel.app/dashboard
+- Inspector : https://vercel.com/aymeric22-coders-projects/fynix/G96PNTbE5AK9bqHoyyVWak5UJNc1
+- État au moment de la livraison : `BUILDING` (typiquement READY en 3-5 min)
+
+**Validation visuelle attendue** :
+
+1. Le graphe d'évolution patrimoniale n'apparaît plus qu'**une seule fois** (en haut, le `PatrimoineEvolutionChart` riche avec ligne FIRE)
+2. À la place du `RealEstatePortfolioBlock` à 4 cartes : **1 ligne compacte** `Immobilier · valeur · CF · CRD · PV · [Voir →]`
+3. À la place du Récap Portefeuille à 4 cartes : **1 ligne compacte** `Portefeuille · valeur · PV · Prix < 24 h · [Voir →]`
+4. Tout le reste **inchangé** (ordre, FIRE Hero, FiscalKpiBanner, ActionsDuMois, TropheesCard, CalendrierFiscal, AlertsPanel, KpiGrid, TopAssetsList)
+
+**Branche conservée** sur le remote pour validation visuelle avant V2.2 (pas de merge prématuré sur master, comme pour le chantier V1).
+
