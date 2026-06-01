@@ -1279,3 +1279,98 @@ Position phare : `p-av-fe`, `currentMv=300 000 €`, `currentQuantity=275 000`. 
 
 **Prochaine étape recommandée (V1.5) :** validation visuelle utilisateur → push + PR + merge + déploiement. Coût estimé : ~0,5 j (essentiellement attente Vercel + monitoring).
 
+---
+
+### V1.4-BIS — Diagnostic décalage observé / code commité — 2026-06-01
+
+**Constat critique de la session** : la validation visuelle locale par l'utilisateur a révélé un Dashboard qui montrait encore l'ancien code (« Performance (CAGR) +132 026 369,70 % », « Cash-flow mensuel », « Sur-exposition asset:real_estate »), alors que les sprints V1.0 → V1.4 étaient annoncés terminés. **Hypothèse validée** : aucune des modifications V1.0 → V1.4 n'avait été commitée. Les fichiers étaient sur le disque mais en statut `M` / `??` côté git. La prod Vercel auto-déployée depuis `master` servait encore le HEAD pré-chantier.
+
+**Diagnostic produit** : 5 investigations (KpiGrid utilisé, origine du +132M %, état réel page.tsx, origine « asset:real_estate », badge unvalued). Le code disque était correct partout, c'est uniquement l'absence de commit qui cassait la chaîne.
+
+**Leçon clé pour la suite** : la suite Vitest valide la fonction pure `computeDashboardData(fixture.inputs)` et le typage page via `tsc`, mais ne valide **pas** :
+- Que le code disque est cohérent avec ce qui est commité
+- Que le déploiement Vercel utilise bien le code à jour
+- Le rendu JSX réel sur des données utilisateur
+
+À l'avenir : **commiter à chaque fin de sprint** sur une branche feature, et utiliser l'URL preview Vercel comme terrain de validation visuelle. Idéalement ajouter un test d'intégration Playwright page-niveau (backlog post-V1).
+
+### V1.4-TER — Mise en cohérence git — 2026-06-01
+
+- Branche `feat/dashboard-pipeline-unifie` créée depuis `master`
+- 5 commits atomiques répartis selon le découpage sprint :
+  - `e8902bc` — `test(dashboard): V1.0 - 6 fixtures + tests Annexe A`
+  - `692a45f` — `feat(dashboard): V1.1 - pipeline unifie en parallele, clone bug-compatible`
+  - `2aa5b8e` — `fix(dashboard): V1.2 - taxonomie unifiee + brut MV strict + rename CF immo`
+  - `cf17e0f` — `feat(dashboard): V1.3 - moteur TWR separe de la croissance patrimoniale (P0.3)`
+  - `6ef4a3a` — `refactor(dashboard): V1.4 - bascule UI sur pipeline unifie + suppression code mort`
+- Limitation honnête signalée : `calc.ts` + `types.ts` créés en bloc untracked → tout dans le commit V1.1 (impossible de scinder via `git add -p`). Mention explicite dans les messages des commits V1.1 et V1.2.
+- Modification mineure non-fonctionnelle pour passer le hook `eslint --max-warnings 0` : retrait d'un import `type DashboardFixture` inutilisé dans `pipelineUnique.test.ts` (1 ligne, zéro impact fonctionnel).
+- Push `git push -u origin feat/dashboard-pipeline-unifie` réussi → URL preview Vercel `fynix-git-feat-dashboard-pipel-411e64-aymeric22-coders-projects.vercel.app`.
+
+### Nettoyage snapshots Supabase — 2026-06-01
+
+- Audit des `wealth_snapshots` du compte utilisateur via MCP Supabase
+- **Constat** : aucun snapshot aberrant. 6 snapshots cohérents entre 78 k€ et 134 k€ sur 14 jours (17 → 31 mai). Le +132 026 369,70 % vient de la formule CAGR annualisée sur historique court avec saut non-organique de +56 k€ (saisie d'un bien immo le 22 mai).
+- **Décision validée par l'utilisateur** : Option A — aucun DELETE. Le seuil 90 jours de `computeCroissancePatrimoine` (V1.3 commit `cf17e0f`) résoudra l'affichage une fois V1.5 mergé.
+
+### V1.5 — Déploiement prod — 2026-06-01
+
+- Merge `--no-ff` de `feat/dashboard-pipeline-unifie` dans `master`
+- Merge commit `a95f8aa` — `feat(dashboard): merge V1 - refonte pipeline + corrections calculs`
+- Push `master` (`6713146..a95f8aa`)
+- Vercel deployment prod `dpl_HNNAmpm4rCb292r5pEyqMRnP6CQU` → `READY`
+- **Validation visuelle prod confirmée par l'utilisateur** sur `fynix-mu.vercel.app/dashboard` (alias custom configuré via `NEXT_PUBLIC_APP_URL`)
+- Bugs visibles à l'écran corrigés :
+  - **BUG-1** : brut MV strict + badge positions non valorisées
+  - **BUG-2** : CAGR remplacé par TWR portefeuille + Croissance patrimoine + seuil 90 j (le +132 026 369,70 % devient « Pas assez d'historique » jusqu'à ~mi-août)
+  - **BUG-3** : label « Cash-flow immobilier (Y1 simulé) »
+  - **BUG-6** : taxonomie d'allocation canonique (donut masqué V1.4, réactivé V2)
+- Branche feature `feat/dashboard-pipeline-unifie` supprimée local + remote
+- Tag `v1.0-dashboard-refonte` posé sur le merge commit et pushé
+
+---
+
+## 🏁 Clôture V1
+
+**Note globale Dashboard estimée post-V1 : ~70 / 100** 🟡
+
+La cible théorique V1 (77 / 100) supposait aussi P0.5 (top consolidé par enveloppe) repoussé en V2 visuel. Les corrections P0.2 / P0.4 / P0.6 / P0.3 livrées en V1 portent l'écran de 42 → ~70 sur des chiffres justes, des labels explicites et une taxonomie cohérente. La refonte visuelle (zones / hiérarchie / top consolidé / mode présentation) reste à faire pour franchir 80+.
+
+### Bugs restants identifiés pour V2 / V3
+
+- **BUG-5** : Top consolidé par enveloppe (refonte visuelle, P0.5)
+- **Doublon graphe d'évolution** : `PatrimonyAreaChart` à supprimer en V2 (P0.8)
+- **Doublons fiscalité** : Calendrier fiscal + `FiscalKpiBanner` XL à reléguer dans /analyse > Fiscalité (P0.8 + Zone 6 compacte)
+- **BUG-7** : Confidence score plombé par biens immo en `confidence='medium'` (P1.6bis)
+- **Donut allocation** masqué en V1 → réactivation en V2 avec la nouvelle taxonomie + tooltip pédagogique `fonds_euros → obligations`
+
+### P1 reportés en backlog post-V1
+
+- **P1.2** — Sélecteur fenêtre temporelle (3M / 6M / 1A / 3A / Max) pilotant Hero + Évolution
+- **P0.11 promu (était P1.3)** — Affichage conditionnel par profil (à confirmer ordre V2 ou V3)
+- **P1.4** — Benchmark MSCI ACWI / World sur la zone Évolution
+- **P1.1** — Vrai cash-flow patrimonial (loyers nets + dividendes + intérêts livrets − mensualités)
+- **P1.6bis** — Confidence score immobilier durci (les biens RE en `medium` ne devraient pas pénaliser le score à ce point)
+- **Protection floor sur `computeCroissancePatrimoine`** — ajouter un cap absolu (par ex. `Math.min(rate, 999)`) ou refuser le calcul si saut non-organique détecté (variation > X % sur < Y jours), pour éviter les chiffres délirants même au-delà du seuil 90 j
+
+### Backlog technique
+
+- **Test d'intégration Playwright** page-niveau (leçon V1.4-BIS) — couvre le rendu JSX réel sur user seedé, complète la couverture pipeline isolé de Vitest
+- **Commits réguliers en fin de sprint** sur une branche feature pour exploiter l'URL preview Vercel comme terrain de validation visuelle continue
+- **Endpoint `/api/dashboard`** : supprimé ✅
+- **Bloc inline `dashboard/page.tsx`** : supprimé ✅
+- **Feature flag `DASHBOARD_UNIFIED_PIPELINE`** : supprimé ✅
+- **Test de caractérisation `dashboard-caracterisation.test.ts`** : supprimé ✅ (l'ancien pipeline n'existe plus)
+
+### Bilan chiffré
+
+| Indicateur | Avant V1 | Après V1 |
+|---|---:|---:|
+| Pipelines de calcul Dashboard concurrents | 3-4 | **1** |
+| Bugs structurels visibles | 6 (BUG-1 à BUG-6) | **2** (BUG-5 + BUG-7) |
+| Tests Vitest pertinents au Dashboard | 0 | **66 actifs + 12 squelettes restants** |
+| Couverture taxonomie d'allocation | clés hétérogènes `asset:*`+`class:*` | 9 clés canoniques |
+| Indicateur performance | 1 CAGR trompeur | TWR + Croissance séparés, labels explicites |
+| Code mort Dashboard | bloc inline 243 l. + endpoint `/api/dashboard` | supprimé |
+| Note Dashboard estimée | 42 / 100 🟠 | ~70 / 100 🟡 |
+
