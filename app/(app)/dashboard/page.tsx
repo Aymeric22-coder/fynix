@@ -25,6 +25,8 @@ import { PatrimoineEvolutionChart } from '@/components/dashboard/patrimoine-evol
 import type { PropertyDriftSummary } from '@/components/dashboard/real-estate-alerts-panel'
 import { ZonePilotage } from '@/components/dashboard/zone-pilotage'
 import { ZoneFiscaliteToggle } from '@/components/dashboard/zone-fiscalite-toggle'
+// V2.4 — Z8.5 : Meilleur / Pire investissement par classe d'actif.
+import { ZoneChampionsCasseroles } from '@/components/dashboard/zone-champions-casseroles'
 // V2.1 — `RealEstatePortfolioBlock` (4 KPIs) remplacé par `ImmoSummaryCompact` (1 ligne).
 // Le composant complet reste dans le repo (peut servir ailleurs), simplement plus consommé ici.
 import { ImmoSummaryCompact } from '@/components/dashboard/immo-summary-compact'
@@ -266,6 +268,10 @@ export default async function DashboardPage() {
           <TopAssetsList assets={topAssets} />
         </div>
       )}
+
+      {/* Z8.5 — Meilleur / Pire investissement par catégorie (V2.4 P0.7).
+            Auto-masque si 0 candidat dans les 4 catégories. */}
+      <ZoneChampionsCasseroles rankings={dashboardData.investmentRankings} />
 
       {/* Z9 — Fiscalité (toggle persistant en localStorage, masquée par défaut) */}
       <ZoneFiscaliteToggle
