@@ -4,8 +4,13 @@ import { KpiGrid }               from '@/components/dashboard/kpi-grid'
 import { AlertsPanel }           from '@/components/dashboard/alerts-panel'
 import { TopAssetsList }         from '@/components/dashboard/top-assets-list'
 import { PatrimonyAreaChart }    from '@/components/charts/area-chart'
-import { computeRealEstatePortfolio } from '@/lib/real-estate/portfolio'
-import { buildPortfolioFromDb }  from '@/lib/portfolio/build-from-db'
+// V1.4 — Le pipeline unifié remplace le bloc inline 207-326 historique.
+// `loadDashboardInputs` charge en parallèle tout ce dont la page a besoin
+// (assets / debts / snapshots / portfolio / immo / transactions) ;
+// `computeDashboardData(inputs)` applique les formules corrigées (P0.2/4/6/3).
+import {
+  loadDashboardInputs, computeDashboardData,
+} from '@/lib/analyse/dashboard-pipeline'
 import { getPatrimoineComplet }  from '@/lib/analyse/aggregateur'
 import { FIREProgressHero, type FireHeroData } from '@/components/dashboard/fire-progress-hero'
 import { FiscalKpiBanner } from '@/components/dashboard/fiscal-kpi-banner'
@@ -20,15 +25,14 @@ import type { JalonFIRE } from '@/types/analyse'
 import { ActionsDuMois } from '@/components/dashboard/actions-du-mois'
 import { DashboardEmptyState } from '@/components/dashboard/empty-state'
 import { PatrimoineEvolutionChart } from '@/components/dashboard/patrimoine-evolution-chart'
-import { RealEstateAlertsPanel } from '@/components/dashboard/real-estate-alerts-panel'
+import {
+  RealEstateAlertsPanel,
+  type PropertyDriftSummary,
+} from '@/components/dashboard/real-estate-alerts-panel'
 import { RealEstatePortfolioBlock } from '@/components/dashboard/real-estate-portfolio-block'
 import { genererActionsMensuelles } from '@/lib/analyse/recoMensuelles'
 import { calculerOpportunitesFiscales } from '@/lib/analyse/optimiseurFiscal'
-import {
-  ASSET_TYPE_LABELS, ASSET_TYPE_COLORS,
-  ASSET_CLASS_LABELS, ASSET_CLASS_COLORS,
-  formatCurrency,
-} from '@/lib/utils/format'
+import { formatCurrency } from '@/lib/utils/format'
 import { ConfidenceBadge }       from '@/components/shared/confidence-badge'
 
 export const metadata: Metadata = { title: 'Dashboard' }
@@ -37,54 +41,20 @@ export default async function DashboardPage() {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  const [assetsRes, debtsRes, snapshotsRes] = await Promise.all([
-    // Depuis migration 012 : les actifs financiers (stocks, ETF, crypto, gold)
-    // ne sont plus dans `assets` mais dans `positions` + `instruments`. La table
-    // `assets` ne doit plus contenir que immobilier, cash et autre. On filtre
-    // explicitement pour ignorer d'eventuels reliquats legacy.
-    supabase
-      .from('assets')
-      .select('id,name,asset_type,current_value,acquisition_price,confidence,last_valued_at')
-      .eq('user_id', user!.id)
-      .eq('status', 'active')
-      .in('asset_type', ['real_estate', 'cash', 'other']),
-    supabase
-      .from('debts')
-      .select('asset_id,capital_remaining,monthly_payment')
-      .eq('user_id', user!.id)
-      .eq('status', 'active'),
-    // Sprint 1 — I4 : on bascule sur wealth_snapshots (alimente par
-    // /api/analyse/snapshot a chaque visite de /analyse). Mapping des colonnes :
-    //   total_net_value   ← patrimoine_net
-    //   total_gross_value ← patrimoine_brut
-    //   total_debt        ← total_dettes
-    //   monthly_cashflow  → pas d'equivalent direct ; non utilise sur ce graphe.
-    //                       Si necessaire, expose-le via getPatrimoineComplet.
-    supabase
-      .from('wealth_snapshots')
-      .select('snapshot_date,patrimoine_net,patrimoine_brut,total_dettes')
-      .eq('user_id', user!.id)
-      .order('snapshot_date', { ascending: false })
-      .limit(13),
-  ])
+  // ── V1.4 — Pipeline Dashboard unifié ────────────────────────────────
+  // `loadDashboardInputs` charge en parallèle assets / debts / snapshots /
+  // portfolio (buildPortfolioFromDb) / immo (computeRealEstatePortfolio) /
+  // transactions + positions méta (pour TWR). Une seule passe Supabase,
+  // tout ce dont la page a besoin pour les KPIs et le récap portefeuille.
+  const inputs        = await loadDashboardInputs(supabase, user!.id)
+  const dashboardData = computeDashboardData(inputs)
 
-  const assets        = assetsRes.data    ?? []
-  const debts         = debtsRes.data     ?? []
-  const snapshotsRaw  = snapshotsRes.data ?? []
-  // Normalise sur l'ancienne shape pour minimiser le diff downstream.
-  const snapshots = snapshotsRaw.map((s) => ({
-    snapshot_date:      s.snapshot_date as string,
-    total_net_value:    Number(s.patrimoine_net ?? 0),
-    total_gross_value:  Number(s.patrimoine_brut ?? 0),
-    total_debt:         Number(s.total_dettes ?? 0),
-  }))
-
-  // ── Simulation immobilière + suivi réel (CF / capital / alertes drift) ───
-  const portfolio = await computeRealEstatePortfolio(supabase, user!.id, { withActuals: true })
-  const simAssetIds = new Set(portfolio.properties.map((p) => p.assetId))
-
-  // ── Portefeuille financier (positions + instruments + prix) ──────────────
-  const portfolioResult = await buildPortfolioFromDb(supabase, user!.id)
+  // Aliases conservant le nommage du JSX existant (RealEstatePortfolioBlock,
+  // récap portefeuille, etc.) → diff minimal sur le rendu.
+  const assets           = inputs.assets
+  const snapshots        = inputs.snapshots
+  const portfolio        = inputs.realEstatePortfolio
+  const portfolioSummary = inputs.portfolioSummary
 
   // ── Snapshot patrimoine complet (pour le FIRE Progress Hero) ─────────────
   // Inclut projectionFIRESnapshot, revenu passif actuel, etc. Heavy call mais
@@ -204,174 +174,19 @@ export default async function DashboardPage() {
                                     : null,
   }
 
-  // ── Calculs patrimoine ────────────────────────────────────────────────────
-  // Brut = actifs "table assets" (immo, cash, autre) + valeur de marché du portefeuille.
-  // Note : portfolioResult.summary.totalMarketValue ne couvre QUE les positions valorisees
-  // (avec prix). Pour les positions sans prix, on ajoute leur cost basis comme proxy
-  // (valeur investie) pour ne pas sous-estimer le brut.
-  const assetsValue   = assets.reduce((s, a) => s + (a.current_value ?? 0), 0)
-  const portfolioBrut = portfolioResult.summary.totalMarketValue
-                      + (portfolioResult.summary.totalCostBasis - portfolioResult.summary.totalCostBasisValued)
-  const grossValue    = assetsValue + portfolioBrut
+  // ── V1.4 — Tous les calculs viennent de `dashboardData` (pipeline unifié) ──
+  // BUGs corrigés : BUG-1 (brut MV strict), BUG-2 (TWR + croissance séparés),
+  // BUG-3 (label CF immo explicite), BUG-6 (taxonomie d'allocation unifiée).
+  const kpis      = dashboardData.kpis
+  const alerts    = dashboardData.alerts
+  const topAssets = dashboardData.topAssets
+  const driftSummaries = dashboardData.realEstateDriftSummaries
+  const confScore = kpis.confidence_score
 
-  // Capital restant : analytique pour l'immo, stocké pour les autres
-  const reCapital    = portfolio.totalCapitalRemaining
-  const otherCapital = debts
-    .filter((d) => !simAssetIds.has(d.asset_id ?? ''))
-    .reduce((s, d) => s + (d.capital_remaining ?? 0), 0)
-  const totalDebt    = reCapital + otherCapital
-  const netValue     = grossValue - totalDebt
-
-  // Cash-flow mensuel :
-  // - Immo : simulation (après impôts, vacance, charges, crédit)
-  // - Autres crédits (non-immo) : soustraire les mensualités stockées
-  const otherMonthlyLoan = debts
-    .filter((d) => !simAssetIds.has(d.asset_id ?? ''))
-    .reduce((s, d) => s + (d.monthly_payment ?? 0), 0)
-  const hasSim    = portfolio.properties.some((p) => !p.simulation.incompleteData)
-  const cashFlow  = hasSim
-    ? portfolio.totalMonthlyCFYear1 - otherMonthlyLoan
-    : 0
-
-  // CAGR sur les snapshots historiques
-  let cagrValue: number | null = null
-  if (snapshots.length >= 2) {
-    const latest = snapshots[0]!
-    const oldest = snapshots[snapshots.length - 1]!
-    const years  = (new Date(latest.snapshot_date).getTime() - new Date(oldest.snapshot_date).getTime()) / (365.25 * 86400_000)
-    if (years > 0 && oldest.total_net_value > 0)
-      cagrValue = (Math.pow(latest.total_net_value / oldest.total_net_value, 1 / years) - 1) * 100
-  }
-
-  // Confidence : actifs avec confidence='high' + positions portefeuille avec prix frais (< 24 h)
-  const highConfAssets = assets.filter(a => a.confidence === 'high')
-                               .reduce((s, a) => s + (a.current_value ?? 0), 0)
-  const freshPortfolio = portfolioResult.positions
-                          .filter((p) => p.status === 'active' && !p.priceStale && p.marketValue !== null)
-                          .reduce((s, p) => s + (p.marketValue ?? 0), 0)
-  const highConf  = highConfAssets + freshPortfolio
-  const confScore = grossValue > 0 ? (highConf / grossValue) * 100 : 0
-
-  // Allocation donut : combine assets (immo/cash/autre) + portfolio (classes financières)
-  // Labels et couleurs : ASSET_TYPE_LABELS pour les assets historiques, ASSET_CLASS_LABELS
-  // pour les classes du module Portefeuille (etf, crypto, scpi…).
-  const byKey: Record<string, { label: string; value: number; color: string }> = {}
-
-  for (const a of assets) {
-    if (!a.current_value || a.current_value <= 0) continue
-    const key = `asset:${a.asset_type}`
-    const prev = byKey[key]?.value ?? 0
-    byKey[key] = {
-      label: ASSET_TYPE_LABELS[a.asset_type] ?? a.asset_type,
-      value: prev + a.current_value,
-      color: ASSET_TYPE_COLORS[a.asset_type] ?? '#6b7280',
-    }
-  }
-  for (const slice of portfolioResult.summary.allocationByClass) {
-    if (slice.value <= 0) continue
-    const key = `class:${slice.assetClass}`
-    const prev = byKey[key]?.value ?? 0
-    byKey[key] = {
-      label: ASSET_CLASS_LABELS[slice.assetClass] ?? slice.assetClass,
-      value: prev + slice.value,
-      color: ASSET_CLASS_COLORS[slice.assetClass] ?? '#6b7280',
-    }
-  }
-
-  const donutData = Object.entries(byKey)
-    .filter(([, v]) => v.value > 0)
-    .sort(([, a], [, b]) => b.value - a.value)
-    .map(([type, v]) => ({
-      type,
-      value:   v.value,
-      label:   v.label,
-      percent: grossValue > 0 ? (v.value / grossValue) * 100 : 0,
-      color:   v.color,
-    }))
-
-  // Timeline
-  const timeline = [...snapshots].reverse().map(s => ({
-    date:        s.snapshot_date,
-    net_value:   s.total_net_value,
-    gross_value: s.total_gross_value,
-    total_debt:  s.total_debt,
-  }))
-
-  // Top actifs : combine assets historiques (immo/cash/autre) + positions portefeuille
-  type TopAsset = { id: string; name: string; type: string; value: number; percent: number }
-  const assetsForTop: TopAsset[] = assets
-    .filter((a) => (a.current_value ?? 0) > 0)
-    .map((a) => ({
-      id: a.id, name: a.name, type: a.asset_type,
-      value:   a.current_value!,
-      percent: 0,  // calculé ensuite
-    }))
-  const positionsForTop: TopAsset[] = portfolioResult.positions
-    .filter((p) => p.status === 'active')
-    .map((p) => ({
-      id:    p.positionId,
-      name:  p.name,
-      type:  p.assetClass,
-      // Pour les positions sans prix, on retombe sur le cost basis (capital investi)
-      value: p.marketValue ?? p.costBasis,
-      percent: 0,
-    }))
-  const topAssets = [...assetsForTop, ...positionsForTop]
-    .filter((a) => a.value > 0)
-    .sort((a, b) => b.value - a.value)
-    .slice(0, 5)
-    .map((a) => ({
-      ...a,
-      percent: grossValue > 0 ? (a.value / grossValue) * 100 : 0,
-    }))
-
-  // Alertes
-  const alerts: { type: string; message: string; severity: 'warning' | 'info' }[] = []
-  for (const { type, percent } of donutData)
-    if (percent > 70)
-      alerts.push({ type: 'over_exposure', message: `Sur-exposition ${ASSET_TYPE_LABELS[type] ?? type} : ${percent.toFixed(0)} % du patrimoine`, severity: 'warning' })
-
-  const thirtyDaysAgo = new Date(); thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
-  const stale = assets.filter(a => a.last_valued_at && new Date(a.last_valued_at) < thirtyDaysAgo)
-  if (stale.length)
-    alerts.push({ type: 'stale_data', message: `${stale.length} actif(s) non valorisé(s) depuis +30 jours`, severity: 'info' })
-
-  // Alerte si des simulations sont incomplètes
-  const incompleteCount = portfolio.properties.filter(p => p.simulation.incompleteData).length
-  if (incompleteCount > 0)
-    alerts.push({
-      type: 'sim_incomplete',
-      message: `${incompleteCount} bien(s) avec simulation incomplète — complétez le crédit pour un cash-flow précis`,
-      severity: 'info',
-    })
-
-  // Résumé des alertes drift par bien (pour le panel détaillé)
-  const driftSummaries = portfolio.properties
-    .filter((p) => (p.driftAlerts ?? []).length > 0)
-    .map((p) => ({
-      propertyId:   p.propertyId,
-      propertyName: p.propertyName,
-      alerts:       p.driftAlerts ?? [],
-    }))
-
-  const kpis = {
-    gross_value:        Math.round(grossValue * 100) / 100,
-    net_value:          Math.round(netValue * 100) / 100,
-    total_debt:         Math.round(totalDebt * 100) / 100,
-    debt_ratio:         grossValue > 0 ? Math.round((totalDebt / grossValue) * 10000) / 100 : 0,
-    monthly_cash_flow:  Math.round(cashFlow * 100) / 100,
-    cagr:               cagrValue !== null ? Math.round(cagrValue * 100) / 100 : null,
-    confidence_score:   Math.round(confScore * 100) / 100,
-    assets_count:       assets.length,
-    sim_cf_label:       hasSim ? 'après impôts (simulation)' : undefined,
-  }
-
-  // Empty state : aucun actif renseigne (ni assets, ni positions, ni biens immo).
-  // On masque alors KpiGrid (qui afficherait 0 € partout) et ActionsDuMois
-  // (qui dirait "Tout est en ordre" alors qu'il n'y a rien a analyser).
+  // Empty state : aucun actif renseigne (assets + positions + biens immo).
   const isEmpty =
     assets.length === 0 &&
-    portfolioResult.positions.length === 0 &&
+    inputs.portfolioPositions.length === 0 &&
     portfolio.properties.length === 0
 
   return (
@@ -401,11 +216,20 @@ export default async function DashboardPage() {
       {/* Alertes */}
       {alerts.length > 0 && <AlertsPanel alerts={alerts} />}
 
-      {/* Alertes drift immobilier (Phase 2) */}
-      {driftSummaries.length > 0 && <RealEstateAlertsPanel summaries={driftSummaries} />}
+      {/* Alertes drift immobilier (Phase 2) — cast safe : driftAlerts est typé
+          `unknown[]` côté pipeline (pour éviter le coupling avec lib/real-estate).
+          Côté UI on sait que ce sont des `DriftAlert[]` produits par
+          `computeRealEstatePortfolio`, et `RealEstateAlertsPanel` les valide. */}
+      {driftSummaries.length > 0 && (
+        <RealEstateAlertsPanel summaries={driftSummaries as PropertyDriftSummary[]} />
+      )}
 
-      {/* KPIs */}
-      <KpiGrid kpis={kpis} />
+      {/* KPIs (V1.4 — Option B : 4 cartes dont widget Performance composite) */}
+      <KpiGrid
+        kpis={kpis}
+        unvaluedPositionsCount={dashboardData.unvaluedPositionsCount}
+        unvaluedPositionsLabel={dashboardData.unvaluedPositionsLabel}
+      />
 
       {/* Bloc immobilier consolide */}
       {portfolio.properties.length > 0 && (() => {
@@ -426,18 +250,18 @@ export default async function DashboardPage() {
       })()}
 
       {/* Récap Portefeuille (si au moins une position) */}
-      {portfolioResult.summary.positionsCount > 0 && (
+      {portfolioSummary.positionsCount > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
             {
               label: 'Valeur portefeuille',
-              value: formatCurrency(portfolioResult.summary.totalMarketValue, 'EUR', { compact: true }),
-              sub:   `${portfolioResult.summary.positionsCount} position(s) · ${portfolioResult.summary.valuedPositionsCount} valorisée(s)`,
+              value: formatCurrency(portfolioSummary.totalMarketValue, 'EUR', { compact: true }),
+              sub:   `${portfolioSummary.positionsCount} position(s) · ${portfolioSummary.valuedPositionsCount} valorisée(s)`,
               accent: false,
             },
             {
               label: 'Capital investi',
-              value: formatCurrency(portfolioResult.summary.totalCostBasis, 'EUR', { compact: true }),
+              value: formatCurrency(portfolioSummary.totalCostBasis, 'EUR', { compact: true }),
               sub:   'cost basis cumulé',
               accent: false,
             },
@@ -446,20 +270,20 @@ export default async function DashboardPage() {
               // au lieu d'un em-dash cryptique. Sub guide vers l'action
               // (refresh) plutot qu'une formule passive "en attente".
               label: 'Plus-value latente',
-              value: portfolioResult.summary.totalUnrealizedPnL !== null
-                ? formatCurrency(portfolioResult.summary.totalUnrealizedPnL, 'EUR', { compact: true, sign: true })
+              value: portfolioSummary.totalUnrealizedPnL !== null
+                ? formatCurrency(portfolioSummary.totalUnrealizedPnL, 'EUR', { compact: true, sign: true })
                 : 'Pas encore valorisé',
-              sub: portfolioResult.summary.totalUnrealizedPnLPct !== null
-                ? `${portfolioResult.summary.totalUnrealizedPnLPct >= 0 ? '+' : ''}${portfolioResult.summary.totalUnrealizedPnLPct.toFixed(2)} %`
+              sub: portfolioSummary.totalUnrealizedPnLPct !== null
+                ? `${portfolioSummary.totalUnrealizedPnLPct >= 0 ? '+' : ''}${portfolioSummary.totalUnrealizedPnLPct.toFixed(2)} %`
                 : 'Actualise les prix depuis /analyse',
-              accent: (portfolioResult.summary.totalUnrealizedPnL ?? 0) >= 0
-                      && portfolioResult.summary.totalUnrealizedPnL !== null,
+              accent: (portfolioSummary.totalUnrealizedPnL ?? 0) >= 0
+                      && portfolioSummary.totalUnrealizedPnL !== null,
             },
             {
               label: 'Fraîcheur prix',
-              value: `${Math.round(portfolioResult.summary.freshnessRatio * 100)} %`,
+              value: `${Math.round(portfolioSummary.freshnessRatio * 100)} %`,
               sub:   '< 24 h',
-              accent: portfolioResult.summary.freshnessRatio >= 0.8,
+              accent: portfolioSummary.freshnessRatio >= 0.8,
             },
           ].map((k) => (
             <div key={k.label} className={`card p-4 ${k.accent ? 'border-accent/20' : ''}`}>
@@ -486,7 +310,7 @@ export default async function DashboardPage() {
           </div>
           <ConfidenceBadge level={confScore >= 80 ? 'high' : confScore >= 50 ? 'medium' : 'low'} />
         </div>
-        <PatrimonyAreaChart data={timeline} />
+        <PatrimonyAreaChart data={dashboardData.timeline} />
       </div>
 
       {/* Top actifs */}
