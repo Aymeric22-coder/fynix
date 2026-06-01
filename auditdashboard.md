@@ -1650,3 +1650,58 @@ Le pipeline V1 ne chargeait ni `cash_accounts` ni `cashSummary` (le KpiGrid util
 
 **Stratégie git appliquée** : master direct (2 commits + push), pas de branche feature. Branche `feat/dashboard-v2-1-purge-compactage` également supprimée local + remote au moment du merge V2.1 (le pré-stop V2.1-BIS).
 
+---
+
+### V2.2 — Réordonnancement narratif + fusion Z4 + toggle fiscalité — 2026-06-02
+
+Sprint le plus impactant visuellement de tout V2 : le Dashboard passe d'une enfilade de widgets désorganisée à une cascade narrative en 9 zones. La fiscalité (jusque-là omniprésente en position 2, 6 et action 4) se replie derrière un toggle masqué par défaut.
+
+**4 commits atomiques sur master** :
+
+| Sprint | SHA | Type | Message d'en-tête |
+|---|---|---|---|
+| ST1 | `6687d20` | feat | V2.2 ST1 - ActionsDuMois accepte un prop filter |
+| ST2 | `8c71941` | feat | V2.2 ST2 - ZonePilotage (KPIs + Alertes + Actions non-fiscales) |
+| ST3 | `b9d6050` | feat | V2.2 ST3 - ZoneFiscaliteToggle avec localStorage |
+| ST4 | `491ba44` | refactor | V2.2 ST4 - reordonner page.tsx en cascade Z1 → Z9 |
+
+**Décisions techniques majeures** :
+
+1. **Discrimination fiscal / non-fiscal** (ST1) — basée sur le champ `action.type` du type métier `ActionMensuelleType = 'rebalance' | 'invest_cash' | 'dca_retard' | 'fiscal'`. Filtre `'fiscal-only'` = `type === 'fiscal'`, `'non-fiscal'` = les 3 autres. Aucun nouveau champ ajouté au type métier — la source de vérité existe déjà depuis Sprint 1 d'origine (`lib/analyse/recoMensuelles.ts`).
+2. **Prop `filter` ajouté à `ActionsDuMois`** (ST1) avec défaut `'all'` pour rétrocompatibilité. Sans filter explicite, comportement V1 préservé (encart « tout est en ordre » si liste vide). En mode filtré (`'fiscal-only'` / `'non-fiscal'`), composant `return null` si liste vide.
+3. **Approche d'hydration du toggle Fiscalité** (ST3) — état initial `useState<boolean | null>(null)` ; `useEffect` lit `localStorage` côté client et passe à `true`/`false`. Tant que `null`, on rend en mode fermé (cohérent avec la politique « masqué par défaut »). Si l'utilisateur avait ouvert : flash bref « fermé → ouvert » au mount, dans le sens de l'attente UX. Pas de flash inverse si fermé. Gestion gracieuse de l'absence de `localStorage` (try/catch silencieux, fallback `closed`).
+4. **Auto-masquage Z9** (ST3) — si l'utilisateur n'a NI opportunité fiscale NI échéance NI action fiscale, `ZoneFiscaliteToggle` retourne `null` (pas de bouton « Afficher la fiscalité » qui révèlerait du vide).
+5. **`ZonePilotage` Server Component pur** (ST2) — pas d'état, juste composition de KpiGrid + AlertsPanel + RealEstateAlertsPanel + ActionsDuMois filter='non-fiscal'. Sous-titre « Ce qui demande ton attention » conditionnel (n'apparaît que si au moins une alerte ou une action non-fiscale).
+
+**Nouveaux composants créés** :
+
+| Fichier | Lignes | Type |
+|---|---|---|
+| `components/dashboard/zone-pilotage.tsx` | 85 | Server Component |
+| `components/dashboard/zone-fiscalite-toggle.tsx` | 119 | Client Component (`'use client'`) |
+
+**Composants modifiés** :
+
+- `components/dashboard/actions-du-mois.tsx` — ajout prop `filter` + helper `applyFilter()` pur (+40 lignes, 0 ligne supprimée, rétrocompat 100 %)
+
+**Réorganisation `dashboard/page.tsx`** :
+
+- Suppression des rendus directs de : `KpiGrid`, `AlertsPanel`, `RealEstateAlertsPanel`, `ActionsDuMois`, `FiscalKpiBanner`, `CalendrierFiscal`
+- Remplacement par 2 zones composites : `<ZonePilotage>` (Z4) et `<ZoneFiscaliteToggle>` (Z9)
+- Ordre final cible Z1 → Z9 respecté
+- Imports nettoyés (6 imports retirés, 2 ajoutés, 2 types conservés pour les casts)
+
+**Vérifications** :
+
+- `npx vitest run` : 166 fichiers · 2 355 tests · 38 todo · 0 échec
+- `npx tsc --noEmit` : silencieux
+- `npm run build` : succès
+
+**Points ouverts pour V2.4** (Meilleur/Pire investissement) :
+
+- Le top 5 actuel reste atomique (mélange enveloppes et positions). V2.3 le consolidera par enveloppe avec drill-down, V2.4 ajoutera Best/Worst par classe.
+- Pour V2.4, refacto `lib/portfolio/transaction-segments.ts` nécessaire pour calculer un TWR **par position** (et pas seulement portefeuille agrégé). Cf. note 7.5 du mini-audit V2 (option A recommandée, intégrée dans l'effort 4 j de V2.4).
+- Activation des squelettes `meilleurInvestParClasse.test.ts` + `filtreAnciennete90j.test.ts` (squelettes V1.0 en attente).
+
+**Stratégie git** : master direct (4 commits + push), conforme à la stratégie V2 actée en V2.1-BIS.
+
