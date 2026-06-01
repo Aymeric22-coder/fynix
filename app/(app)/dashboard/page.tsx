@@ -29,7 +29,9 @@ import {
   RealEstateAlertsPanel,
   type PropertyDriftSummary,
 } from '@/components/dashboard/real-estate-alerts-panel'
-import { RealEstatePortfolioBlock } from '@/components/dashboard/real-estate-portfolio-block'
+// V2.1 — `RealEstatePortfolioBlock` (4 KPIs) remplacé par `ImmoSummaryCompact` (1 ligne).
+// Le composant complet reste dans le repo (peut servir ailleurs), simplement plus consommé ici.
+import { ImmoSummaryCompact } from '@/components/dashboard/immo-summary-compact'
 import { genererActionsMensuelles } from '@/lib/analyse/recoMensuelles'
 import { calculerOpportunitesFiscales } from '@/lib/analyse/optimiseurFiscal'
 import { formatCurrency } from '@/lib/utils/format'
@@ -231,15 +233,13 @@ export default async function DashboardPage() {
         unvaluedPositionsLabel={dashboardData.unvaluedPositionsLabel}
       />
 
-      {/* Bloc immobilier consolide */}
-      {portfolio.properties.length > 0 && (() => {
-        // Filtre les assets de type real_estate (le dashboard charge deja
-        // les assets actifs : on additionne current_value et acquisition_price).
-        const reAssets = assets.filter(a => a.asset_type === 'real_estate')
+      {/* V2.1 — Résumé immobilier compact (1 ligne, lien vers /immobilier) */}
+      {(() => {
+        const reAssets = assets.filter((a) => a.asset_type === 'real_estate')
         const totalCurrentValue    = reAssets.reduce((s, a) => s + (a.current_value as number | null ?? 0), 0)
         const totalAcquisitionCost = reAssets.reduce((s, a) => s + (a.acquisition_price as number | null ?? 0), 0)
         return (
-          <RealEstatePortfolioBlock
+          <ImmoSummaryCompact
             propertyCount={portfolio.properties.length}
             totalCurrentValue={totalCurrentValue}
             totalAcquisitionCost={totalAcquisitionCost}
