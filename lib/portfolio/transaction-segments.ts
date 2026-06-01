@@ -50,6 +50,9 @@ export interface PositionForSegments {
   acquisitionDate?:  string
   /** Fallback average_price (€) si aucune transaction historisée. */
   averagePriceEur?:  number
+  /** V2.4 — Enveloppe de la position (PEA / CTO / AV / PER / crypto…).
+   *  Permet à `twr-per-envelope.ts` de calculer un TWR par enveloppe. */
+  envelopeId?:       string | null
 }
 
 export interface BuildSegmentsInput {
