@@ -1602,3 +1602,51 @@ Les deux retournent `null` quand le profil n'a pas de données concernées (pas 
 
 **Branche conservée** sur le remote pour validation visuelle avant V2.2 (pas de merge prématuré sur master, comme pour le chantier V1).
 
+---
+
+### V2.1-BIS — Ligne compacte Cash + bascule stratégie git V2 — 2026-06-02
+
+Mini-sprint d'achèvement V2.1 : ajoute la 3ᵉ ligne compacte (Cash) pour boucler la cohérence patrimoniale (Immo + Portefeuille + Cash). Premier sprint V2 sur la nouvelle stratégie git « master direct » (validée par l'utilisateur après V2.1).
+
+**Changement de stratégie git applicable à tout V2** :
+- Plus de branche feature, plus d'URL preview Vercel intermédiaire
+- Workflow : `checkout master → pull → travail → push origin master → Vercel auto-déploie en prod`
+- Justification : user solo, risque utilisateur nul, `git revert` ramène à l'état précédent en 3 min
+- Avant V2.1-BIS : merge V2.1 (commit `7746ed9`) déjà poussé en prod + suppression de la branche feature `feat/dashboard-v2-1-purge-compactage`
+
+**2 commits atomiques sur master** :
+
+| Commit | SHA | Message d'en-tête |
+|---|---|---|
+| Pipeline + composant | `bb9bb1a` | V2.1-BIS - pipeline cashSummary + composant CashSummaryCompact |
+| Intégration page | `72c2ab7` | V2.1-BIS - integrer ligne Cash compact entre Portefeuille et Top |
+
+**Décision source des données cash** : option B retenue (extension du pipeline V1).
+
+Le pipeline V1 ne chargeait ni `cash_accounts` ni `cashSummary` (le KpiGrid utilisait uniquement la somme `assets.cash.current_value`). V2.1-BIS étend le pipeline pour agréger les deux sources :
+
+- `loadDashboardInputs` charge maintenant `cash_accounts` (id, asset_id, balance, currency, account_type) en parallèle des autres requêtes.
+- `computeCashSummary` (helper pur dans `calc.ts`) calcule `totalEur` et `accountsCount` avec dédup propre :
+  - Identifie les `asset_id` non null dans `cash_accounts` (set `cashAssetIdsCovered`)
+  - `totalEur = Σ cash_accounts.balance + Σ (assets where asset_type='cash' AND id ∉ cashAssetIdsCovered).current_value`
+  - `accountsCount = cash_accounts.length + (assets cash legacy non-couverts).length`
+- `DashboardData.cashSummary: { totalEur, accountsCount }` exposé en sortie du pipeline.
+
+**Hypothèse devise** : EUR uniquement en V2.1-BIS (cohérent avec V1 qui suppose EUR partout). Si l'utilisateur a des `cash_accounts` en devise étrangère, le total sera incorrect — c'est le même bug latent que partout ailleurs dans V1, à traiter dans un futur sprint FX dédié.
+
+**Nouveau composant** : `components/dashboard/cash-summary-compact.tsx` (~55 lignes).
+
+- Format : `🐷 Cash (N comptes) · 18,3 k€ · [Voir le détail →]`
+- Icône `PiggyBank` (lucide-react) en cohérence avec `Home` (immo) et `Briefcase` (portefeuille). Convention "tout-icône, pas d'emoji" déjà appliquée aux 2 autres lignes compactes.
+- `return null` si `accountsCount === 0` OU `totalEur === 0` — pas de carte vide pour les profils sans cash.
+- Lien `Voir le détail →` pointe vers `/cash` (page dédiée qui affiche le détail par compte et par banque).
+
+**Intégration page** : ligne ajoutée juste après `PortefeuilleSummaryCompact` et avant le Top 5, conforme à l'ordre validé produit Immo → Portefeuille → Cash (par poids décroissant typique). Aucun autre réordonnancement (le réordonnancement global Z1 → Z9 reste planifié pour V2.2).
+
+**Vérifications** :
+- `npx vitest run` : 166 fichiers · 2 355 tests · 38 todo · 0 échec
+- `npx tsc --noEmit` : silencieux
+- `npm run build` : succès, bundle `/dashboard` ≈ stable (1 composant léger ajouté)
+
+**Stratégie git appliquée** : master direct (2 commits + push), pas de branche feature. Branche `feat/dashboard-v2-1-purge-compactage` également supprimée local + remote au moment du merge V2.1 (le pré-stop V2.1-BIS).
+
