@@ -1,7 +1,6 @@
 import { Metadata } from 'next'
 import { createServerClient }    from '@/lib/supabase/server'
-import { KpiGrid }               from '@/components/dashboard/kpi-grid'
-import { AlertsPanel }           from '@/components/dashboard/alerts-panel'
+// V2.2 — KpiGrid + AlertsPanel sont desormais consommes via ZonePilotage.
 import { TopAssetsList }         from '@/components/dashboard/top-assets-list'
 // V2.1 — PatrimonyAreaChart supprime (doublon avec PatrimoineEvolutionChart).
 // V1.4 — Le pipeline unifié remplace le bloc inline 207-326 historique.
@@ -13,22 +12,19 @@ import {
 } from '@/lib/analyse/dashboard-pipeline'
 import { getPatrimoineComplet }  from '@/lib/analyse/aggregateur'
 import { FIREProgressHero, type FireHeroData } from '@/components/dashboard/fire-progress-hero'
-import { FiscalKpiBanner } from '@/components/dashboard/fiscal-kpi-banner'
+// V2.2 — FiscalKpiBanner + CalendrierFiscal consommés via ZoneFiscaliteToggle.
 import { TropheesCard } from '@/components/dashboard/trophees-card'
-import {
-  CalendrierFiscal,
-  type EvenementFiscalSerialisable,
-} from '@/components/dashboard/calendrier-fiscal'
+import type { EvenementFiscalSerialisable } from '@/components/dashboard/calendrier-fiscal'
 import { enrichJalonsAvecHistorique } from '@/lib/analyse/jalonsHistorique'
 import { getEvenementsFiscaux } from '@/lib/fiscal/calendrier'
 import type { JalonFIRE } from '@/types/analyse'
-import { ActionsDuMois } from '@/components/dashboard/actions-du-mois'
+// V2.2 — ActionsDuMois consommé via ZonePilotage + ZoneFiscaliteToggle (avec prop filter).
 import { DashboardEmptyState } from '@/components/dashboard/empty-state'
 import { PatrimoineEvolutionChart } from '@/components/dashboard/patrimoine-evolution-chart'
-import {
-  RealEstateAlertsPanel,
-  type PropertyDriftSummary,
-} from '@/components/dashboard/real-estate-alerts-panel'
+// V2.2 — RealEstateAlertsPanel consommé via ZonePilotage. Type conservé pour le cast.
+import type { PropertyDriftSummary } from '@/components/dashboard/real-estate-alerts-panel'
+import { ZonePilotage } from '@/components/dashboard/zone-pilotage'
+import { ZoneFiscaliteToggle } from '@/components/dashboard/zone-fiscalite-toggle'
 // V2.1 — `RealEstatePortfolioBlock` (4 KPIs) remplacé par `ImmoSummaryCompact` (1 ligne).
 // Le composant complet reste dans le repo (peut servir ailleurs), simplement plus consommé ici.
 import { ImmoSummaryCompact } from '@/components/dashboard/immo-summary-compact'
@@ -202,40 +198,34 @@ export default async function DashboardPage() {
         <DashboardEmptyState />
       ) : (
         <>
-      {/* KPI fiscal — opportunités chiffrées (lien vers /analyse?tab=optimiser) */}
-      <FiscalKpiBanner opportunites={opportunitesFiscales} />
+      {/* V2.2 — Cascade narrative Z1 → Z9.
+            Z1 : FIREProgressHero (rendu plus haut, hors du gate isEmpty)
+            Z2 : Évolution patrimoine (la dynamique, "comment")
+            Z3 : Jalons franchis (la motivation)
+            Z4 : Pilotage (KPIs + alertes + actions non-fiscales)
+            Z5 : Résumé Immobilier
+            Z6 : Résumé Portefeuille
+            Z7 : Résumé Cash
+            Z8 : Top 5 actifs
+            Z9 : Fiscalité (toggle, masquée par défaut) */}
 
-      {/* Actions de ce mois — recoMensuelles (Sprint 2) */}
-      <ActionsDuMois actions={actionsDuMois} />
-
-      {/* Évolution patrimoine — wealth_snapshots (Sprint 2) */}
+      {/* Z2 — Évolution patrimoine */}
       <PatrimoineEvolutionChart cibleFire={fireHeroData.patrimoine_fire_cible || null} />
 
-      {/* Jalons patrimoniaux franchis */}
+      {/* Z3 — Jalons franchis */}
       <TropheesCard jalons={jalonsEnrichis} />
 
-      {/* Calendrier fiscal personnalisé (12 prochains mois) */}
-      <CalendrierFiscal evenements={evenementsFiscaux} />
-
-      {/* Alertes */}
-      {alerts.length > 0 && <AlertsPanel alerts={alerts} />}
-
-      {/* Alertes drift immobilier (Phase 2) — cast safe : driftAlerts est typé
-          `unknown[]` côté pipeline (pour éviter le coupling avec lib/real-estate).
-          Côté UI on sait que ce sont des `DriftAlert[]` produits par
-          `computeRealEstatePortfolio`, et `RealEstateAlertsPanel` les valide. */}
-      {driftSummaries.length > 0 && (
-        <RealEstateAlertsPanel summaries={driftSummaries as PropertyDriftSummary[]} />
-      )}
-
-      {/* KPIs (V1.4 — Option B : 4 cartes dont widget Performance composite) */}
-      <KpiGrid
+      {/* Z4 — Pilotage : KPIs + Alertes (sur-exposition, drift immo) + Actions non-fiscales */}
+      <ZonePilotage
         kpis={kpis}
         unvaluedPositionsCount={dashboardData.unvaluedPositionsCount}
         unvaluedPositionsLabel={dashboardData.unvaluedPositionsLabel}
+        alerts={alerts}
+        driftSummaries={driftSummaries as PropertyDriftSummary[]}
+        actions={actionsDuMois}
       />
 
-      {/* V2.1 — Résumé immobilier compact (1 ligne, lien vers /immobilier) */}
+      {/* Z5 — Résumé immobilier compact */}
       {(() => {
         const reAssets = assets.filter((a) => a.asset_type === 'real_estate')
         const totalCurrentValue    = reAssets.reduce((s, a) => s + (a.current_value as number | null ?? 0), 0)
@@ -251,7 +241,7 @@ export default async function DashboardPage() {
         )
       })()}
 
-      {/* V2.1 — Résumé portefeuille compact (1 ligne, lien vers /portefeuille) */}
+      {/* Z6 — Résumé portefeuille compact */}
       <PortefeuilleSummaryCompact
         positionsCount={portfolioSummary.positionsCount}
         valuedPositionsCount={portfolioSummary.valuedPositionsCount}
@@ -261,21 +251,13 @@ export default async function DashboardPage() {
         freshnessRatio={portfolioSummary.freshnessRatio}
       />
 
-      {/* V2.1-BIS — Résumé cash compact (1 ligne, lien vers /cash).
-          Position validée par produit : Immo → Portefeuille → Cash, par poids
-          décroissant typique. La ligne disparaît si aucun cash (return null). */}
+      {/* Z7 — Résumé cash compact */}
       <CashSummaryCompact
         totalEur={dashboardData.cashSummary.totalEur}
         accountsCount={dashboardData.cashSummary.accountsCount}
       />
 
-      {/* V2.1 — Wrapper Card Évolution + PatrimonyAreaChart supprimés.
-          La courbe d'évolution est désormais rendue UNIQUEMENT par
-          `PatrimoineEvolutionChart` (plus haut, 5 séries + ligne FIRE +
-          tooltip détaillé). Le ConfidenceBadge est retiré du Dashboard
-          (sera réintégré en V2.2 dans la zone KPIs si décision produit). */}
-
-      {/* Top actifs */}
+      {/* Z8 — Top 5 actifs (atomique en V2.2 ; consolidation par enveloppe en V2.3) */}
       {topAssets.length > 0 && (
         <div className="card p-6">
           <h2 className="text-sm font-medium text-primary mb-6">
@@ -284,6 +266,13 @@ export default async function DashboardPage() {
           <TopAssetsList assets={topAssets} />
         </div>
       )}
+
+      {/* Z9 — Fiscalité (toggle persistant en localStorage, masquée par défaut) */}
+      <ZoneFiscaliteToggle
+        opportunitesFiscales={opportunitesFiscales}
+        evenementsFiscaux={evenementsFiscaux}
+        actions={actionsDuMois}
+      />
         </>
       )}
     </div>
