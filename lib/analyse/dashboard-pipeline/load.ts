@@ -52,6 +52,7 @@ export async function loadDashboardInputs(
     assetsRes, debtsRes, snapshotsRes,
     portfolioResult, realEstatePortfolio,
     transactionsRes, positionsMetaRes,
+    cashAccountsRes,
   ] = await Promise.all([
     supabase
       .from('assets')
@@ -85,6 +86,12 @@ export async function loadDashboardInputs(
     supabase
       .from('positions')
       .select('id,quantity,average_price,acquisition_date')
+      .eq('user_id', userId),
+    // V2.1-BIS — `cash_accounts` pour la ligne compacte Cash. On agrège
+    // avec `assets.cash` côté `calc.ts` (dédup par `asset_id`).
+    supabase
+      .from('cash_accounts')
+      .select('id,asset_id,balance,currency,account_type')
       .eq('user_id', userId),
   ])
 
@@ -175,6 +182,7 @@ export async function loadDashboardInputs(
     portfolioSummary,
     portfolioPositions,
     realEstatePortfolio: realEstate,
+    cashAccounts:        cashAccountsRes.data ?? [],
     transactionsPortefeuille,
     asOfDate: new Date(),
   }

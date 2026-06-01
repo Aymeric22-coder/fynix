@@ -76,6 +76,15 @@ export interface DashboardRealEstatePortfolio {
   totalMonthlyCFYear1:   number
 }
 
+/** Sous-ensemble de `cash_accounts` consommé par le pipeline (V2.1-BIS). */
+export interface DashboardCashAccountRow {
+  id:           string
+  asset_id:     string | null
+  balance:      number | string | null
+  currency:     string | null
+  account_type: string | null
+}
+
 export interface DashboardPipelineInputs {
   assets:              DashboardAssetRow[]
   debts:               DashboardDebtRow[]
@@ -83,6 +92,8 @@ export interface DashboardPipelineInputs {
   portfolioSummary:    DashboardPortfolioSummary
   portfolioPositions:  DashboardPortfolioPosition[]
   realEstatePortfolio: DashboardRealEstatePortfolio
+  /** V2.1-BIS — `cash_accounts` du user (table moderne dédiée). */
+  cashAccounts?:       DashboardCashAccountRow[]
   // ── V1.3 P0.3 — Inputs TWR ──────────────────────────────────────────
   /** Transactions du portefeuille financier (sous-ensemble dédié au TWR). */
   transactionsPortefeuille?: import('@/lib/portfolio/transaction-segments').TransactionForTwr[]
@@ -213,4 +224,16 @@ export interface DashboardData {
   allocationBase:  'gross_strict' | 'net'
   /** Somme des `allocation[].valueEur` — doit égaler `kpis.gross_value` à ε près. */
   allocationTotal: number
+
+  // ── V2.1-BIS — Synthèse cash agrégée ────────────────────────────────
+  /**
+   * Total cash agrégé pour la ligne compacte Dashboard.
+   * Source : `cash_accounts.balance` + `assets` de type `cash` non liés
+   * à un `cash_account` (dédup par `cash_accounts.asset_id`).
+   * Hypothèse devise : EUR uniquement en V2.1-BIS (cf. décision sprint).
+   */
+  cashSummary: {
+    totalEur:       number
+    accountsCount:  number
+  }
 }

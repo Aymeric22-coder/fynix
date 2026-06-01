@@ -240,7 +240,54 @@ export function computeDashboardData(inputs: DashboardPipelineInputs): Dashboard
     unvaluedPositionsLabel,
     allocationBase:  'gross_strict' as const,
     allocationTotal: Math.round(allocationTotal * 100) / 100,
+    cashSummary:     computeCashSummary(inputs),
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Helper V2.1-BIS — Synthèse cash agrégée
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Agrège le total cash (en EUR) en évitant le double comptage entre les
+ * sources `cash_accounts` (table moderne) et `assets` filtré `cash` (legacy).
+ *
+ * Règle de dédup : si un compte `cash_accounts` a un `asset_id` non null,
+ * on compte SA balance et on SKIP l'asset correspondant. Les `assets` cash
+ * non rattachés à un cash_account sont également comptés.
+ *
+ * Hypothèse devise : on suppose EUR pour V2.1-BIS. La conversion FX
+ * patrimoniale viendra plus tard si besoin (cf. `toEur` dans aggregateur).
+ */
+function computeCashSummary(
+  inputs: DashboardPipelineInputs,
+): { totalEur: number; accountsCount: number } {
+  const accounts = inputs.cashAccounts ?? []
+  const cashAssetIdsCovered = new Set<string>(
+    accounts
+      .map((a) => a.asset_id)
+      .filter((id): id is string => id !== null),
+  )
+
+  const numOrZero = (v: number | string | null | undefined): number => {
+    if (v === null || v === undefined) return 0
+    const n = typeof v === 'number' ? v : Number(v)
+    return Number.isFinite(n) ? n : 0
+  }
+
+  const cashFromAccounts = accounts.reduce((s, a) => s + numOrZero(a.balance), 0)
+
+  const legacyCashAssets = inputs.assets.filter(
+    (a) => a.asset_type === 'cash' && !cashAssetIdsCovered.has(a.id),
+  )
+  const cashFromLegacy = legacyCashAssets.reduce(
+    (s, a) => s + numOrZero(a.current_value),
+    0,
+  )
+
+  const totalEur      = Math.round((cashFromAccounts + cashFromLegacy) * 100) / 100
+  const accountsCount = accounts.length + legacyCashAssets.length
+  return { totalEur, accountsCount }
 }
 
 // ─────────────────────────────────────────────────────────────────────
