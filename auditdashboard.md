@@ -1780,3 +1780,75 @@ Le Dashboard expose enfin une réponse claire à la question « quel est mon mei
 
 **Stratégie git** : master direct (6 commits + push), conforme à la stratégie V2 actée en V2.1-BIS.
 
+### V2.4-BIS — Pivot vers rendement instantané (Z8.5 refonte) — 2026-06-02
+
+**Constat post-déploiement V2.4** : la zone Champions / Casseroles s'affichait correctement dans le code (composant et pipeline OK), mais restait invisible sur le compte de l'utilisateur. Le seuil 90 j d'éligibilité, conçu comme garde-fou statistique pour les annualisations TWR (cf. V1.3 commit `cf17e0f`), rejetait l'intégralité des positions d'un compte récent — donc `return null` du composant, vue identique à V2.2 pour l'utilisateur.
+
+**Décision tranchée avec l'utilisateur** : ne pas baisser le seuil 90 j (qui reste sacré pour le TWR portefeuille de Z4) mais **changer complètement la métrique** : on n'annualise plus rien dans Z8.5, on expose un rendement INSTANTANÉ constaté maintenant. Le composant devient utile dès le jour 1, sur n'importe quel niveau d'historique.
+
+**Tableau récapitulatif V2.4 → V2.4-BIS** :
+
+| | V2.4 (sortie) | V2.4-BIS (entrée en prod) |
+|---|---|---|
+| Métrique financier | TWR annualisé sur transactions | **Plus-value latente** `(MV − cost_basis) / cost_basis × 100` |
+| Métrique crypto | TWR annualisé sur transactions | Plus-value latente (idem financier) |
+| Métrique immobilier | netNetYield annualisé sur durée détention | **Rendement locatif net** `loyers_nets_annuels / valeur_actuelle × 100`. RP exclue. |
+| Métrique cash | Taux contractuel | Taux contractuel (inchangé) |
+| Seuil minimum | 90 j de détention | **AUCUN seuil temporel** |
+| Comparabilité | Pas de podium inter-classes | **4 buckets strictement isolés** (inchangé) |
+| Granularité | Par enveloppe (financier/crypto) | **Par position** (financier/crypto), par bien (immo), par compte (cash) |
+| Best/worst | Top 2 par catégorie | **Top 1 best + top 1 worst** (uniquement si bucket ≥ 2 positions) |
+
+**4 commits atomiques sur master** :
+
+| Sprint | SHA | Type | Message d'en-tête |
+|---|---|---|---|
+| ST1 | `518992b` | feat | V2.4-BIS ST1 - pipeline rendement instantané |
+| ST2 | `888cc3c` | feat | V2.4-BIS ST2 - composant Z8.5 réécrit |
+| ST3 | `e316232` | test | V2.4-BIS ST3 - réécriture des tests |
+| doc | _(this commit)_ | docs | V2.4-BIS - journal Phase 6 + bilan changement d'approche |
+
+**Décisions techniques majeures** :
+
+1. **Code TWR V2.4 conservé sur le repo, décroché du pipeline** — Les 3 modules spécialisés `lib/portfolio/twr-per-envelope.ts`, `lib/real-estate/yield-per-property.ts` et `lib/cash/rate-per-account.ts` restent disponibles avec leurs tests dédiés (18 tests toujours verts). Ils ne sont plus consommés par `calc.ts` mais utilisables pour des analyses futures (V2.3 top consolidé par enveloppe, page Analyse, etc.). Décision déléguée à l'utilisateur : « pas supprimer, garder en place ».
+2. **Détection de la résidence principale via `fiscal_regime`** — Le schéma `real_estate_properties` n'a pas de flag `is_principal_residence` ; la convention métier de Fynix est qu'un bien locatif a toujours un `fiscal_regime` renseigné (LMNP réel/micro, LMP, SCI IR/IS, foncier nu/micro). Un bien sans régime est présumé RP et exclu du bucket immobilier. Heuristique robuste, alignée avec l'usage existant du champ (cf. `lib/real-estate/regimeFiscalImmo.ts`).
+3. **Calcul du loyer net annuel via `netYield × totalCost`** — Pas de champ direct `annualNetRent` dans `PropertySimResult.simulation.kpis`. Dérivé arithmétiquement depuis `kpis.netYield` et `kpis.totalCost`. Le rendement locatif actuel rescale ensuite sur `valeur_actuelle` (`asset.current_value`) plutôt que `coût_total_opération` — c'est volontaire, on veut le rendement « si je vendais et rachetais aujourd'hui », pas le rendement par rapport au prix d'achat historique.
+4. **Cost basis disponible nativement** — `DashboardPortfolioPosition.costBasis` existe depuis V1.4 (cf. `buildPortfolioFromDb`). Pour ce sprint : aucune extension du loader nécessaire côté positions. Une position avec `costBasis === 0` ou null est exclue silencieusement (pas de fallback fantaisiste, principe « pas d'invention de donnée »).
+5. **Granularité position-level pour financier/crypto** — Pivot vs V2.4 (où c'était par enveloppe). Plus pertinent UX : l'utilisateur veut savoir « quelle action / quel ETF rapporte le plus », pas « quelle enveloppe ». Le label de la position est complété par `envelopeLabel` (PEA / CTO / Wallet) pour contexte visuel.
+6. **Règle « bucket à 1 position → best only »** — Si un bucket ne contient qu'1 candidat, il apparaît dans la card Meilleurs mais PAS dans la card Pires (un classement à 1 élément n'a pas de sens). Conséquence : si TOUS les buckets sont à 1 position, la card Pires entière disparaît (composant retourne uniquement Meilleurs en pleine largeur).
+7. **Aucune valeur en pourcentage sur métrique manquante** — Si une position n'a pas de cost basis exploitable, elle est silencieusement exclue (pas de yield à 0 % ou « N/A » affiché). Le pipeline préfère un retour absent à un retour faux.
+8. **Suppression de `filtreAnciennete90j.test.ts`** — Le filtre 90 j n'existe plus dans la voie Z8.5 ; les tests qui en dépendaient sont obsolètes. Fichier supprimé du repo (3 ko, 5 tests).
+
+**Modifications pipeline** :
+
+- `lib/portfolio/investment-rankings.ts` — Réécriture complète (~210 lignes). Nouveau type `InvestmentRanking` (sans `holdingDays`, `extrapole`, `category` — la catégorie est portée par la clé du bucket parent). Nouveau type `InvestmentRankings` avec 4 clés OPTIONNELLES (un bucket vide = clé omise). Nouvelle fonction `buildInvestmentRankings({positions, properties, cashAccounts})` qui orchestre les 3 buckets en un passage.
+- `lib/analyse/dashboard-pipeline/types.ts` — `DashboardData.investmentRankings` passe d'`InvestmentRanking[]` (V2.4) à `InvestmentRankings` (V2.4-BIS, objet indexé par catégorie). `DashboardRealEstatePortfolio.properties[]` enrichi avec `netYieldPct`, `totalCostEur`, `fiscalRegime`, `currentValueEur`.
+- `lib/analyse/dashboard-pipeline/load.ts` — Query Supabase `real_estate_properties` enrichie (sélection de `fiscal_regime`). `kpis.netYield` + `kpis.totalCost` + `asset.current_value` mappés vers le shape pipeline.
+- `lib/analyse/dashboard-pipeline/calc.ts` — `computeInvestmentRankings()` totalement réécrit. Les imports `computeTwrPerEnvelope`, `computeYieldPerProperty`, `computeRatePerAccount` sont retirés (décrochage explicite, commentaire de décision en tête du nouvel helper).
+
+**Modifications UI** :
+
+- `components/dashboard/zone-champions-casseroles.tsx` — Refonte complète (~150 lignes). Layout `grid-cols-1 md:grid-cols-2` qui passe en `grid-cols-1` plein-écran si la card Pires est absente. Icônes emoji par catégorie (💼 ₿ 🏠 💰). Lien cliquable depuis chaque ligne vers la page détaillée. Tooltip explicite par `metricType`.
+
+**Tests** :
+
+- `lib/portfolio/__tests__/investment-rankings.test.ts` — Réécriture complète (10 tests). Couvre : formule PV latente, séparation crypto/financier, RP exclue, exclusion silencieuse (CB nul, MV null, loyers null, valeur null), règle 1-position → best only, séparation stricte inter-classes.
+- `lib/analyse/__tests__/dashboard-v1/specs/meilleurInvestParClasse.test.ts` — Réécriture complète (8 tests pipeline). Couvre le câblage de bout en bout via `computeDashboardData`.
+- `lib/analyse/__tests__/dashboard-v1/specs/filtreAnciennete90j.test.ts` — **Supprimé** (obsolète).
+- **Tests V2.4 toujours verts** : `twr-per-envelope.test.ts`, `yield-per-property.test.ts`, `rate-per-account.test.ts` (modules conservés, code intact).
+
+**Vérifications** :
+
+- `npx vitest run` : 171 fichiers · 2 391 passed · 25 todo · 3 skipped · 0 fail
+- `npx tsc --noEmit` : silencieux
+- `npm run build` : succès
+
+**Stratégie git** : master direct (4 commits + push), conforme à la stratégie V2 actée en V2.1-BIS.
+
+**Justification du changement d'approche** : V2.4 répondait à une spec technique (« annualisation rigoureuse »), pas à un besoin produit (« voir ce qui rapporte le plus en ce moment »). Sur un compte récent ou un utilisateur qui ne renseigne pas un historique de transactions, le seuil 90 j rendait la zone invisible — perte de valeur produit complète. Le pivot V2.4-BIS accepte une métrique moins « rigoureuse » statistiquement (plus-value latente cumulée n'est PAS annualisée) mais immédiatement actionnable. La rigueur académique du TWR reste exposée ailleurs (Z4 KpiGrid « Performance portefeuille »). Décision documentée comme **assumée**, pas comme correctif d'un bug — V2.4 reste techniquement valide, simplement supplantée pour Z8.5.
+
+**Points ouverts pour V2.5+** :
+
+- Affichage du top 2 (plutôt que top 1) dans chaque card si l'utilisateur a beaucoup de positions par bucket — feedback à recueillir d'abord.
+- Le code TWR par enveloppe peut être recyclé en V2.3 (top consolidé par enveloppe avec MV + perf annualisée séparées) — pas perdu.
+
