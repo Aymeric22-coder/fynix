@@ -1983,3 +1983,72 @@ Le Dashboard expose enfin une réponse claire à la question « quel est mon mei
 - Refonte ultérieure `/cash` avec l'alerte matelas de sécurité (idée mémorisée ci-dessus).
 - `subType` pourrait être réutilisé pour un futur écran analytique « répartition crypto vs financier dans le bucket marché » sans toucher Z8.5.
 
+### V2.3 — Top consolidé par enveloppe / bien / compte (BUG-5) — 2026-06-02
+
+**Bug corrigé** : depuis V1.0 (et conservé volontairement jusqu'ici), le Top 5 actifs (Z8) mélangeait les granularités — un bien immobilier entier à 410 k€ apparaissait côte à côte avec une position atomique ETF à 13 k€. Conséquences : l'immo dominait toujours le classement, les enveloppes financières n'étaient jamais lisibles dans leur ensemble, et l'utilisateur ne pouvait pas voir « combien pèse mon PEA dans mon patrimoine global ».
+
+**V2.3** : 1 ligne = 1 enveloppe financière (PEA, CTO, AV, PER, wallet crypto…) OU 1 bien immobilier OU 1 compte cash (livret réglementé ou compte courant). Pas de positions atomiques. Pas d'agrégation entre biens immo. Pas d'agrégation entre livrets (Livret A séparé de LDDS séparé de LEP — décision V1.0).
+
+**3 commits atomiques sur master + 1 commit docs** :
+
+| Sprint | SHA | Type | Message d'en-tête |
+|---|---|---|---|
+| ST1 | `ebb1d3c` | feat | V2.3 ST1 - top consolide par enveloppe / bien / compte |
+| ST2 | `1a2a055` | feat | V2.3 ST2 - TopAssetsList consolide + page |
+| ST3 | `c9b37b3` | test | V2.3 ST3 - tests top consolide |
+| doc | _(this commit)_ | docs | V2.3 - journal Phase 6 |
+
+**Décisions techniques majeures** :
+
+1. **Moteur pur dédié** (ST1) — `lib/portfolio/top-assets-consolidated.ts` (~250 l., pur, testable). API : `buildTopAssetsConsolidated({positions, envelopes, properties, cashAccounts, grossValueEur})`. Aucune dépendance Supabase, alimenté par le pipeline depuis `DashboardPipelineInputs`. Pattern identique à `buildInvestmentRankings` (V2.4-TER) pour cohérence.
+2. **Granularité par catégorie** :
+   - **Positions financières / crypto** : groupe par `envelopeId` (champ déjà chargé par `load.ts` depuis V2.4 ST4). Le `subType` n'a pas de rôle ici — un PEA ETF et un wallet Bitcoin sont des enveloppes distinctes.
+   - **Biens immobiliers** : 1 ligne par bien. RP **incluse** (contrairement au best/worst Z8.5 où elle est exclue) — ici on mesure le poids patrimonial, pas la rentabilité. Cette divergence est intentionnelle.
+   - **Comptes cash** : 1 ligne par compte. Inclusion des comptes courants (même sans rémunération — ils pèsent dans le patrimoine).
+3. **Fallback `asset_class`** (cf. décision Q2 du mini-audit V2 + Phase 5.5 dépendance cachée) — si ≥ 50 % des positions actives sont sans `envelopeId`, le pipeline bascule sur une agrégation par `assetClass` (« Actions », « ETF / Fonds », « Crypto »…) plutôt que de créer un gros bucket « Sans enveloppe » qui n'aiderait pas l'utilisateur. Seuil 50 % calé sur le brief V2.3.
+4. **Bucket « Sans enveloppe » si fallback NON déclenché** — si la minorité (< 50 %) de positions est sans envelopeId, on crée un bucket dédié `envelope:__none__` plutôt que de les rattacher arbitrairement. L'utilisateur voit explicitement « 3 positions sans rattachement, 5 200 € à reclasser ».
+5. **Dédup cash** — `cash_accounts` (V2.1-BIS) source primaire, `assets.cash` legacy uniquement si pas couvert par un `cash_accounts.asset_id`. Même règle que `computeCashSummary` (V2.1-BIS) pour cohérence stricte avec Z7.
+6. **Tri global + tie-breaker `key.localeCompare`** — un bien immo à 410 k€ peut écraser un PEA à 80 k€ et un Livret A à 22 k€ : le tri est purement sur `totalValueEur`, toutes catégories confondues. Le tie-breaker assure le déterminisme.
+7. **% du brut, pas du net** (décision actée dans le brief) — `percentOfGross = totalValueEur / grossValueEur × 100`. La somme des % affichés peut donc dépasser 100 % si l'immo est inclus avec son brut sans déduction de dette. C'est cohérent avec le reste du Dashboard où le donut d'allocation utilise aussi le brut MV strict (V1.2 P0.2).
+8. **Suppression de l'ancien `topAssets` atomique** (option a recommandée dans le brief) — `DashboardData.topAssets` retiré du type, `DashboardTopAsset` plus exporté. Si un drill-down atomique est requis ailleurs, il sera regénéré à la demande depuis `positions` plutôt que transporté dans `DashboardData`. Convention pour les futurs sprints : pas 2 versions du même top dans le bundle Dashboard.
+
+**Composant `TopAssetsList`** (ST2) :
+
+- 1 icône par `envelopeType` (Briefcase pour les enveloppes financières, Home pour l'immo, PiggyBank pour le cash, Bitcoin pour wallet crypto, BarChart3 pour le fallback `asset_class`)
+- Couleur cohérente avec la palette Fynix (emerald pour PEA, gold pour immo, blue pour livret, bitcoin orange pour crypto)
+- Suffixe `(N positions)` si `underlyingPositionsCount > 1` — un PEA contenant 5 ETF affiche « PEA (5 positions) ».
+- Lien cliquable par ligne vers la section appropriée (`/portefeuille`, `/immobilier/<propertyId>`, `/cash`)
+- `return null` si aucune entrée
+
+**Tests** (ST3) :
+
+- `lib/portfolio/__tests__/top-assets-consolidated.test.ts` — **15 tests** sur le moteur pur (consolidation, biens, livrets séparés, tri, tie-breaker, fallback, % du brut, cas limites).
+- `lib/analyse/__tests__/dashboard-v1/specs/topConsolide.test.ts` — squelette V1.0 activé : **5 tests pipeline** via `computeDashboardData` (cas boursier, livrets séparés, RP incluse, limite 5, fallback).
+- `pipelineUnique.test.ts` — bloc topAssets remplacé par un invariant de structure (tableau présent, ≤ 5, clés stables). Le tie-breaker spécifique au top atomique a été supprimé (n'a plus de sens en consolidation par bucket).
+
+**Vérifications** :
+
+- `npx vitest run` : 173 fichiers · 2 410 tests passed · 18 todo · 2 skipped · 0 fail
+- `npx tsc --noEmit` : silencieux
+- `npm run build` : succès
+
+**Décision sur l'ancien `topAssets` atomique** : **supprimé**. Option (a) recommandée dans le brief V2.3 retenue. Pas de version « conservée en parallèle pour drill-down futur » — si un cas d'usage le demande, on regénérera la liste atomique à la demande depuis `positions` plutôt que de transporter 2 versions du même top dans `DashboardData` (cohérence avec la règle V2 : pas de dette type).
+
+**Tableau de transformation sur le compte de référence** (à valider visuellement) :
+
+| Avant V2.3 (Top atomique, BUG-5) | Après V2.3 (Top consolidé) |
+|---|---|
+| 🏠 Immeuble Tandoori — 410 k€ (84 %) | 🏠 Immeuble Tandoori — 410,0 k€ (84,0 %) |
+| 💼 MSCI World Swap (position) — 13,2 k€ (2,7 %) | 💼 PEA Trade Republic (4 positions) — ~34,5 k€ (~7,1 %) |
+| 💰 LEP (asset cash legacy) — 10,3 k€ (2,1 %) | 💰 Livret A — Crédit Agricole — 8,0 k€ (1,6 %) |
+| ₿ Bitcoin (position) — 9,5 k€ (2,0 %) | 💰 LEP — 10,3 k€ (2,1 %) |
+| 💰 Livret A — 8,0 k€ (1,6 %) | _(le 5ᵉ rang dépend de tes données réelles : Wallet crypto agrégé, ou autre enveloppe)_ |
+
+**Points ouverts pour V2.5+** :
+
+- **Drill-down par enveloppe** : le `href` actuel pointe vers `/portefeuille` (vue globale). Un futur sprint pourrait ajouter un filtre query-param (`?envelope=<id>`) pour atterrir directement sur les positions de l'enveloppe cliquée.
+- **Reactivation du donut d'allocation par taxonomie** (V1.4 P0.6, masqué actuellement) — la consolidation V2.3 le rend pertinent (cohérence des granularités).
+- **Test e2e Playwright sur le Top 5** — un test page-niveau qui ouvre `/dashboard` et vérifie le rendu de la liste consolidée serait utile pour blindage post-V1.4-BIS.
+
+**Stratégie git** : master direct (3 commits + push), conforme à la stratégie V2 actée en V2.1-BIS.
+
