@@ -130,6 +130,13 @@ export interface DashboardPipelineInputs {
   cashAccounts?:       DashboardCashAccountRow[]
   /** V2.4 P0.7 — Méta enveloppes (libellé + type) pour Z8.5. */
   envelopes?:          DashboardEnvelopeMeta[]
+  /**
+   * V2.2-BIS — Signatures actuellement masquées par l'utilisateur
+   * (cf. table `user_alert_dismissals`, expires_at IS NULL OR > now()).
+   * Le pipeline filtre les alertes ET les actions du mois correspondantes
+   * avant de les exposer à l'UI.
+   */
+  alertDismissalsActive?: ReadonlySet<string>
   // ── V1.3 P0.3 — Inputs TWR ──────────────────────────────────────────
   /** Transactions du portefeuille financier (sous-ensemble dédié au TWR). */
   transactionsPortefeuille?: import('@/lib/portfolio/transaction-segments').TransactionForTwr[]

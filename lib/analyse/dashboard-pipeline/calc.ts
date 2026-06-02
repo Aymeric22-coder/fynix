@@ -329,6 +329,14 @@ export function computeDashboardData(inputs: DashboardPipelineInputs): Dashboard
       alerts:       p.driftAlerts ?? [],
     }))
 
+  // ── V2.2-BIS — Filtrage des alertes masquées ────────────────────────
+  // Les alertes informatives sans signature (stale_data, sim_incomplete)
+  // ne sont jamais filtrées : l'utilisateur ne peut pas les masquer.
+  const dismissed = inputs.alertDismissalsActive
+  const visibleAlerts: DashboardAlert[] = dismissed && dismissed.size > 0
+    ? alerts.filter((a) => !a.signature || !dismissed.has(a.signature))
+    : alerts
+
   // ── KPIs arrondis (page.tsx:357-367) ────────────────────────────────
   return {
     kpis: {
@@ -352,7 +360,7 @@ export function computeDashboardData(inputs: DashboardPipelineInputs): Dashboard
     allocation,
     topAssets,
     timeline,
-    alerts,
+    alerts: visibleAlerts,
     realEstateDriftSummaries,
     hasImmoSim,
     unvaluedPositionsCount,

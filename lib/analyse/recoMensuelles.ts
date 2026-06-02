@@ -145,6 +145,18 @@ export interface RecoMensuellesOptions {
   opportunitesFiscales?: ReadonlyArray<OpportuniteFiscale>
   /** Plafond du nombre total d'actions retournees. Defaut 5. */
   maxActions?: number
+  /**
+   * V2.2-BIS — Signatures actuellement masquées par l'utilisateur (cf.
+   * table `user_alert_dismissals`). Toute action dont `signatureFor(a)`
+   * appartient à ce set est filtrée silencieusement avant retour. La
+   * convention de signature est `reco:<action.id>`.
+   */
+  dismissedSignatures?: ReadonlySet<string>
+}
+
+/** Convention de signature stable pour les recos (masquage individuel). */
+export function actionSignature(action: ActionMensuelle): string {
+  return `reco:${action.id}`
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -202,8 +214,14 @@ export function genererActionsMensuelles(
     })
   }
 
+  // V2.2-BIS — Filtre des actions explicitement masquées par l'utilisateur.
+  const dismissed = opts.dismissedSignatures
+  const visible = (dismissed && dismissed.size > 0)
+    ? out.filter((a) => !dismissed.has(actionSignature(a)))
+    : out
+
   const max = opts.maxActions ?? 5
-  return out.slice(0, max)
+  return visible.slice(0, max)
 }
 
 /** Detecte si une opportunite fiscale fait doublon avec une action deja

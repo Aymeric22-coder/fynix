@@ -56,6 +56,7 @@ export async function loadDashboardInputs(
     transactionsRes, positionsMetaRes,
     cashAccountsRes,
     envelopesRes, realEstatePropsRes,
+    alertDismissalsRes,
   ] = await Promise.all([
     // V2.4 P0.7 — on récupère aussi `acquisition_date` pour le filtre 90 j immobilier.
     supabase
@@ -110,6 +111,13 @@ export async function loadDashboardInputs(
     supabase
       .from('real_estate_properties')
       .select('id,asset_id,fiscal_regime')
+      .eq('user_id', userId),
+    // V2.2-BIS — Masquages d'alertes / recos actifs (non expirés).
+    // Le filtre `expires_at` est appliqué côté lecture (cf. note dans la
+    // migration 054 : pas de prédicat partiel sur now() en index).
+    supabase
+      .from('user_alert_dismissals')
+      .select('alert_signature,expires_at')
       .eq('user_id', userId),
   ])
 
@@ -231,6 +239,21 @@ export async function loadDashboardInputs(
   // realEstatePropsRes est exploitée pour `fiscal_regime` (cf. mapping immo
   // V2.4-BIS ci-dessus via `reMetaByPropertyId`).
 
+  // V2.2-BIS — Set des signatures actuellement masquées (expires_at NULL
+  // ou futur). Évalué côté lecture car PostgreSQL ne permet pas de prédicat
+  // partiel sur now() dans l'index.
+  const nowMs = Date.now()
+  const alertDismissalsActive = new Set<string>(
+    (alertDismissalsRes.data ?? [])
+      .filter((row) => {
+        const exp = (row as { expires_at?: string | null }).expires_at
+        if (!exp) return true
+        const ms = new Date(exp).getTime()
+        return Number.isFinite(ms) && ms > nowMs
+      })
+      .map((row) => (row as { alert_signature: string }).alert_signature),
+  )
+
   return {
     assets:              assetsRes.data ?? [],
     debts:               debtsRes.data  ?? [],
@@ -240,6 +263,7 @@ export async function loadDashboardInputs(
     realEstatePortfolio: realEstate,
     cashAccounts:        cashAccountsRes.data ?? [],
     envelopes,
+    alertDismissalsActive,
     transactionsPortefeuille,
     asOfDate: new Date(),
   }

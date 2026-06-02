@@ -150,6 +150,8 @@ export default async function DashboardPage() {
   const actionsDuMois = genererActionsMensuelles(patrimoineComplet, {
     lastPositionAddedAt,
     opportunitesFiscales,
+    // V2.2-BIS — Masquages utilisateurs (chargés en un coup par le pipeline).
+    dismissedSignatures: inputs.alertDismissalsActive,
   })
   const proj = patrimoineComplet.projectionFIRESnapshot
   const fireHeroData: FireHeroData = {
