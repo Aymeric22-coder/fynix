@@ -213,12 +213,43 @@ export interface DashboardAllocationSlice {
   color:    string     // hex depuis TAXONOMY_COLORS
 }
 
-export interface DashboardTopAsset {
-  id:      string     // `asset:<assetId>` ou `position:<positionId>`
-  name:    string
-  type:    string
-  value:   number
-  percent: number
+// `DashboardTopAsset` (granularité atomique) supprimé en V2.3 — remplacé
+// par `TopAssetConsolidated`. L'ancien top mélangeait positions atomiques
+// et biens immo entiers, rendant le classement inintelligible (BUG-5).
+// Si un drill-down atomique est requis ailleurs, il sera regénéré à la
+// demande depuis `positions` plutôt que transporté dans `DashboardData`.
+
+/**
+ * Type V2.3 — Top consolidé par enveloppe / bien / compte (BUG-5).
+ *
+ * 1 ligne = 1 enveloppe financière (PEA, CTO, AV, PER, wallet crypto)
+ *         OU 1 bien immobilier
+ *         OU 1 compte cash
+ * Pas de positions atomiques mélangées (un PEA contenant 5 ETF = 1 ligne « PEA »).
+ * Pas d'agrégation entre comptes cash (Livret A séparé de LDDS séparé de LEP).
+ * Pas d'agrégation entre biens immo.
+ */
+export type ConsolidatedEnvelopeType =
+  | 'pea' | 'cto' | 'av' | 'per' | 'wallet_crypto' | 'other'    // enveloppes financières (V2.4 envelope_type)
+  | 'real_estate'                                                  // bien immo
+  | 'cash_livret' | 'cash_courant'                                 // compte cash (livret réglementé vs CC)
+  | 'asset_class'                                                  // fallback : ≥ 50 % positions sans envelope_id
+
+export interface TopAssetConsolidated {
+  /** Clé stable : `envelope:<id>` / `re:<propertyId>` / `cash:<accountId>` / `class:<assetClass>`. */
+  key:                      string
+  /** Libellé prêt à afficher (« PEA Bourso », « Immeuble Tandoori », « Livret A — Crédit Agricole »). */
+  label:                    string
+  /** Type d'enveloppe consolidée — sert à choisir l'icône côté UI. */
+  envelopeType:             ConsolidatedEnvelopeType
+  /** Valeur totale agrégée (€). */
+  totalValueEur:            number
+  /** % du patrimoine BRUT (pas net) — peut dépasser 100 % si la dette n'est pas déduite. */
+  percentOfGross:           number
+  /** Nombre de positions sous-jacentes (1 pour immo/cash/livret, N pour PEA/CTO/wallet). */
+  underlyingPositionsCount: number
+  /** Lien de drill-down (Server Component → `<Link href={...}>`). */
+  href?:                    string
 }
 
 export interface DashboardTimelinePoint {
@@ -252,7 +283,13 @@ export interface DashboardRealEstateDriftSummary {
 export interface DashboardData {
   kpis:                    DashboardKpis
   allocation:              DashboardAllocationSlice[]
-  topAssets:               DashboardTopAsset[]
+  /**
+   * V2.3 — Top 5 actifs consolidés par enveloppe / bien / compte.
+   * Remplace l'ancien `topAssets` atomique (BUG-5). 1 ligne = 1 enveloppe
+   * (PEA, CTO, AV, wallet…) ou 1 bien immo ou 1 compte cash. Trié par
+   * valeur décroissante, limité à 5. Cf. `TopAssetConsolidated`.
+   */
+  topAssetsConsolidated:   TopAssetConsolidated[]
   timeline:                DashboardTimelinePoint[]
   alerts:                  DashboardAlert[]
   realEstateDriftSummaries: DashboardRealEstateDriftSummary[]

@@ -41,9 +41,16 @@ import {
   type PositionForRanking,
   type PropertyForRanking,
 } from '@/lib/portfolio/investment-rankings'
+import {
+  buildTopAssetsConsolidated,
+  type PositionForTop,
+  type EnvelopeForTop,
+  type PropertyForTop,
+  type CashAccountForTop,
+} from '@/lib/portfolio/top-assets-consolidated'
 import type {
   DashboardData, DashboardPipelineInputs,
-  DashboardAllocationSlice, DashboardTopAsset, DashboardAlert,
+  DashboardAllocationSlice, DashboardAlert,
   DashboardRealEstateDriftSummary, DashboardTimelinePoint,
 } from './types'
 
@@ -153,33 +160,83 @@ export function computeDashboardData(inputs: DashboardPipelineInputs): Dashboard
     total_debt:  s.total_debt,
   }))
 
-  // ── Top assets (page.tsx:300-326) — granularité actuelle conservée ──
-  // BUG-5 volontairement conservé : biens immo entiers + positions atomiques.
-  // SEULE DÉVIATION : tie-breaker `id.localeCompare` pour ordre déterministe.
-  type TopCandidate = { id: string; name: string; type: string; value: number }
+  // ── V2.3 — Top 5 consolidé par enveloppe / bien / compte (BUG-5) ──
+  // Remplace l'ancien `topAssets` atomique qui mélangeait granularités
+  // (un PEA à 80k devenait 5 lignes ETF / un bien immo entier à 410k
+  // écrasait tout le reste). Cf. `lib/portfolio/top-assets-consolidated.ts`.
+  const envelopesForTop: EnvelopeForTop[] = (inputs.envelopes ?? []).map((e) => ({
+    id:           e.id,
+    name:         e.name,
+    envelopeType: e.envelopeType,
+  }))
 
-  const assetsForTop: TopCandidate[] = assets
-    .filter((a) => (a.current_value ?? 0) > 0)
-    .map((a) => ({ id: a.id, name: a.name, type: a.asset_type, value: a.current_value! }))
-
-  const positionsForTop: TopCandidate[] = portfolioPositions
+  const positionsForTop: PositionForTop[] = portfolioPositions
     .filter((p) => p.status === 'active')
     .map((p) => ({
-      id:    p.positionId,
-      name:  p.name,
-      type:  p.assetClass,
-      // Identique à page.tsx:317 — fallback CB pour positions sans prix (BUG-1)
-      value: p.marketValue ?? p.costBasis,
+      positionId:     p.positionId,
+      envelopeId:     p.envelopeId ?? null,
+      assetClass:     p.assetClass,
+      marketValueEur: p.marketValue,
+      name:           p.name,
     }))
 
-  const topAssets: DashboardTopAsset[] = [...assetsForTop, ...positionsForTop]
-    .filter((a) => a.value > 0)
-    .sort((a, b) => (b.value - a.value) || a.id.localeCompare(b.id))
-    .slice(0, 5)
+  const propertiesForTop: PropertyForTop[] = assets
+    .filter((a) => a.asset_type === 'real_estate' && (a.current_value ?? 0) > 0)
     .map((a) => ({
-      ...a,
-      percent: grossValue > 0 ? (a.value / grossValue) * 100 : 0,
+      id:              a.id,
+      name:            a.name,
+      currentValueEur: a.current_value!,
     }))
+
+  // Cash : on s'aligne sur la même dédup que `computeCashSummary` (V2.1-BIS) :
+  //   - cash_accounts en source primaire (1 ligne par compte)
+  //   - assets legacy de type 'cash' uniquement si pas couvert par un cash_account
+  //     (asset_id pointing back). Évite le double-comptage.
+  const cashAccountRows = inputs.cashAccounts ?? []
+  const cashAssetIdsCovered = new Set<string>(
+    cashAccountRows
+      .map((a) => a.asset_id)
+      .filter((id): id is string => id !== null),
+  )
+  const cashForTop: CashAccountForTop[] = []
+  const cashNum = (v: number | string | null | undefined): number => {
+    if (v === null || v === undefined) return 0
+    const n = typeof v === 'number' ? v : Number(v)
+    return Number.isFinite(n) ? n : 0
+  }
+  for (const c of cashAccountRows) {
+    const balance = cashNum(c.balance)
+    if (balance <= 0) continue
+    const accountTypeLabel = c.account_type ?? 'Compte'
+    const bank = c.bank_name ? ` — ${c.bank_name}` : ''
+    cashForTop.push({
+      id:          c.id,
+      label:       `${accountTypeLabel}${bank}`,
+      accountType: c.account_type ?? 'compte_courant',
+      balanceEur:  balance,
+    })
+  }
+  // Ajout des assets.cash legacy non couverts par cash_accounts (cas vintage).
+  for (const a of assets) {
+    if (a.asset_type !== 'cash') continue
+    if (cashAssetIdsCovered.has(a.id)) continue
+    const balance = a.current_value ?? 0
+    if (balance <= 0) continue
+    cashForTop.push({
+      id:          a.id,
+      label:       a.name,
+      accountType: 'compte_courant',     // par défaut, info perdue côté legacy
+      balanceEur:  balance,
+    })
+  }
+
+  const topAssetsConsolidated = buildTopAssetsConsolidated({
+    positions:     positionsForTop,
+    envelopes:     envelopesForTop,
+    properties:    propertiesForTop,
+    cashAccounts:  cashForTop,
+    grossValueEur: grossValue,
+  })
 
   // V2.2-BIS — `cashSummary` est désormais utilisé par la règle d'alerte
   // « cash > 30 % du patrimoine net depuis > 6 mois » → lifté ici (avant
@@ -360,7 +417,7 @@ export function computeDashboardData(inputs: DashboardPipelineInputs): Dashboard
       sim_cf_label:       hasImmoSim ? 'après impôts (simulation)' : undefined,
     },
     allocation,
-    topAssets,
+    topAssetsConsolidated,
     timeline,
     alerts: visibleAlerts,
     realEstateDriftSummaries,

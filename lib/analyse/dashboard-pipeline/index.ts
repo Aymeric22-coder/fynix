@@ -38,7 +38,9 @@ export type {
   DashboardPipelineInputs,
   DashboardKpis,
   DashboardAllocationSlice,
-  DashboardTopAsset,
+  // V2.3 — Top 5 consolidé par enveloppe / bien / compte (BUG-5 corrigé).
+  TopAssetConsolidated,
+  ConsolidatedEnvelopeType,
   DashboardTimelinePoint,
   DashboardAlert,
   DashboardRealEstateDriftSummary,
