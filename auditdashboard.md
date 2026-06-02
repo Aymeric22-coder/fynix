@@ -1921,3 +1921,65 @@ Le Dashboard expose enfin une réponse claire à la question « quel est mon mei
 
 **Stratégie git** : master direct (5 commits + push), conforme à la stratégie V2 actée en V2.1-BIS.
 
+### V2.4-TER — Simplification du classement Z8.5 à 2 buckets — 2026-06-02
+
+**Constat post-V2.4-BIS** : la zone Champions / Casseroles affichait 4 buckets (`financier`, `crypto`, `immobilier`, `cash`) avec des cartes parfois denses. Deux frictions identifiées par l'utilisateur après usage :
+
+1. **`financier` et `crypto` redondants** — Ces deux buckets utilisaient exactement la même métrique (plus-value latente `(MV − cost_basis) / cost_basis × 100`). Les séparer était une cosmétique inutile qui n'apportait aucune information à l'œil.
+2. **`cash` n'est pas un investissement au sens propre** — Classer un Livret A à 3 % aux côtés d'un Nasdaq à +50 % crée une confusion conceptuelle entre **rendement contractuel** (le taux servi par la banque, sans risque de marché) et **performance d'investissement** (la plus-value sur un actif volatil). Le cash est un **parking sécurisé du capital**, pas un placement comparable.
+
+**Décision** : simplifier à 2 buckets uniquement : `marche` (financier + crypto fusionnés) + `immobilier`. Le cash conserve sa visibilité ailleurs sur le Dashboard (Z7 ligne compacte + `/cash`) — pas de perte d'info patrimoniale, juste un classement plus honnête.
+
+**3 commits atomiques sur master + 1 commit docs** :
+
+| Sprint | SHA | Type | Message d'en-tête |
+|---|---|---|---|
+| ST1 | `fa7146c` | feat | V2.4-TER ST1 - 2 buckets (marche + immobilier) |
+| ST2 | `8f5dbd0` | feat | V2.4-TER ST2 - ZoneChampionsCasseroles 2 buckets |
+| ST3 | `f678fd3` | test | V2.4-TER ST3 - reecriture des tests pour 2 buckets |
+| doc | _(this commit)_ | docs | V2.4-TER - journal Phase 6 + memo cash dormant |
+
+**Décisions techniques majeures** :
+
+1. **Fusion en bucket `marche`, séparation préservée en interne** — `InvestmentRanking.subType: 'financier' | 'crypto'` ajouté pour traçabilité (analytics futurs, debug). Mais Z8.5 N'AFFICHE PAS la différence — c'est volontaire : la fusion est totale à l'œil de l'utilisateur. Le subType est une porte de sortie pour des consommateurs analytiques sans toucher au composant.
+2. **Type contractuel à 2 clés optionnelles** — `InvestmentRankings { marche?, immobilier? }`. Plus de `financier`, `crypto`, `cash`. Les tests utilisent `@ts-expect-error` documentés pour verrouiller le contrat (toute régression future qui ré-ajouterait ces clés casserait la CI).
+3. **`InvestmentMetricType` réduit** — Suppression de `'taux_contractuel'`. Les 2 valeurs restantes : `'plus_value_latente'` (marche) et `'rendement_locatif'` (immobilier).
+4. **`CashAccountForRanking` retiré de l'API publique** — Le pipeline `calc.ts` ne mappe plus les `cashAccounts` vers ce shape, et l'orchestrateur `buildInvestmentRankings` ne l'accepte plus en input. Erreur de compilation immédiate si quelqu'un essaie de le repasser.
+5. **Code V2.4 d'origine totalement intouché** — `lib/portfolio/twr-per-envelope.ts`, `lib/real-estate/yield-per-property.ts`, `lib/cash/rate-per-account.ts` restent en place avec leurs 18 tests dédiés verts. Le pipeline ne les consomme plus, mais ils restent disponibles pour des analyses futures (V2.3 top consolidé par enveloppe, sections /portefeuille analytiques, etc.).
+6. **Asymétrie autorisée entre cards Meilleurs / Pires** (option A) — Si l'utilisateur n'a qu'un seul bien locatif, ce bien n'apparaît QUE dans Meilleurs (la règle « 1 candidat → best only » est inchangée). La card Pires se retrouve alors avec 1 seule ligne (marché). C'est OK et c'est la décision actée — éviter une ligne « — » ou un placeholder dégrade davantage l'UX que la légère asymétrie.
+7. **Z7 (CashSummaryCompact) totalement intacte** — Le commit ne touche QUE Z8.5 + son pipeline. La ligne compacte « 🐷 Cash · X k€ » reste affichée à sa place habituelle dans la cascade Z1 → Z9.
+
+**Confirmations explicites** :
+
+- ✅ Aucune ligne cash dans le composant Z8.5 (ni LEP, ni Livret A, ni icône 🐷).
+- ✅ Code cash V2.4-BIS **conservé** dans `lib/cash/rate-per-account.ts` (+ ses tests), mais **décroché du pipeline** Dashboard.
+- ✅ Bitcoin et Ethereum apparaissent désormais dans le bucket `marche` (plus dans un bucket `crypto` séparé). Si Ethereum est la pire position toutes catégories financières confondues, elle apparaît dans Pires comme ligne marché.
+- ✅ La résidence principale reste exclue du bucket immobilier (`fiscalRegime === null` → skip).
+
+**Tableau de transformation sur le compte de référence** (à valider visuellement) :
+
+| V2.4-BIS (4 buckets, jusqu'à 4 lignes par card) | V2.4-TER (2 buckets, max 2 lignes par card) |
+|---|---|
+| 💼 Financier : MSCI World Swap +24,3 % | 📊 Marché : Amundi Nasdaq +49,8 % |
+| ₿ Crypto : Bitcoin +18,5 % | 🏠 Immobilier locatif : Tandoori +5,2 % |
+| 🏠 Immo locatif : Tandoori +5,2 % | _(plus de ligne cash)_ |
+| 💰 Cash : LEP +5,0 % | |
+
+**Vérifications** :
+
+- `npx vitest run` : 171 fichiers · 2 392 tests passed · 25 todo · 3 skipped · 0 fail
+- `npx tsc --noEmit` : silencieux
+- `npm run build` : succès
+
+**Idée mémorisée pour la future refonte de la section `/cash` (hors scope V2.4-TER)** :
+
+- **Alerte « matelas de sécurité » conditionnée au statut pro** : 6 mois de charges sur livret réglementé pour CDI, 12 mois pour TNS / freelance / dirigeant. Si le cash dispo ne couvre PAS ce coussin → alerte « ton coussin de sécurité est sous-dimensionné pour ton statut ». Sera implémenté lors d'un sprint dédié à la refonte de la section `/cash` (pas dans Z8.5 ni dans V2.5 immédiat).
+
+**Stratégie git** : master direct (3 commits + push), conforme à la stratégie V2 actée en V2.1-BIS.
+
+**Points ouverts pour V2.5+** :
+
+- Validation visuelle utilisateur sur la sobriété du nouveau Z8.5 (2 lignes max par card).
+- Refonte ultérieure `/cash` avec l'alerte matelas de sécurité (idée mémorisée ci-dessus).
+- `subType` pourrait être réutilisé pour un futur écran analytique « répartition crypto vs financier dans le bucket marché » sans toucher Z8.5.
+
