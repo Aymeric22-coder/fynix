@@ -71,7 +71,8 @@ export async function loadDashboardInputs(
       .eq('status', 'active'),
     supabase
       .from('wealth_snapshots')
-      .select('snapshot_date,patrimoine_net,patrimoine_brut,total_dettes')
+      // V2.2-BIS — `total_cash` ajouté pour la règle « cash > 30 % depuis 6 mois ».
+      .select('snapshot_date,patrimoine_net,patrimoine_brut,total_dettes,total_cash')
       .eq('user_id', userId)
       .order('snapshot_date', { ascending: false })
       .limit(13),
@@ -119,6 +120,8 @@ export async function loadDashboardInputs(
     total_net_value:   Number(s.patrimoine_net   ?? 0),
     total_gross_value: Number(s.patrimoine_brut  ?? 0),
     total_debt:        Number(s.total_dettes     ?? 0),
+    // V2.2-BIS — cash historisé pour la persistance « > 30 % depuis 6 mois ».
+    total_cash:        Number(s.total_cash       ?? 0),
   }))
 
   // ── Mapping portfolio (extrait du `PortfolioResult` complet) ────────

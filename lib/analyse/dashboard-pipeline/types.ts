@@ -34,6 +34,8 @@ export interface DashboardSnapshotRow {
   total_net_value:    number
   total_gross_value:  number
   total_debt:         number
+  /** V2.2-BIS — Cash historisé pour la règle « cash > 30 % depuis 6 mois ». */
+  total_cash?:        number
 }
 
 export interface DashboardPortfolioSummary {
@@ -223,6 +225,15 @@ export interface DashboardAlert {
   type:     string
   message:  string
   severity: 'warning' | 'info'
+  /**
+   * V2.2-BIS — Identifiant stable côté DB pour le masquage individuel.
+   * Pour les alertes globales (ex: `over_exposure_immo_net`) : le type
+   * suffit. Pour les alertes par position (`concentration_position`) :
+   * suffixe `:<positionId>` pour distinguer chaque ligne.
+   * Optionnel pour conserver la rétrocompat avec les alertes informatives
+   * pures (stale_data, sim_incomplete) que l'utilisateur ne masque pas.
+   */
+  signature?: string
 }
 
 export interface DashboardRealEstateDriftSummary {

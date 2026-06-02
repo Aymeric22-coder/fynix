@@ -179,17 +179,124 @@ export function computeDashboardData(inputs: DashboardPipelineInputs): Dashboard
       percent: grossValue > 0 ? (a.value / grossValue) * 100 : 0,
     }))
 
-  // ── Alertes (page.tsx:328-346) ──────────────────────────────────────
+  // V2.2-BIS — `cashSummary` est désormais utilisé par la règle d'alerte
+  // « cash > 30 % du patrimoine net depuis > 6 mois » → lifté ici (avant
+  // le bloc alerts) pour éviter la double agrégation.
+  const cashSummary = computeCashSummary(inputs)
+
+  // ── Alertes (V2.2-BIS — seuils réalistes par classe d'actif) ────────
+  // **Suppression franche** de l'ancienne logique « > 70 % du brut » qui
+  // ignorait le levier et la moyenne française. Remplacée par 4 règles
+  // documentées + une `signature` stable par alerte pour permettre
+  // l'individualisation du masquage (cf. V2.2-BIS ST3 + ST4).
+  //
+  // Seuils retenus (constantes documentées) :
+  //   • IMMO net (= valeurImmo − CRD) > 60 % du patrimoine net
+  //     Moyenne française ~ 62 %, on alerte au-delà car ça impacte la
+  //     diversification du foyer ET la sensibilité au cycle immo.
+  //   • Crypto > 15 % du patrimoine net (très volatil, classe spéculative)
+  //   • 1 position financière > 25 % du patrimoine financier (risque idiosyncratique)
+  //   • Cash > 30 % du patrimoine net ET historique 6 mois consécutifs
+  //     au-dessus du seuil (pas d'alerte sur un mouvement ponctuel)
+  //
+  // Chaque alerte porte un `signature` unique pour le masquage utilisateur
+  // (cf. V2.2-BIS — `user_alert_dismissals`).
+  const IMMO_NET_THRESHOLD_PCT     = 60
+  const CRYPTO_THRESHOLD_PCT       = 15
+  const POSITION_CONCENTRATION_PCT = 25
+  const CASH_THRESHOLD_PCT         = 30
+  const CASH_PERSISTENCE_DAYS      = 180   // 6 mois consécutifs minimum
+
   const alerts: DashboardAlert[] = []
-  for (const slice of allocation) {
-    if (slice.percent > 70) {
+
+  // ── Règle 1 — Immobilier NET > 60 % du patrimoine net ──────────────
+  if (netValue > 0) {
+    const reAssetsValue = assets
+      .filter((a) => a.asset_type === 'real_estate')
+      .reduce((s, a) => s + (a.current_value ?? 0), 0)
+    const immoNet = reAssetsValue - realEstatePortfolio.totalCapitalRemaining
+    const immoNetPct = (immoNet / netValue) * 100
+    if (immoNetPct > IMMO_NET_THRESHOLD_PCT) {
       alerts.push({
-        type: 'over_exposure',
-        // V1.2 P0.6 — le libellé vient désormais de TAXONOMY_LABELS (pas
-        // de l'ancien ASSET_TYPE_LABELS). Le wording reste « Sur-exposition X ».
-        message: `Sur-exposition ${slice.label} : ${slice.percent.toFixed(0)} % du patrimoine`,
-        severity: 'warning',
+        type:      'over_exposure_immo_net',
+        signature: 'over_exposure_immo_net',
+        message:   `Immobilier net : ${immoNetPct.toFixed(0)} % du patrimoine net (au-delà de ${IMMO_NET_THRESHOLD_PCT} %). Sensibilité élevée au cycle immo.`,
+        severity:  'warning',
       })
+    }
+  }
+
+  // ── Règle 2 — Crypto > 15 % du patrimoine net ──────────────────────
+  if (netValue > 0) {
+    const cryptoSlice = allocation.find((a) => a.key === 'crypto')
+    const cryptoPctOfNet = cryptoSlice
+      ? (cryptoSlice.valueEur / netValue) * 100
+      : 0
+    if (cryptoPctOfNet > CRYPTO_THRESHOLD_PCT) {
+      alerts.push({
+        type:      'over_exposure_crypto',
+        signature: 'over_exposure_crypto',
+        message:   `Crypto : ${cryptoPctOfNet.toFixed(0)} % du patrimoine net (au-delà de ${CRYPTO_THRESHOLD_PCT} %). Classe très volatile.`,
+        severity:  'warning',
+      })
+    }
+  }
+
+  // ── Règle 3 — Concentration sur 1 position financière > 25 % ───────
+  // Base de référence : `totalMarketValue` (patrimoine financier valorisé).
+  // 1 alerte par position dépassant le seuil (signature inclut le positionId).
+  if (portfolioSummary.totalMarketValue > 0) {
+    for (const pos of portfolioPositions) {
+      if (pos.status !== 'active' || pos.marketValue === null) continue
+      const posPct = (pos.marketValue / portfolioSummary.totalMarketValue) * 100
+      if (posPct > POSITION_CONCENTRATION_PCT) {
+        alerts.push({
+          type:      'concentration_position',
+          signature: `concentration_position:${pos.positionId}`,
+          message:   `${pos.name} : ${posPct.toFixed(0)} % du portefeuille financier (au-delà de ${POSITION_CONCENTRATION_PCT} %). Risque idiosyncratique.`,
+          severity:  'warning',
+        })
+      }
+    }
+  }
+
+  // ── Règle 4 — Cash > 30 % du patrimoine net depuis > 6 mois ────────
+  // Snapshots arrivés en DESC (latest first). On vérifie :
+  //   (a) maintenant : cash actuel > 30 % du net
+  //   (b) historique : tous les snapshots des 180 derniers jours ont aussi
+  //       cash > 30 % (pas d'alerte sur un pic ponctuel)
+  //   (c) historique disponible : ≥ 2 snapshots ET span ≥ 180 j
+  // Si l'historique est trop court, on s'abstient (mieux pas d'alerte
+  // qu'une fausse alerte — cf. brief V2.2-BIS).
+  if (netValue > 0 && snapshots.length >= 2) {
+    const cashTodayPct = (cashSummary.totalEur / netValue) * 100
+    if (cashTodayPct > CASH_THRESHOLD_PCT) {
+      const latestDate = new Date(snapshots[0]!.snapshot_date)
+      const horizonDate = new Date(latestDate)
+      horizonDate.setDate(horizonDate.getDate() - CASH_PERSISTENCE_DAYS)
+      const oldestDate = new Date(snapshots[snapshots.length - 1]!.snapshot_date)
+      const spanCoversHorizon = oldestDate.getTime() <= horizonDate.getTime()
+      if (spanCoversHorizon) {
+        // Tous les snapshots dans la fenêtre [horizonDate, latestDate]
+        // doivent avoir cash > 30 % du patrimoine net.
+        const snapshotsInWindow = snapshots.filter((s) => {
+          const d = new Date(s.snapshot_date)
+          return d.getTime() >= horizonDate.getTime()
+        })
+        const allAboveThreshold = snapshotsInWindow.every((s) => {
+          if (s.total_net_value <= 0) return false
+          const cashRow = (s as { total_cash?: number }).total_cash ?? 0
+          return (cashRow / s.total_net_value) * 100 > CASH_THRESHOLD_PCT
+        })
+        if (allAboveThreshold) {
+          alerts.push({
+            type:      'cash_dormant_6m',
+            signature: 'cash_dormant_6m',
+            message:   `Cash : ${cashTodayPct.toFixed(0)} % du patrimoine net depuis plus de 6 mois. Excès au-delà du coussin de sécurité.`,
+            severity:  'warning',
+          })
+        }
+      }
     }
   }
 
@@ -253,7 +360,7 @@ export function computeDashboardData(inputs: DashboardPipelineInputs): Dashboard
     unvaluedPositionsLabel,
     allocationBase:  'gross_strict' as const,
     allocationTotal: Math.round(allocationTotal * 100) / 100,
-    cashSummary:     computeCashSummary(inputs),
+    cashSummary,
     investmentRankings: computeInvestmentRankings(inputs),
   }
 }
