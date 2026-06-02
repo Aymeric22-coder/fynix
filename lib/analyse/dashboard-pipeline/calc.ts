@@ -33,11 +33,13 @@ import {
 // Le nouvel orchestrateur `buildInvestmentRankings` calcule des
 // rendements INSTANTANÉS (plus-value latente / rendement locatif / taux
 // contractuel) sans seuil temporel.
+// V2.4-TER — `CashAccountForRanking` retiré : le bucket cash n'existe plus
+// dans Z8.5 (le cash n'est pas un investissement, c'est un parking sécurisé).
+// Le cash conserve sa visibilité Z7 (CashSummaryCompact, intacte) et /cash.
 import {
   buildInvestmentRankings,
   type PositionForRanking,
   type PropertyForRanking,
-  type CashAccountForRanking,
 } from '@/lib/portfolio/investment-rankings'
 import type {
   DashboardData, DashboardPipelineInputs,
@@ -393,7 +395,10 @@ export function computeDashboardData(inputs: DashboardPipelineInputs): Dashboard
 function computeInvestmentRankings(
   inputs: DashboardPipelineInputs,
 ): import('@/lib/portfolio/investment-rankings').InvestmentRankings {
-  // ── 1. Positions (financier + crypto split sur assetClass) ──────────
+  // ── 1. Positions (V2.4-TER : financier + crypto FUSIONNÉS en bucket `marche`) ──
+  // Le pipeline expose toutes les positions ensemble — le moteur de classement
+  // s'occupe de poser le subType informatif et de calculer la plus-value
+  // latente sans séparer les buckets.
   const envelopesMeta = inputs.envelopes ?? []
   const envelopeLabelById = new Map(envelopesMeta.map((e) => [e.id, e.name]))
 
@@ -432,27 +437,12 @@ function computeInvestmentRankings(
       }
     })
 
-  // ── 3. Comptes cash (taux contractuel) ──────────────────────────────
-  const cashForRanking: CashAccountForRanking[] = (inputs.cashAccounts ?? []).map((a) => {
-    const num = (v: number | string | null | undefined): number | null => {
-      if (v === null || v === undefined) return null
-      const n = typeof v === 'number' ? v : Number(v)
-      return Number.isFinite(n) ? n : null
-    }
-    const accountTypeLabel = a.account_type ?? 'Compte'
-    const bank = a.bank_name ? ` — ${a.bank_name}` : ''
-    return {
-      id:             a.id,
-      label:          `${accountTypeLabel}${bank}`,
-      interestRatePct: num(a.interest_rate ?? null),
-      balanceEur:     num(a.balance) ?? 0,
-    }
-  })
-
+  // V2.4-TER — Plus de bucket `cash`. La fonction `computeRatePerAccount`
+  // reste disponible dans `lib/cash/rate-per-account.ts` pour de futures
+  // analyses, mais n'est plus consommée par le pipeline Dashboard.
   return buildInvestmentRankings({
-    positions:    positionsForRanking,
-    properties:   propertiesForRanking,
-    cashAccounts: cashForRanking,
+    positions:  positionsForRanking,
+    properties: propertiesForRanking,
   })
 }
 

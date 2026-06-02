@@ -1,68 +1,83 @@
 /**
- * Classement Champions / Casseroles — rendement instantané par bucket (V2.4-BIS).
+ * Classement Champions / Casseroles — rendement instantané par bucket
+ * (V2.4-BIS / V2.4-TER).
  *
- * **Pivot d'approche par rapport à V2.4** :
- *   V2.4 mesurait une performance ANNUALISÉE (TWR, yield, taux) avec un
- *   filtre minimum de 90 j d'historique. Pragmatique mais invisible
- *   tant que l'utilisateur n'avait pas 3 mois d'usage.
+ * **Historique d'approche** :
+ *   - V2.4 : performance annualisée (TWR, yield, taux) + seuil 90 j → zone
+ *     invisible sur un compte récent. Approche abandonnée pour Z8.5.
+ *   - V2.4-BIS : rendement INSTANTANÉ par catégorie (4 buckets : financier,
+ *     crypto, immobilier, cash).
+ *   - V2.4-TER : **fusion `financier` + `crypto` en bucket `marche`**
+ *     (même métrique = plus-value latente, séparer les 2 n'apportait
+ *     aucune information) ET **suppression complète du bucket `cash`**
+ *     (le cash n'est pas un investissement au sens propre, c'est un
+ *     parking sécurisé du capital ; le classer aux côtés du Nasdaq crée
+ *     une confusion entre rendement contractuel et performance).
  *
- *   V2.4-BIS mesure un rendement INSTANTANÉ constaté maintenant :
- *     - financier : plus-value latente `(MV − cost_basis) / cost_basis × 100`
- *     - crypto    : idem financier
- *     - immo loc. : rendement locatif net `loyers_nets_annuels / valeur_actuelle × 100`
- *     - cash      : taux contractuel (`cash_accounts.interest_rate`)
+ * **Métriques V2.4-TER** :
+ *   - `marche`     : plus-value latente `(MV − cost_basis) / cost_basis × 100`
+ *                    (positions financier + crypto fusionnées)
+ *   - `immobilier` : rendement locatif net `loyers_nets_annuels / valeur × 100`
+ *                    (RP exclue par `fiscalRegime === null`)
  *
- *   Plus de seuil temporel. Plus d'extrapolation. Disponible dès le jour 1.
+ * Le cash conserve sa visibilité ailleurs sur le Dashboard :
+ *   - Z7 « 🐷 Cash · X €/an » (ligne compacte, intacte)
+ *   - Section `/cash` accessible via le lien « Voir le détail »
  *
- * **Pureté** : aucun I/O, aucun appel Supabase. La résidence principale est
- * exclue côté UI logique (présence de `fiscalRegime` non null = locatif).
+ * **Pureté** : aucun I/O, aucun appel Supabase.
+ * **Pas de mélange inter-classes** : `marche` (mobilier) et `immobilier`
+ * (physique) restent strictement séparés — c'est leur nature liquide /
+ * illiquide qui les sépare, pas leur volatilité intrinsèque.
  *
- * **Pas de mélange inter-classes** : 4 buckets strictement isolés (financier,
- * crypto, immobilier, cash). Décision V2.4 maintenue.
- *
- * **Code V2.4 conservé sur le repo** :
+ * **Code V2.4 conservé sur le repo, décroché du pipeline** :
  *   `lib/portfolio/twr-per-envelope.ts`, `lib/real-estate/yield-per-property.ts`,
- *   `lib/cash/rate-per-account.ts` restent disponibles (tests dédiés
- *   toujours verts) — utilisables pour des analyses futures, simplement
- *   plus consommés par le Dashboard.
+ *   `lib/cash/rate-per-account.ts` restent disponibles avec leurs tests
+ *   dédiés. Utilisables pour des analyses futures.
  */
 
 // ─────────────────────────────────────────────────────────────────────
-// Types V2.4-BIS — sortie consommée par ZoneChampionsCasseroles
+// Types V2.4-TER — sortie consommée par ZoneChampionsCasseroles
 // ─────────────────────────────────────────────────────────────────────
 
-/** 4 catégories rigides, identiques V2.4 (séparation stricte inter-classes). */
-export type InvestmentCategory = 'financier' | 'crypto' | 'immobilier' | 'cash'
+/** Catégories du classement V2.4-TER : 2 buckets seulement. */
+export type InvestmentCategory = 'marche' | 'immobilier'
 
-/** Nature de la métrique exposée — informatif pour l'UI (tooltip, suffixe). */
+/**
+ * Sous-type informatif (pour traçabilité interne uniquement). Permet à
+ * d'éventuels consommateurs analytiques de re-séparer financier / crypto
+ * dans le bucket `marche` ; ZoneChampionsCasseroles ne s'en sert PAS.
+ */
+export type InvestmentSubType = 'financier' | 'crypto'
+
+/** Nature de la métrique exposée — informatif pour l'UI (tooltip). */
 export type InvestmentMetricType =
-  | 'plus_value_latente'    // financier + crypto : (MV − CB) / CB × 100
-  | 'rendement_locatif'     // immo locatif : loyers_nets_annuels / valeur × 100
-  | 'taux_contractuel'      // cash : interest_rate (annualisé par construction)
+  | 'plus_value_latente'    // marche : (MV − CB) / CB × 100
+  | 'rendement_locatif'     // immobilier : loyers_nets_annuels / valeur × 100
 
-/** Une ligne de classement, granularité position-level. */
+/** Une ligne de classement. */
 export interface InvestmentRanking {
-  /** ID unique (positionId / propertyId / accountId). */
+  /** ID unique (positionId / propertyId). */
   id:             string
-  /** Libellé principal (ex: « MSCI World Swap », « Immeuble Tandoori », « LEP »). */
+  /** Libellé principal (ex: « MSCI World Swap », « Immeuble Tandoori »). */
   label:          string
-  /** Libellé de l'enveloppe pour le financier/crypto (ex: « PEA », « Wallet »). */
+  /** Libellé de l'enveloppe pour les positions marché (ex: « PEA », « Wallet »). */
   envelopeLabel?: string
   /** Rendement instantané en %. Positif = gain, négatif = perte. */
   yieldPct:       number
-  /** Nature de la métrique pour l'UI (tooltip + suffixe). */
+  /** Nature de la métrique pour l'UI (tooltip). */
   metricType:     InvestmentMetricType
-  /** Valeur de référence en EUR pour info (MV courante / valeur estimée / solde). */
+  /** Valeur de référence en EUR pour info (MV courante / valeur estimée). */
   rawValueEur?:   number
+  /** V2.4-TER — sous-type informatif. Pas d'affichage différencié dans le bucket. */
+  subType?:       InvestmentSubType
 }
 
 /**
  * Bucket d'une catégorie : meilleur et pire.
  *
- * Conventions V2.4-BIS :
+ * Conventions inchangées vs V2.4-BIS :
  *   - `best`  = top 1 du bucket
- *   - `worst` = bottom 1 du bucket UNIQUEMENT si ≥ 2 positions (jamais
- *     égal à `best`). Vide si le bucket n'a qu'1 position.
+ *   - `worst` = bottom 1 du bucket UNIQUEMENT si ≥ 2 positions
  */
 export interface InvestmentRankingBucket {
   best:  InvestmentRanking[]
@@ -70,15 +85,15 @@ export interface InvestmentRankingBucket {
 }
 
 /**
- * Bundle final indexé par catégorie. Chaque clé est OPTIONNELLE : un
- * bucket sans aucune position éligible est absent du retour (le composant
- * UI ne génère aucune ligne placeholder).
+ * Bundle final indexé par catégorie. Clés OPTIONNELLES : un bucket sans
+ * candidat est absent du retour (l'UI ne génère aucune ligne placeholder).
+ *
+ * V2.4-TER : **uniquement 2 clés possibles** — `marche` et `immobilier`.
+ * Le bucket `cash` n'existe plus.
  */
 export interface InvestmentRankings {
-  financier?:  InvestmentRankingBucket
-  crypto?:     InvestmentRankingBucket
+  marche?:     InvestmentRankingBucket
   immobilier?: InvestmentRankingBucket
-  cash?:       InvestmentRankingBucket
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -89,9 +104,13 @@ export interface InvestmentRankings {
 export interface PositionForRanking {
   id:             string
   label:          string
-  /** « PEA », « CTO », « Wallet Ledger »… (optionnel — apparaît à droite du label). */
+  /** « PEA », « CTO », « Wallet Ledger »… (apparaît à droite du label). */
   envelopeLabel?: string
-  /** asset_class : 'crypto' route vers le bucket crypto, sinon financier. */
+  /**
+   * asset_class de la position. V2.4-TER : utilisé uniquement pour porter
+   * le `subType` informatif (`crypto` ↔ assetClass==='crypto', sinon
+   * `financier`). Ne sépare PLUS les buckets — tout va dans `marche`.
+   */
   assetClass:     string
   /** Valeur de marché actuelle EUR. */
   marketValueEur: number | null
@@ -111,20 +130,9 @@ export interface PropertyForRanking {
   fiscalRegime:     string | null
 }
 
-/** Sous-ensemble d'un compte cash. */
-export interface CashAccountForRanking {
-  id:             string
-  label:          string
-  /** Taux nominal annuel (%). Si null/NaN → compte exclu (compte courant typique). */
-  interestRatePct: number | null
-  /** Solde courant (€) — affiché à titre indicatif. */
-  balanceEur:     number
-}
-
 export interface BuildInvestmentRankingsInput {
-  positions:    PositionForRanking[]
-  properties:   PropertyForRanking[]
-  cashAccounts: CashAccountForRanking[]
+  positions:  PositionForRanking[]
+  properties: PropertyForRanking[]
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -132,31 +140,30 @@ export interface BuildInvestmentRankingsInput {
 // ─────────────────────────────────────────────────────────────────────
 
 /**
- * Construit les 4 buckets de classement à partir des inputs bruts du
- * Dashboard. Les buckets vides sont absents du retour (clé omise).
+ * Construit les 2 buckets de classement à partir des inputs bruts. Les
+ * buckets vides sont absents du retour (clé omise).
+ *
+ * V2.4-TER : `marche` fusionne financier + crypto. Plus de bucket `cash`.
  */
 export function buildInvestmentRankings(
   input: BuildInvestmentRankingsInput,
 ): InvestmentRankings {
-  // ── Financier + Crypto (positions) ───────────────────────────────────
-  const financierRows: InvestmentRanking[] = []
-  const cryptoRows:    InvestmentRanking[] = []
-
+  // ── Marché (positions financier + crypto fusionnées) ────────────────
+  const marcheRows: InvestmentRanking[] = []
   for (const p of input.positions) {
     if (p.marketValueEur === null) continue           // pas de MV → calcul impossible
-    if (!(p.costBasisEur > 0)) continue                // CB nul → calcul impossible (exclu silencieux)
+    if (!(p.costBasisEur > 0)) continue                // CB nul → calcul impossible
     const yieldPct = ((p.marketValueEur - p.costBasisEur) / p.costBasisEur) * 100
     if (!Number.isFinite(yieldPct)) continue
-    const row: InvestmentRanking = {
+    marcheRows.push({
       id:           p.id,
       label:        p.label,
       ...(p.envelopeLabel ? { envelopeLabel: p.envelopeLabel } : {}),
       yieldPct,
       metricType:   'plus_value_latente',
       rawValueEur:  p.marketValueEur,
-    }
-    if (p.assetClass === 'crypto') cryptoRows.push(row)
-    else                            financierRows.push(row)
+      subType:      p.assetClass === 'crypto' ? 'crypto' : 'financier',
+    })
   }
 
   // ── Immobilier locatif (RP exclue par absence de fiscalRegime) ──────
@@ -176,55 +183,34 @@ export function buildInvestmentRankings(
     })
   }
 
-  // ── Cash (interest_rate) ─────────────────────────────────────────────
-  const cashRows: InvestmentRanking[] = []
-  for (const a of input.cashAccounts) {
-    if (a.interestRatePct === null) continue           // compte courant pur, exclu
-    if (!Number.isFinite(a.interestRatePct)) continue
-    cashRows.push({
-      id:          a.id,
-      label:       a.label,
-      yieldPct:    a.interestRatePct,
-      metricType:  'taux_contractuel',
-      rawValueEur: a.balanceEur,
-    })
-  }
-
   // ── Assemblage final (clé omise si bucket vide) ──────────────────────
   const out: InvestmentRankings = {}
-  const financier  = toBucket(financierRows)
-  const crypto     = toBucket(cryptoRows)
+  const marche     = toBucket(marcheRows)
   const immobilier = toBucket(immobilierRows)
-  const cash       = toBucket(cashRows)
-  if (financier)  out.financier  = financier
-  if (crypto)     out.crypto     = crypto
+  if (marche)     out.marche     = marche
   if (immobilier) out.immobilier = immobilier
-  if (cash)       out.cash       = cash
   return out
 }
 
 /**
- * Convertit une liste de candidats d'une catégorie en bucket best/worst.
+ * Convertit une liste de candidats en bucket best/worst.
  *
- * Règles :
- *   - 0 candidat → renvoie `null` (la catégorie est absente du retour final).
- *   - 1 candidat → uniquement dans `best`. `worst` reste vide.
- *   - ≥ 2 candidats → meilleur dans `best[0]`, pire dans `worst[0]`.
- *     `best[0]` et `worst[0]` sont garantis différents (id distincts).
+ * Règles inchangées :
+ *   - 0 candidat → `null` (catégorie absente du retour final)
+ *   - 1 candidat → uniquement dans `best`, `worst` vide
+ *   - ≥ 2 candidats → best[0] (top) + worst[0] (bottom), id distincts
  *
  * Tie-breaker : `id.localeCompare` (déterminisme).
  */
 function toBucket(rows: InvestmentRanking[]): InvestmentRankingBucket | null {
   if (rows.length === 0) return null
-  const byBest  = [...rows].sort((a, b) => b.yieldPct - a.yieldPct || a.id.localeCompare(b.id))
-  const best    = byBest[0]!
+  const byBest = [...rows].sort((a, b) => b.yieldPct - a.yieldPct || a.id.localeCompare(b.id))
+  const best   = byBest[0]!
   if (rows.length === 1) {
     return { best: [best], worst: [] }
   }
   const byWorst = [...rows].sort((a, b) => a.yieldPct - b.yieldPct || a.id.localeCompare(b.id))
   const worst   = byWorst[0]!
-  // Garantie d'égalité d'IDs entre best et worst quand 2 lignes ont même
-  // yieldPct (cas extrême) : on garde best uniquement, worst vide.
   if (worst.id === best.id) {
     return { best: [best], worst: [] }
   }
