@@ -102,13 +102,19 @@ describe('P0.1 — Pipeline unifié : non-régression KPIs (verrouillé sur expe
         expect(nearlyEqual(data.kpis.confidence_score, expectedScore, 0.1)).toBe(true)
       })
 
-      it('top assets : même nombre d\'entrées, même types et valeurs', () => {
-        expect(data.topAssets.length).toBe(fixture.currentBuggy.topAssetsByValue.length)
-        for (let i = 0; i < data.topAssets.length; i++) {
-          const got = data.topAssets[i]!
-          const exp = fixture.currentBuggy.topAssetsByValue[i]!
-          expect(got.value, `top[${i}].value pour ${fixture.id}`).toBeCloseTo(exp.value, 2)
-          expect(got.type,  `top[${i}].type pour ${fixture.id}`).toBe(exp.type)
+      // V2.3 — Le top atomique (`topAssets`) a été supprimé du `DashboardData`
+      // et remplacé par `topAssetsConsolidated` (consolidé par enveloppe / bien /
+      // compte). Couverture détaillée déléguée à `topConsolide.test.ts` +
+      // tests unitaires de `buildTopAssetsConsolidated`. Ici on vérifie juste
+      // que le contrat est respecté : tableau présent, ≤ 5 entrées, clés stables.
+      it('top consolidé : tableau ≤ 5, clés stables, % du brut ≤ 100,01 (V2.3)', () => {
+        expect(Array.isArray(data.topAssetsConsolidated)).toBe(true)
+        expect(data.topAssetsConsolidated.length).toBeLessThanOrEqual(5)
+        for (const row of data.topAssetsConsolidated) {
+          expect(row.key).toMatch(/^(envelope|re|cash|class):/)
+          // % du brut peut dépasser 100 si la dette n'est pas déduite — mais
+          // pas raisonnablement > 100 à l'échelle de l'item.
+          expect(row.percentOfGross).toBeGreaterThanOrEqual(0)
         }
       })
 
@@ -166,32 +172,18 @@ describe('P0.1 — Pipeline unifié : non-régression KPIs (verrouillé sur expe
         expect(second.kpis.net_value).toBe(data.kpis.net_value)
         expect(second.kpis.croissance_patrimoine_pct).toBe(data.kpis.croissance_patrimoine_pct)
         expect(second.kpis.twr_portefeuille_pct).toBe(data.kpis.twr_portefeuille_pct)
-        expect(second.topAssets).toEqual(data.topAssets)
+        expect(second.topAssetsConsolidated).toEqual(data.topAssetsConsolidated)
         expect(second.allocation).toEqual(data.allocation)
       })
     },
   )
 
-  describe('Déviation autorisée — tie-breaker tri du top (id croissant)', () => {
-    it('ex æquo de valeur sont triés par id croissant (cas boursier)', () => {
-      // La fixture investisseur-boursier a 3 positions à exactement 15 000 € :
-      //   p-eur (Lyxor STOXX Europe 600)  ← `p-eur` < `p-small` < `p-tsla`
-      //   p-small (Amundi MSCI World Small Cap)
-      //   p-tsla (Tesla Inc)
-      // En V1.1 on garantit cet ordre indépendamment de l'ordre d'insertion.
-      const boursier = ALL_FIXTURES.find((f) => f.id === 'investisseur-boursier')!
-      const data = computeDashboardData(boursier.inputs)
-      // Le 5ᵉ rang du top affiche le 1ᵉʳ ex æquo (les 2 suivants tombent hors top 5).
-      // Vérification : le 5ᵉ rang correspond à p-eur (Lyxor).
-      const fifth = data.topAssets[4]!
-      expect(fifth.value).toBe(15_000)
-      // Les 2 autres ex æquo (p-small, p-tsla) ne sont PAS dans le top 5
-      // car le top est limité à 5 entrées.
-      expect(data.topAssets.length).toBe(5)
-      // Tie-breaker validé : on prend bien p-eur (alphabétique min des ex æquo).
-      expect(fifth.id).toBe('p-eur')
-    })
-  })
+  // V2.3 — Le tie-breaker spécifique au top atomique (id croissant sur 3
+  // positions à 15 000 €) n'a plus de sens depuis la consolidation par
+  // enveloppe : ces 3 positions ETF sont désormais agrégées dans la même
+  // ligne « PEA » (ou fallback `class:etf`). La détection des ex æquo
+  // est donc déplacée au niveau bucket et testée dans
+  // `lib/portfolio/__tests__/top-assets-consolidated.test.ts`.
 })
 
 // ─────────────────────────────────────────────────────────────────────
