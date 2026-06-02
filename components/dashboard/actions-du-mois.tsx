@@ -16,6 +16,8 @@ import {
   RotateCw, Coffee, CalendarClock, Receipt, ArrowRight, type LucideIcon,
 } from 'lucide-react'
 import type { ActionMensuelle, ActionMensuelleType } from '@/lib/analyse/recoMensuelles'
+import { actionSignature } from '@/lib/analyse/recoMensuelles'
+import { DismissButton } from './dismiss-button'
 
 /**
  * Filtre des actions à afficher :
@@ -106,7 +108,13 @@ function ActionRow({ action, index }: { action: ActionMensuelle; index: number }
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-1">
           <Icon size={13} className="text-accent flex-shrink-0" />
-          <p className="text-sm text-primary font-medium">{action.titre}</p>
+          <p className="text-sm text-primary font-medium flex-1">{action.titre}</p>
+          {/* V2.2-BIS — masquage individuel de la reco. */}
+          <DismissButton
+            signature={actionSignature(action)}
+            preview={action.titre}
+            kind="reco"
+          />
         </div>
         <p className="text-xs text-secondary leading-relaxed">{action.description}</p>
       </div>

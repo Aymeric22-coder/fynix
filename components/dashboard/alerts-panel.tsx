@@ -1,9 +1,12 @@
 import { AlertTriangle, Info } from 'lucide-react'
+import { DismissButton } from './dismiss-button'
 
 interface Alert {
-  type:     string
-  message:  string
-  severity: 'warning' | 'info'
+  type:      string
+  message:   string
+  severity:  'warning' | 'info'
+  /** V2.2-BIS — Présence d'une signature → l'alerte est masquable par l'utilisateur. */
+  signature?: string
 }
 
 export function AlertsPanel({ alerts }: { alerts: Alert[] }) {
@@ -24,7 +27,15 @@ export function AlertsPanel({ alerts }: { alerts: Alert[] }) {
             ? <AlertTriangle size={15} className="flex-shrink-0 mt-0.5" />
             : <Info size={15} className="flex-shrink-0 mt-0.5" />
           }
-          <span>{alert.message}</span>
+          <span className="flex-1">{alert.message}</span>
+          {/* V2.2-BIS — masquage individuel si l'alerte porte une signature stable. */}
+          {alert.signature && (
+            <DismissButton
+              signature={alert.signature}
+              preview={alert.message}
+              kind="alert"
+            />
+          )}
         </div>
       ))}
     </div>
