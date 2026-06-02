@@ -65,14 +65,18 @@ function pat(over: Partial<PatrimoineComplet> = {}): PatrimoineComplet {
 // ─────────────────────────────────────────────────────────────────
 
 describe('genererActionsMensuelles — cash dormant', () => {
-  it('détecte 40k cash sur 2k charges/mois (20 mois > 12)', () => {
+  it('détecte 40k cash sur 2k charges/mois → reformulé en plan mensuel (V2.2-BIS)', () => {
     const out = genererActionsMensuelles(pat(), { today: TODAY })
     const cash = out.find((a) => a.type === 'invest_cash')
     expect(cash).toBeDefined()
-    // Coussin = 6 × 2000 = 12000 ; aInvestir = 40000 - 12000 = 28000
-    expect(cash!.montant).toBe(28_000)
-    // toLocaleString('fr-FR') utilise U+202F (narrow no-break space) entre les milliers.
-    expect(cash!.titre.replace(/\s/g, ' ')).toContain('28 000 €')
+    // V2.2-BIS — aInvestir naturel = 28k mais > plafond mensuel (epargne=800).
+    // Conséquence : action reformulée en plan mensuel. `montant` = plafond mensuel.
+    // Plafond = max(epargne=800, totalNet=100k * 5%/12 ≈ 416) = 800.
+    expect(cash!.montant).toBe(800)
+    // Le titre mentionne maintenant « /mois » plutôt que le montant cumulé.
+    expect(cash!.titre).toContain('/mois')
+    // Et le nombre de mois reflète le déploiement progressif (28000 / 800 = 35).
+    expect(cash!.titre).toContain('35 mois')
   })
 
   it('aucune action si cash <= 12 mois de charges', () => {
@@ -102,27 +106,51 @@ describe('genererActionsMensuelles — cash dormant', () => {
 // ─────────────────────────────────────────────────────────────────
 
 describe('genererActionsMensuelles — drift allocation', () => {
-  it('détecte ETF surpondéré vs Crypto sous-pondérée → propose rebalance', () => {
-    // L'algo cherche source surpondérée + cible présente assez sous-pondérée.
-    // Setup : ETF 60 % (benchmark 20 → +40), Crypto 0.1 % (benchmark 5 → -4.9).
-    // Note : -4.9 < -5 = false → règle ne déclenche pas. On force Crypto 0 %
-    // mais Cash 5 % (benchmark 10 → -5 = pile à la limite, exclusive → faut < -5).
-    // On va donc descendre Cash à 1 % (benchmark 10 → -9, sous-pondéré clairement).
+  it('détecte ETF surpondéré vs Cash sous-pondérée → reformulé en plan mensuel (V2.2-BIS)', () => {
+    // V2.2-BIS — Un drift réaliste reste ≤ 10 % du patrimoine net. La rule
+    // « > 10 % net = suppress » s'applique uniquement aux mouvements
+    // structurels (vente d'actif majeur). Setup : ETF 26 % (benchmark 20,
+    // +6 pp), Cash 4 % (benchmark 10, -6 pp). Montant naturel = 6 % × 100k
+    // = 6000 €, soit 6 % du net → pas de suppression structurelle. Mais
+    // 6000 > plafond mensuel 800 → reformulé en plan mensuel.
     const out = genererActionsMensuelles(pat({
-      totalBrut: 100_000, totalCash: 1_000,
-    totalCashInvestissable: 0,
+      totalBrut: 100_000, totalCash: 4_000,
+      totalCashInvestissable: 0,
       repartitionClasses: [
-        { label: 'ETF / Fonds', valeur: 60_000, pourcentage: 60, color: '#10B981' },
-        { label: 'Immobilier',  valeur: 39_000, pourcentage: 39, color: '#E8B84B' },
-        { label: 'Cash',        valeur:  1_000, pourcentage:  1, color: '#71717a' },
+        { label: 'ETF / Fonds', valeur: 26_000, pourcentage: 26, color: '#10B981' },
+        { label: 'Immobilier',  valeur: 35_000, pourcentage: 35, color: '#E8B84B' },
+        { label: 'Actions',     valeur: 20_000, pourcentage: 20, color: '#10B981' },
+        { label: 'Obligataire', valeur: 10_000, pourcentage: 10, color: '#3b82f6' },
+        { label: 'Crypto',      valeur:  5_000, pourcentage:  5, color: '#a855f7' },
+        { label: 'Cash',        valeur:  4_000, pourcentage:  4, color: '#71717a' },
       ],
-      fireInputs: { ...pat().fireInputs, charges_mensuelles: 200 },  // évite cash dormant (5 mois)
+      fireInputs: { ...pat().fireInputs, charges_mensuelles: 800 },  // évite cash dormant
     }), { today: TODAY })
     const drift = out.find((a) => a.type === 'rebalance')
     expect(drift).toBeDefined()
     expect(drift!.source).toBe('ETF / Fonds')
     expect(drift!.cible).toBe('Cash')
     expect(drift!.montant).toBeGreaterThan(0)
+    // V2.2-BIS — Le libellé doit refléter le plan progressif.
+    expect(drift!.titre.toLowerCase()).toContain('progressivement')
+  })
+
+  it('rebalance > 10 % du patrimoine net → action SUPPRIMÉE (V2.2-BIS)', () => {
+    // Setup : ETF 80 %, Cash 1 % → drift naturel ~80 % × 100k = 80 000 €,
+    // soit 80 % du net. C'est une vente d'actif majeur, irréaliste en 1 mois.
+    // V2.2-BIS supprime la reco plutôt que de la dégrader en plan sur 100 mois.
+    const out = genererActionsMensuelles(pat({
+      totalBrut: 100_000, totalCash: 1_000,
+      totalCashInvestissable: 0,
+      repartitionClasses: [
+        { label: 'ETF / Fonds', valeur: 80_000, pourcentage: 80, color: '#10B981' },
+        { label: 'Immobilier',  valeur: 19_000, pourcentage: 19, color: '#E8B84B' },
+        { label: 'Cash',        valeur:  1_000, pourcentage:  1, color: '#71717a' },
+      ],
+      fireInputs: { ...pat().fireInputs, charges_mensuelles: 200 },
+    }), { today: TODAY })
+    const drift = out.find((a) => a.type === 'rebalance')
+    expect(drift).toBeUndefined()
   })
 
   it('aucune action si tous les écarts < 5 points', () => {
@@ -335,25 +363,35 @@ describe('genererActionsMensuelles — injection opportunites fiscales (I3)', ()
   })
 
   it('opportunite PEA filtree si une action drift mentionne deja "PEA"', () => {
-    // Surponderation "PEA" (label artificiel, benchmark=0 → ecart=+80) +
-    // sous-ponderation "Obligataire" (benchmark=10, value=0 → ecart=-10).
-    // → detectDriftAllocation cree une action rebalance source=PEA.
-    // → l'opportunite PEA fiscale doit etre filtree par overlap.
+    // V2.2-BIS — Surponderation "PEA" calibrée pour rester sous le seuil
+    // structurel 10 % net (sinon le rebalance serait supprimé et le test
+    // ne pourrait plus vérifier l'overlap). PEA à 8 % (benchmark 0 → +8 pp),
+    // Obligataire à 4 % (benchmark 10 → -6 pp). Drift montant naturel = 8 %
+    // × 100k = 8000 €, soit 8 % du net → conservé (monthlyPlan).
+    // Le `source.label` = 'PEA' permet à overlapsExistingAction de filtrer
+    // l'opportunité fiscale PEA.
     const out = genererActionsMensuelles(pat({
-      totalCash: 5000,  // pas de cash dormant
-    totalCashInvestissable: 0,
+      totalCash: 5_000,  // pas de cash dormant
+      totalCashInvestissable: 0,
       repartitionClasses: [
-        { label: 'PEA',         valeur: 80_000, pourcentage: 80, color: '#10b981' },
+        { label: 'PEA',         valeur:  8_000, pourcentage:  8, color: '#10b981' },
         { label: 'ETF / Fonds', valeur: 20_000, pourcentage: 20, color: '#3b82f6' },
-        { label: 'Obligataire', valeur:      0, pourcentage:  0, color: '#3b82f6' },
+        { label: 'Actions',     valeur: 20_000, pourcentage: 20, color: '#3b82f6' },
+        { label: 'Immobilier',  valeur: 35_000, pourcentage: 35, color: '#E8B84B' },
+        { label: 'Cash',        valeur:  5_000, pourcentage:  5, color: '#71717a' },
+        { label: 'Obligataire', valeur:  4_000, pourcentage:  4, color: '#3b82f6' },
+        { label: 'Crypto',      valeur:  8_000, pourcentage:  8, color: '#a855f7' },
       ],
       totalBrut: 100_000,
+      fireInputs: { ...pat().fireInputs, charges_mensuelles: 200 },
     }), {
       today: TODAY,
       opportunitesFiscales: [makeOpp({ titre: 'Optimiser PEA' })],
     })
-    // L'action drift doit etre la, l'opportunite PEA filtree.
-    expect(out.find((a) => a.type === 'rebalance')).toBeDefined()
+    // L'action drift doit etre la (source='PEA'), l'opportunite PEA filtree.
+    const drift = out.find((a) => a.type === 'rebalance')
+    expect(drift).toBeDefined()
+    expect(drift!.source).toBe('PEA')
     expect(out.find((a) => a.type === 'fiscal')).toBeUndefined()
   })
 })

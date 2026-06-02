@@ -39,6 +39,75 @@ export const CASH_SEUIL_MOIS = 12
 export const DCA_SEUIL_JOURS = 60
 
 // ─────────────────────────────────────────────────────────────────
+// V2.2-BIS — Plafond de réalisme mensuel
+// ─────────────────────────────────────────────────────────────────
+
+/** % du patrimoine net annualisé utilisé en fallback quand
+ *  `epargne_mensuelle` du profil est nul ou inconnu. 5 %/an → /12 = ~0,42 %/mois. */
+export const FALLBACK_PLAFOND_ANNUEL_PCT = 5
+
+/** Au-delà de ce % du patrimoine NET, un mouvement de rebalancement est
+ *  considéré comme structurellement irréalisable (vente d'actif majeur,
+ *  cas typique : sortie d'un bien immo). La reco est alors **supprimée**
+ *  plutôt qu'étalée — recommander l'irréalisable dégrade la confiance. */
+export const SEUIL_MOUVEMENT_STRUCTUREL_PCT = 10
+
+/**
+ * Plafond du montant mensuellement actionnable par l'utilisateur :
+ *   max(epargne_mensuelle_profil, FALLBACK_PLAFOND_ANNUEL_PCT % du net / 12)
+ *
+ * Sert à savoir si une reco doit être étalée sur plusieurs mois plutôt que
+ * proposée en bloc. Retourne 0 si patrimoine + épargne tous inconnus.
+ */
+export function computePlafondMensuelRealiste(p: PatrimoineComplet): number {
+  const epargne = Math.max(0, p.fireInputs.epargne_mensuelle ?? 0)
+  const netAnnuel = Math.max(0, p.totalNet ?? 0) * (FALLBACK_PLAFOND_ANNUEL_PCT / 100)
+  const fallback  = netAnnuel / 12
+  return Math.max(epargne, fallback)
+}
+
+/**
+ * Politique d'ajustement d'une reco au plafond réaliste.
+ *
+ * `kind` :
+ *   - `'monthlyPlan'` : étaler en N mensualités du plafond (cas reco > plafond)
+ *   - `'keep'`        : montant raisonnable, libellé naturel conservé
+ *   - `'suppress'`    : mouvement structurel irréalisable (> 10 % net) —
+ *                       UNIQUEMENT activé si le caller passe `allowStructuralSuppress`.
+ *                       Le cash dormant est exempté : déployer du cash liquide
+ *                       n'est jamais "irréalisable" comme l'est une vente d'actif.
+ */
+export type PlafonnementDecision =
+  | { kind: 'suppress' }
+  | { kind: 'monthlyPlan'; mensuel: number; mois: number }
+  | { kind: 'keep' }
+
+interface DecidePlafonnementOpts {
+  /** Activé pour les recos de type « rebalance » : un mouvement > 10 %
+   *  du patrimoine net implique de vendre un actif majeur, considéré
+   *  comme structurellement irréaliste → action supprimée. */
+  allowStructuralSuppress?: boolean
+}
+
+export function decidePlafonnement(
+  montantNaturel: number,
+  plafondMensuel: number,
+  totalNet: number,
+  opts: DecidePlafonnementOpts = {},
+): PlafonnementDecision {
+  if (montantNaturel <= 0) return { kind: 'keep' }
+  if (opts.allowStructuralSuppress && totalNet > 0) {
+    const pctNet = (montantNaturel / totalNet) * 100
+    if (pctNet > SEUIL_MOUVEMENT_STRUCTUREL_PCT) return { kind: 'suppress' }
+  }
+  if (plafondMensuel > 0 && montantNaturel > plafondMensuel) {
+    const mois = Math.max(2, Math.ceil(montantNaturel / plafondMensuel))
+    return { kind: 'monthlyPlan', mensuel: Math.round(plafondMensuel), mois }
+  }
+  return { kind: 'keep' }
+}
+
+// ─────────────────────────────────────────────────────────────────
 // Types publics
 // ─────────────────────────────────────────────────────────────────
 
@@ -177,6 +246,25 @@ function detectCashDormant(p: PatrimoineComplet, seuilMois: number): ActionMensu
   const aInvestir     = Math.max(0, Math.round(p.totalCash - coussinCible))
   if (aInvestir < 500) return null  // pas la peine pour de petits montants
 
+  // V2.2-BIS — Plafond réaliste. Réinvestir 80k€ d'un coup n'est pas
+  // pragmatique : on étale plutôt que d'afficher un chiffre intimidant.
+  // Pas de suppression structurelle ici : le cash est liquide par nature,
+  // pas un actif à vendre. La règle « > 10 % net » ne s'applique qu'aux
+  // rebalancements (cf. detectDriftAllocation).
+  const plafond  = computePlafondMensuelRealiste(p)
+  const decision = decidePlafonnement(aInvestir, plafond, p.totalNet)
+
+  if (decision.kind === 'monthlyPlan') {
+    return {
+      id:    'invest-cash-dormant',
+      type:  'invest_cash',
+      titre: `Réinvestir ~${formatEur(decision.mensuel, { decimals: 0 })}/mois pendant ${decision.mois} mois`,
+      description: `Votre coussin couvre ${moisCouverts.toFixed(0)} mois de charges (seuil ${seuilMois}). Cible : déployer ${formatEur(aInvestir, { decimals: 0 })} progressivement (~${formatEur(decision.mensuel, { decimals: 0 })}/mois sur ${decision.mois} mois), en gardant ~6 mois de charges sur Livret A.`,
+      montant: decision.mensuel,
+      source:  'cash',
+    }
+  }
+
   return {
     id:    'invest-cash-dormant',
     type:  'invest_cash',
@@ -214,6 +302,26 @@ function detectDriftAllocation(p: PatrimoineComplet): ActionMensuelle | null {
   // pour proposer un mouvement réaliste plutôt qu'un big-bang.
   const montant = Math.round((source.ecart / 100) * p.totalBrut)
   if (montant < 500) return null
+
+  // V2.2-BIS — Plafond réaliste. Vendre un bien immo de 243 k€ en 1 mois
+  // n'est ni faisable ni sérieux côté conseil pro.
+  //   • Mouvement > 10 % du patrimoine net → SUPPRIMÉ (cas typique vente bien)
+  //   • Mouvement > plafond mensuel       → reformulé en plan progressif
+  const plafond  = computePlafondMensuelRealiste(p)
+  const decision = decidePlafonnement(montant, plafond, p.totalNet, { allowStructuralSuppress: true })
+  if (decision.kind === 'suppress') return null
+
+  if (decision.kind === 'monthlyPlan') {
+    return {
+      id:    'rebalance-classes',
+      type:  'rebalance',
+      titre: `Réorienter progressivement ${source.label} → ${cible.label} (~${formatEur(decision.mensuel, { decimals: 0 })}/mois)`,
+      description: `${source.label} pèse ${source.pct.toFixed(0)} % (benchmark ${source.benchmark} %), ${cible.label} ${cible.pct.toFixed(0)} % (benchmark ${cible.benchmark} %). Cible : réorienter ${formatEur(montant, { decimals: 0 })} sur ${decision.mois} mois (~${formatEur(decision.mensuel, { decimals: 0 })}/mois) pour réaligner sans mouvement brutal.`,
+      montant: decision.mensuel,
+      source:  source.label,
+      cible:   cible.label,
+    }
+  }
 
   return {
     id:    'rebalance-classes',
