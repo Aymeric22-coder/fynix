@@ -1,32 +1,31 @@
 /**
- * ZoneChampionsCasseroles — Z8.5 du Dashboard, V2.4-BIS.
+ * ZoneChampionsCasseroles — Z8.5 du Dashboard, V2.4-BIS / V2.4-TER.
  *
  * Affiche le **meilleur** et le **pire** investissement de chaque bucket,
  * sur la base de rendements INSTANTANÉS (pas d'annualisation, pas de seuil
  * temporel). Disponible dès le jour 1.
  *
- * Buckets strictement isolés (pas de mélange inter-classes) :
- *   - 💼 Financier   : plus-value latente
- *   - ₿  Crypto      : plus-value latente
- *   - 🏠 Immo locatif: rendement locatif net (RP exclue)
- *   - 💰 Cash        : taux contractuel
+ * **V2.4-TER — 2 buckets seulement** :
+ *   - 📊 **Marché** (financier + crypto fusionnés) : plus-value latente
+ *   - 🏠 **Immobilier locatif** : rendement locatif net (RP exclue)
+ *
+ * Le cash a été retiré du composant : ce n'est pas un investissement au
+ * sens propre mais un parking sécurisé. Il garde sa visibilité Z7
+ * (CashSummaryCompact) et `/cash`.
  *
  * Layout :
- *   2 cartes côte à côte (« Meilleurs » à gauche, « Pires » à droite).
- *   Chaque carte affiche 1 ligne par bucket actif.
+ *   2 cartes côte à côte (« Meilleurs » à gauche, « Pires » à droite),
+ *   max 2 lignes par card (1 par bucket). Asymétrie autorisée : si l'immo
+ *   n'a qu'1 seul bien locatif, la card « Pires » peut n'avoir qu'1 ligne
+ *   (marché) tandis que « Meilleurs » en a 2.
  *
  * Règles d'affichage :
- *   - Card « Meilleurs » : 1 ligne / bucket actif, montrant le #1
- *   - Card « Pires » : 1 ligne / bucket actif, montrant la dernière
+ *   - Card « Meilleurs » : 1 ligne par bucket actif, montrant le #1
+ *   - Card « Pires » : 1 ligne par bucket actif, montrant la dernière
  *     UNIQUEMENT s'il y a ≥ 2 positions dans le bucket
  *   - Bucket vide → absent des 2 cards (clé omise par le pipeline)
  *   - Si TOUS les buckets sont vides → composant retourne `null`
  *   - Si aucun bucket n'a de « pire » (tous à 1 position) → card « Pires » disparaît
- *
- * Étiquettes :
- *   - Pour financier / crypto : `+24,3 %` (cumul depuis l'achat, sans /an)
- *   - Pour immo locatif       : `5,2 %` (rendement annuel par construction)
- *   - Pour cash               : `5,0 %` (taux annuel par construction)
  *
  * Server Component pur — pas d'état, juste de la composition.
  */
@@ -45,28 +44,22 @@ interface Props {
 }
 
 const CATEGORY_LABELS: Record<InvestmentCategory, string> = {
-  financier:  'Financier',
-  crypto:     'Crypto',
+  marche:     'Marché',
   immobilier: 'Immobilier locatif',
-  cash:       'Cash',
 }
 
 const CATEGORY_ICONS: Record<InvestmentCategory, string> = {
-  financier:  '💼',
-  crypto:     '₿',
+  marche:     '📊',
   immobilier: '🏠',
-  cash:       '💰',
 }
 
 const CATEGORY_HREF: Record<InvestmentCategory, string> = {
-  financier:  '/portefeuille',
-  crypto:     '/portefeuille',
+  marche:     '/portefeuille',
   immobilier: '/immobilier',
-  cash:       '/cash',
 }
 
-/** Ordre d'affichage stable des buckets dans chaque card. */
-const CATEGORY_ORDER: InvestmentCategory[] = ['financier', 'crypto', 'immobilier', 'cash']
+/** Ordre d'affichage stable des buckets. */
+const CATEGORY_ORDER: InvestmentCategory[] = ['marche', 'immobilier']
 
 interface CategoryEntry {
   category: InvestmentCategory
@@ -74,7 +67,6 @@ interface CategoryEntry {
 }
 
 export function ZoneChampionsCasseroles({ rankings }: Props) {
-  // Enumération des buckets présents, dans l'ordre canonique.
   const entries: CategoryEntry[] = CATEGORY_ORDER
     .map((cat) => ({ category: cat, bucket: rankings[cat] }))
     .filter((e): e is CategoryEntry => e.bucket !== undefined)
@@ -111,7 +103,6 @@ function RankingCard({ title, icon, entries, side }: RankingCardProps) {
   const IconComp = icon === 'trophy' ? Trophy : AlertTriangle
   const iconColor = icon === 'trophy' ? 'text-accent' : 'text-danger'
 
-  // Filtre les entries qui ont effectivement une ligne pour ce côté.
   const rows = entries
     .map<{ category: InvestmentCategory; item: InvestmentRanking } | null>((e) => {
       const item = (side === 'best' ? e.bucket.best[0] : e.bucket.worst[0])
@@ -119,8 +110,6 @@ function RankingCard({ title, icon, entries, side }: RankingCardProps) {
     })
     .filter((r): r is { category: InvestmentCategory; item: InvestmentRanking } => r !== null)
 
-  // Sécurité : si aucune ligne, on rend une carte vide (mais le parent évite
-  // déjà ce cas en testant `hasAnyWorst`). On rend explicite tout de même.
   if (rows.length === 0) return null
 
   return (
@@ -147,7 +136,6 @@ interface RankingRowProps {
 
 function RankingRow({ category, item, side }: RankingRowProps) {
   const positive   = item.yieldPct >= 0
-  // Sur la card « Meilleurs » on encourage le vert ; sur « Pires » le rouge.
   const valueClass = side === 'best'
     ? (positive ? 'text-accent' : 'text-warning')
     : (positive ? 'text-secondary' : 'text-danger')
@@ -185,7 +173,5 @@ function metricTooltip(metricType: InvestmentRanking['metricType']): string {
       return 'Plus-value latente cumulée depuis l’achat — (valeur actuelle − coût d’acquisition) / coût d’acquisition'
     case 'rendement_locatif':
       return 'Rendement locatif net annuel — loyers nets annuels / valeur estimée actuelle'
-    case 'taux_contractuel':
-      return 'Taux contractuel annuel servi par la banque'
   }
 }
