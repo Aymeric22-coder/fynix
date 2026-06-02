@@ -555,6 +555,21 @@ function computeCashSummary(
 
 interface CroissanceResult { value: number | null; label: string }
 
+// ─────────────────────────────────────────────────────────────────────
+// V2.5 — Floor protection contre les snapshots pollués
+// ─────────────────────────────────────────────────────────────────────
+// Bornes calibrées sur l'incident V1.4-BIS (CAGR = +132 026 369 %).
+// Le seuil 90 j est insuffisant si un snapshot ancien a une valeur
+// extrêmement basse non représentative (saisie de bien sans valeur
+// initiale, snapshot juste après un export incomplet, etc.).
+
+/** Patrimoine net trop bas pour servir de base d'annualisation. */
+const FLOOR_OLDEST_NET_VALUE_EUR = 1000
+/** Ratio latest/oldest > 50× → croissance trop violente pour être annualisée. */
+const FLOOR_VALUE_RATIO          = 50
+/** Au-delà de ±500 %/an annualisé, le chiffre est statistiquement inutilisable. */
+const FLOOR_ANNUALIZED_PCT       = 500
+
 /** Croissance patrimoniale annualisée — ancien CAGR explicitement labellé. */
 function computeCroissancePatrimoine(
   snapshots: DashboardPipelineInputs['snapshots'],
@@ -562,6 +577,8 @@ function computeCroissancePatrimoine(
   if (snapshots.length < 2) {
     return { value: null, label: 'Pas assez d\'historique pour la croissance patrimoniale' }
   }
+  // V1.3 P0.3 — snapshots arrivent en ordre DESC depuis la DB.
+  // latest = snapshots[0] (plus récent), oldest = snapshots[N-1] (plus ancien).
   const latest = snapshots[0]!
   const oldest = snapshots[snapshots.length - 1]!
   const days   = (new Date(latest.snapshot_date).getTime() - new Date(oldest.snapshot_date).getTime())
@@ -569,8 +586,41 @@ function computeCroissancePatrimoine(
   if (days < 90 || oldest.total_net_value <= 0) {
     return { value: null, label: 'Historique trop court (< 3 mois) pour annualiser' }
   }
+
+  // ── V2.5 Floor 1 — oldest trop bas → base instable ────────────────
+  // Un patrimoine net < 1 000 € au point de départ rend la formule très
+  // sensible au moindre apport (un seul achat à 10 k€ → ratio 10×).
+  if (oldest.total_net_value < FLOOR_OLDEST_NET_VALUE_EUR) {
+    return {
+      value: null,
+      label: 'Données insuffisantes pour une croissance fiable (historique pollué)',
+    }
+  }
+
+  // ── V2.5 Floor 2 — ratio latest/oldest > 50× → croissance violente ──
+  // Plus probablement le résultat d'un snapshot pollué (saisie tardive
+  // d'un bien immo, import CSV brut, etc.) qu'une vraie performance.
+  const ratio = latest.total_net_value / oldest.total_net_value
+  if (Number.isFinite(ratio) === false || ratio > FLOOR_VALUE_RATIO) {
+    return {
+      value: null,
+      label: 'Données insuffisantes pour une croissance fiable (variation trop forte)',
+    }
+  }
+
   const years = days / 365.25
-  const rate  = (Math.pow(latest.total_net_value / oldest.total_net_value, 1 / years) - 1) * 100
+  const rate  = (Math.pow(ratio, 1 / years) - 1) * 100
+
+  // ── V2.5 Floor 3 — annualisation aberrante (|x| > 500 %) ───────────
+  // Garde-fou final : même si Floor 1 et 2 passent, un résultat
+  // statistiquement inutilisable doit être masqué.
+  if (Number.isFinite(rate) === false || Math.abs(rate) > FLOOR_ANNUALIZED_PCT) {
+    return {
+      value: null,
+      label: 'Variation patrimoniale trop forte pour annualiser',
+    }
+  }
+
   const rounded = Math.round(rate * 100) / 100
   return {
     value: rounded,
