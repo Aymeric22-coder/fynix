@@ -105,9 +105,10 @@ export async function loadDashboardInputs(
       .select('id,name,envelope_type')
       .eq('user_id', userId),
     // V2.4 P0.7 — Lien property_id → asset_id pour récupérer acquisition_date côté asset.
+    // V2.4-BIS — Récupère aussi `fiscal_regime` pour détecter la RP (absence de régime).
     supabase
       .from('real_estate_properties')
-      .select('id,asset_id')
+      .select('id,asset_id,fiscal_regime')
       .eq('user_id', userId),
   ])
 
@@ -181,11 +182,21 @@ export async function loadDashboardInputs(
   // ── Mapping real estate portfolio ───────────────────────────────────
   // V2.4 P0.7 — On enrichit chaque bien avec netNetYield (pour le ranking
   // immobilier Z8.5) et acquisitionDate (lue côté `assets`, cf. select ci-dessus).
+  // V2.4-BIS — Ajout : `netYieldPct`, `totalCostEur`, `fiscalRegime`,
+  // `currentValueEur` pour le rendement locatif instantané (RP exclue par
+  // `fiscalRegime === null`).
   const assetsById = new Map((assetsRes.data ?? []).map((a) => [a.id as string, a]))
+  const reMetaByPropertyId = new Map(
+    (realEstatePropsRes.data ?? []).map((r) => [r.id as string, r as { id: string; asset_id: string; fiscal_regime: string | null }]),
+  )
   const realEstate = {
     properties: realEstatePortfolio.properties.map((p) => {
       const asset = assetsById.get(p.assetId)
       const acquisitionDate = (asset as { acquisition_date?: string | null } | undefined)?.acquisition_date ?? null
+      const currentValueEur = (asset?.current_value ?? null) as number | null
+      const reMeta = reMetaByPropertyId.get(p.propertyId)
+      const fiscalRegime = reMeta?.fiscal_regime ?? null
+      const kpis = p.simulation.kpis
       return {
         propertyId:   p.propertyId,
         propertyName: p.propertyName,
@@ -194,9 +205,13 @@ export async function loadDashboardInputs(
         // PropertySimResult ; le bloc inline le traite comme falsy via `!`.
         simulation: {
           incompleteData: !!p.simulation.incompleteData,
-          netNetYieldPct: p.simulation.kpis?.netNetYield,
+          netNetYieldPct: kpis?.netNetYield,
+          netYieldPct:    kpis?.netYield,
+          totalCostEur:   kpis?.totalCost,
         },
         acquisitionDate,
+        fiscalRegime,
+        currentValueEur,
         driftAlerts:  p.driftAlerts ?? [],
       }
     }),
@@ -210,10 +225,8 @@ export async function loadDashboardInputs(
     name:         e.name as string,
     envelopeType: e.envelope_type as string,
   }))
-  // realEstatePropsRes n'est plus exploitée directement ici (les biens
-  // viennent déjà de computeRealEstatePortfolio). Conservée dans la
-  // chaîne `await` pour fail fast en cas d'erreur Supabase.
-  void realEstatePropsRes
+  // realEstatePropsRes est exploitée pour `fiscal_regime` (cf. mapping immo
+  // V2.4-BIS ci-dessus via `reMetaByPropertyId`).
 
   return {
     assets:              assetsRes.data ?? [],

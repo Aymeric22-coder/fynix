@@ -85,9 +85,17 @@ export interface DashboardRealEstatePortfolio {
       incompleteData: boolean
       /** V2.4 P0.7 — netNetYield % annuel (cf. PropertyKPIs.netNetYield). */
       netNetYieldPct?: number
+      /** V2.4-BIS — netYield % = (loyers nets − charges) / coût total (cf. PropertyKPIs.netYield). */
+      netYieldPct?:    number
+      /** V2.4-BIS — Coût total opération (cf. PropertyKPIs.totalCost). */
+      totalCostEur?:   number
     }
     /** V2.4 P0.7 — Date d'acquisition (assets.acquisition_date). */
     acquisitionDate?: string | null
+    /** V2.4-BIS — Régime fiscal locatif. `null` = pas de régime → présumé RP (exclu du ranking immo). */
+    fiscalRegime?:    string | null
+    /** V2.4-BIS — Valeur estimée actuelle (assets.current_value). Sert de dénominateur au rendement locatif. */
+    currentValueEur?: number | null
     driftAlerts?: unknown[]
   }>
   totalCapitalRemaining: number
@@ -263,12 +271,14 @@ export interface DashboardData {
     accountsCount:  number
   }
 
-  // ── V2.4 P0.7 — Classement Champions / Casseroles (Z8.5) ────────────
+  // ── V2.4-BIS — Classement Champions / Casseroles instantané (Z8.5) ──
   /**
-   * Top 2 best + top 2 worst par catégorie d'investissement. Toujours 4
-   * entrées (financier / crypto / immobilier / cash), même si vide.
-   * Filtre minHoldingDays 90 j appliqué en amont par les helpers
-   * spécialisés (cf. `lib/portfolio/investment-rankings.ts`).
+   * Top 1 best + top 1 worst (si ≥ 2 positions) par catégorie. Buckets
+   * vides absents du retour (clé omise). Métrique = rendement instantané
+   * constaté, sans aucun seuil d'historique :
+   *   - financier/crypto : plus-value latente `(MV − cost_basis) / cost_basis × 100`
+   *   - immobilier       : rendement locatif net (RP exclue par fiscalRegime null)
+   *   - cash             : taux contractuel `interest_rate`
    */
-  investmentRankings: import('@/lib/portfolio/investment-rankings').InvestmentRanking[]
+  investmentRankings: import('@/lib/portfolio/investment-rankings').InvestmentRankings
 }

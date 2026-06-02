@@ -26,12 +26,18 @@ import {
   buildTwrSegments,
   type PositionForSegments,
 } from '@/lib/portfolio/transaction-segments'
-import { computeTwrPerEnvelope } from '@/lib/portfolio/twr-per-envelope'
-import { computeYieldPerProperty } from '@/lib/real-estate/yield-per-property'
-import { computeRatePerAccount } from '@/lib/cash/rate-per-account'
+// V2.4-BIS — Pivot d'approche : on n'utilise plus `computeTwrPerEnvelope`,
+// `computeYieldPerProperty` ni `computeRatePerAccount` pour Z8.5. Ces 3
+// modules restent disponibles sur le repo (utilisables pour analyses
+// futures) mais sont décrochés du pipeline Dashboard.
+// Le nouvel orchestrateur `buildInvestmentRankings` calcule des
+// rendements INSTANTANÉS (plus-value latente / rendement locatif / taux
+// contractuel) sans seuil temporel.
 import {
   buildInvestmentRankings,
-  type EnvelopeWithType,
+  type PositionForRanking,
+  type PropertyForRanking,
+  type CashAccountForRanking,
 } from '@/lib/portfolio/investment-rankings'
 import type {
   DashboardData, DashboardPipelineInputs,
@@ -257,89 +263,81 @@ export function computeDashboardData(inputs: DashboardPipelineInputs): Dashboard
 // ─────────────────────────────────────────────────────────────────────
 
 /**
- * Construit le classement Champions / Casseroles par catégorie en
- * orchestrant les 3 moteurs spécialisés (TWR par enveloppe / yield immo /
- * taux cash) puis en agrégeant via `buildInvestmentRankings`.
+ * Construit les 4 buckets V2.4-BIS du classement Z8.5 (financier, crypto,
+ * immobilier, cash) à partir des inputs Dashboard. Métriques **instantanées** :
+ *   - financier/crypto : plus-value latente `(MV − cost_basis) / cost_basis × 100`
+ *   - immobilier loc.  : `loyers_nets_annuels / valeur_actuelle × 100`
+ *                        (RP exclue par `fiscalRegime === null`)
+ *   - cash             : `interest_rate` (taux contractuel annualisé)
  *
- * **Pas de mélange inter-classes** : les 4 catégories (financier, crypto,
- * immobilier, cash) sont strictement isolées.
+ * **Pas de seuil d'ancienneté** : la zone s'affiche dès le jour 1, sans
+ * jamais brandir d'annualisation extrapolée.
+ *
+ * **Pas de mélange inter-classes** : les 4 buckets sont strictement isolés.
  */
 function computeInvestmentRankings(
   inputs: DashboardPipelineInputs,
-): import('@/lib/portfolio/investment-rankings').InvestmentRanking[] {
-  const asOf = inputs.asOfDate
-    ? (inputs.asOfDate instanceof Date ? inputs.asOfDate : new Date(inputs.asOfDate))
-    : new Date()
-
-  // ── 1. TWR par enveloppe (financier + crypto) ───────────────────────
+): import('@/lib/portfolio/investment-rankings').InvestmentRankings {
+  // ── 1. Positions (financier + crypto split sur assetClass) ──────────
   const envelopesMeta = inputs.envelopes ?? []
-  const envelopeLabels = new Map(envelopesMeta.map((e) => [e.id, e.name]))
-  const envelopeTypeById = new Map(envelopesMeta.map((e) => [e.id, e.envelopeType]))
+  const envelopeLabelById = new Map(envelopesMeta.map((e) => [e.id, e.name]))
 
-  const positionsForTwr: PositionForSegments[] = inputs.portfolioPositions
+  const positionsForRanking: PositionForRanking[] = inputs.portfolioPositions
     .filter((p) => p.status === 'active')
-    .map((p) => ({
-      positionId:       p.positionId,
-      currentMvEur:     p.marketValue,
-      currentQuantity:  p.currentQuantity ?? 0,
-      acquisitionDate:  p.acquisitionDate,
-      averagePriceEur:  p.averagePriceEur,
-      envelopeId:       p.envelopeId ?? null,
-    }))
+    .map((p) => {
+      const envelopeLabel = p.envelopeId ? envelopeLabelById.get(p.envelopeId) : undefined
+      return {
+        id:             p.positionId,
+        label:          p.name,
+        ...(envelopeLabel ? { envelopeLabel } : {}),
+        assetClass:     p.assetClass,
+        marketValueEur: p.marketValue,
+        costBasisEur:   p.costBasis,
+      }
+    })
 
-  const envelopeTwr = computeTwrPerEnvelope({
-    transactions:  inputs.transactionsPortefeuille ?? [],
-    positions:     positionsForTwr,
-    envelopeLabels,
-    asOfDate:      asOf,
-  })
+  // ── 2. Biens immobiliers (RP exclue côté buildInvestmentRankings) ───
+  // Dérivation des loyers nets annuels :
+  //   netYield = (loyers nets − charges) / coût total opération (en %)
+  //   ⇒ loyers_nets_annuels = netYield × coût_total / 100
+  //   ⇒ rendement_locatif_actuel = loyers_nets_annuels / valeur_actuelle × 100
+  const propertiesForRanking: PropertyForRanking[] = inputs.realEstatePortfolio.properties
+    .map((p) => {
+      const ny = p.simulation.netYieldPct
+      const tc = p.simulation.totalCostEur
+      const netAnnualRentEur = (ny !== undefined && tc !== undefined && Number.isFinite(ny) && Number.isFinite(tc))
+        ? (ny * tc) / 100
+        : null
+      return {
+        id:               p.propertyId,
+        label:            p.propertyName ?? p.propertyId,
+        netAnnualRentEur,
+        currentValueEur:  p.currentValueEur ?? null,
+        fiscalRegime:     p.fiscalRegime ?? null,
+      }
+    })
 
-  const envelopesForRanking: EnvelopeWithType[] = envelopeTwr.map((e) => ({
-    ...e,
-    envelopeType: e.envelopeId === null ? null : (envelopeTypeById.get(e.envelopeId) ?? null),
-  }))
-
-  // ── 2. Rendement par bien immobilier ────────────────────────────────
-  const propertiesForYield = inputs.realEstatePortfolio.properties
-    .map((p) => ({
-      propertyId:      p.propertyId,
-      propertyLabel:   p.propertyName ?? p.propertyId,
-      netNetYieldPct:  p.simulation.netNetYieldPct ?? Number.NaN,
-      acquisitionDate: p.acquisitionDate ?? null,
-      incompleteData:  p.simulation.incompleteData,
-    }))
-  const propertyYields = computeYieldPerProperty({
-    properties: propertiesForYield,
-    asOfDate:   asOf,
-  })
-
-  // ── 3. Taux par compte cash ─────────────────────────────────────────
-  const cashAccountsForRate = (inputs.cashAccounts ?? []).map((a) => {
-    const num = (v: number | string | null | undefined): number => {
-      if (v === null || v === undefined) return Number.NaN
+  // ── 3. Comptes cash (taux contractuel) ──────────────────────────────
+  const cashForRanking: CashAccountForRanking[] = (inputs.cashAccounts ?? []).map((a) => {
+    const num = (v: number | string | null | undefined): number | null => {
+      if (v === null || v === undefined) return null
       const n = typeof v === 'number' ? v : Number(v)
-      return Number.isFinite(n) ? n : Number.NaN
+      return Number.isFinite(n) ? n : null
     }
     const accountTypeLabel = a.account_type ?? 'Compte'
     const bank = a.bank_name ? ` — ${a.bank_name}` : ''
     return {
-      accountId:       a.id,
-      accountLabel:    `${accountTypeLabel}${bank}`,
+      id:             a.id,
+      label:          `${accountTypeLabel}${bank}`,
       interestRatePct: num(a.interest_rate ?? null),
-      createdAt:       a.created_at ?? '',
-      balance:         num(a.balance) || 0,
+      balanceEur:     num(a.balance) ?? 0,
     }
   })
-  const cashRates = computeRatePerAccount({
-    accounts: cashAccountsForRate,
-    asOfDate: asOf,
-  })
 
-  // ── 4. Agrégation finale ────────────────────────────────────────────
   return buildInvestmentRankings({
-    envelopes:    envelopesForRanking,
-    properties:   propertyYields,
-    cashAccounts: cashRates,
+    positions:    positionsForRanking,
+    properties:   propertiesForRanking,
+    cashAccounts: cashForRanking,
   })
 }
 
