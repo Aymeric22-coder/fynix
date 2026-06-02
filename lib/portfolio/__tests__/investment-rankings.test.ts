@@ -1,146 +1,173 @@
 /**
- * Tests du module de classement Champions / Casseroles (V2.4 P0.7 ST4).
+ * Tests V2.4-BIS du moteur de classement Champions / Casseroles.
  *
  * Vérifie :
- *   - 4 catégories toujours présentes dans le retour (financier, crypto,
- *     immobilier, cash) même si vides
- *   - Pas de mélange inter-classes (un PEA ne peut pas finir dans crypto)
- *   - Split envelopeType : `wallet_crypto` → crypto, sinon → financier
- *   - Top N (défaut 2) sur best (desc) et worst (asc)
- *   - Tie-breaker déterministe sur `id`
+ *   - Séparation stricte des 4 buckets (pas de mélange inter-classes)
+ *   - Formule plus-value latente (financier + crypto)
+ *   - Formule rendement locatif net (immo) + exclusion RP (fiscalRegime null)
+ *   - Taux contractuel cash (interest_rate)
+ *   - Bucket à 1 position → uniquement dans `best`, `worst` vide
+ *   - Bucket à 0 position → clé absente du retour
+ *   - Tie-breaker déterministe sur id
  */
 import { describe, it, expect } from 'vitest'
 import {
   buildInvestmentRankings,
-  type EnvelopeWithType,
-  type InvestmentRanking,
+  type PositionForRanking,
+  type PropertyForRanking,
+  type CashAccountForRanking,
 } from '../investment-rankings'
-import type { PropertyYieldResult } from '@/lib/real-estate/yield-per-property'
-import type { CashRateResult } from '@/lib/cash/rate-per-account'
 
-const env = (id: string, lbl: string, pct: number, type = 'cto'): EnvelopeWithType => ({
-  envelopeId: id, envelopeLabel: lbl, twrAnnualisePct: pct, twrCumulePct: pct,
-  holdingDays: 800, segmentCount: 2, extrapole: false, positionCount: 1,
-  envelopeType: type,
-})
-const prop = (id: string, lbl: string, pct: number): PropertyYieldResult => ({
-  propertyId: id, propertyLabel: lbl, netNetYieldPct: pct,
-  holdingDays: 700, extrapole: false, incompleteData: false,
-})
-const cash = (id: string, lbl: string, pct: number): CashRateResult => ({
-  accountId: id, accountLabel: lbl, interestRatePct: pct,
-  holdingDays: 500, extrapole: false, balance: 1000,
-})
+const emptyInput = (): {
+  positions: PositionForRanking[],
+  properties: PropertyForRanking[],
+  cashAccounts: CashAccountForRanking[],
+} => ({ positions: [], properties: [], cashAccounts: [] })
 
-function findCat(rs: InvestmentRanking[], c: InvestmentRanking['category']) {
-  return rs.find((r) => r.category === c)!
-}
-
-describe('buildInvestmentRankings — structure', () => {
-  it('retourne toujours 4 catégories dans l\'ordre attendu', () => {
-    const rs = buildInvestmentRankings({ envelopes: [], properties: [], cashAccounts: [] })
-    expect(rs.map((r) => r.category)).toEqual(['financier', 'crypto', 'immobilier', 'cash'])
-    for (const r of rs) {
-      expect(r.best).toHaveLength(0)
-      expect(r.worst).toHaveLength(0)
-      expect(r.totalCandidates).toBe(0)
-    }
+describe('buildInvestmentRankings — buckets absents', () => {
+  it('aucun input → objet vide (toutes les clés omises)', () => {
+    const out = buildInvestmentRankings(emptyInput())
+    expect(out.financier).toBeUndefined()
+    expect(out.crypto).toBeUndefined()
+    expect(out.immobilier).toBeUndefined()
+    expect(out.cash).toBeUndefined()
   })
 })
 
-describe('buildInvestmentRankings — séparation financier / crypto', () => {
-  it('range les wallet_crypto en crypto et les autres en financier', () => {
-    const envelopes: EnvelopeWithType[] = [
-      env('e1', 'PEA',           +12, 'pea'),
-      env('e2', 'CTO',           +8,  'cto'),
-      env('e3', 'AV',            +5,  'assurance_vie'),
-      env('e4', 'Ledger Nano X', +120, 'wallet_crypto'),
-      env('e5', 'Binance',       -30,  'wallet_crypto'),
+describe('buildInvestmentRankings — financier (plus-value latente)', () => {
+  it('calcule (MV − CB) / CB × 100 et range par yieldPct décroissant', () => {
+    const positions: PositionForRanking[] = [
+      { id: 'P1', label: 'MSCI World Swap', envelopeLabel: 'PEA', assetClass: 'etf',
+        marketValueEur: 12_430, costBasisEur: 10_000 },
+      { id: 'P2', label: 'Crédit Agricole',  envelopeLabel: 'CTO', assetClass: 'actions',
+        marketValueEur:  9_790, costBasisEur: 10_000 },
     ]
-    const rs = buildInvestmentRankings({ envelopes, properties: [], cashAccounts: [] })
-    const fin = findCat(rs, 'financier')
-    const cry = findCat(rs, 'crypto')
-    expect(fin.totalCandidates).toBe(3)
-    expect(cry.totalCandidates).toBe(2)
-    expect(fin.best.map((b) => b.label)).toEqual(['PEA', 'CTO'])
-    expect(cry.best[0]!.label).toBe('Ledger Nano X')
-    expect(cry.worst[0]!.label).toBe('Binance')
+    const out = buildInvestmentRankings({ ...emptyInput(), positions })
+    expect(out.financier).toBeDefined()
+    expect(out.financier!.best[0]!.label).toBe('MSCI World Swap')
+    expect(out.financier!.best[0]!.yieldPct).toBeCloseTo(24.3, 1)
+    expect(out.financier!.best[0]!.metricType).toBe('plus_value_latente')
+    expect(out.financier!.best[0]!.envelopeLabel).toBe('PEA')
+    expect(out.financier!.worst[0]!.label).toBe('Crédit Agricole')
+    expect(out.financier!.worst[0]!.yieldPct).toBeCloseTo(-2.1, 1)
   })
 
-  it('un PEA ne peut pas atterrir dans la catégorie crypto', () => {
-    const envelopes: EnvelopeWithType[] = [
-      env('e1', 'PEA très gagnant', +50, 'pea'),
+  it('cost_basis null ou 0 → position exclue silencieusement', () => {
+    const positions: PositionForRanking[] = [
+      { id: 'P_ok',  label: 'OK',    assetClass: 'etf',
+        marketValueEur: 12_000, costBasisEur: 10_000 },
+      { id: 'P_no', label: 'NoCB',  assetClass: 'etf',
+        marketValueEur: 5_000,  costBasisEur: 0 },
     ]
-    const rs = buildInvestmentRankings({ envelopes, properties: [], cashAccounts: [] })
-    const cry = findCat(rs, 'crypto')
-    expect(cry.best).toHaveLength(0)
-    expect(cry.totalCandidates).toBe(0)
-  })
-})
-
-describe('buildInvestmentRankings — top N + tri', () => {
-  it('par défaut, top 2 best (desc) + top 2 worst (asc)', () => {
-    const envelopes: EnvelopeWithType[] = [
-      env('e1', 'A', +20),
-      env('e2', 'B', +10),
-      env('e3', 'C', +5),
-      env('e4', 'D', -2),
-      env('e5', 'E', -15),
-    ]
-    const rs = buildInvestmentRankings({ envelopes, properties: [], cashAccounts: [] })
-    const fin = findCat(rs, 'financier')
-    expect(fin.best.map((b) => b.label)).toEqual(['A', 'B'])
-    expect(fin.worst.map((b) => b.label)).toEqual(['E', 'D'])
+    const out = buildInvestmentRankings({ ...emptyInput(), positions })
+    expect(out.financier!.best[0]!.label).toBe('OK')
+    expect(out.financier!.worst).toEqual([])  // 1 seul candidat éligible
   })
 
-  it('topN paramétrable', () => {
-    const envelopes: EnvelopeWithType[] = Array.from({ length: 6 }, (_, i) =>
-      env(`e${i}`, `Env${i}`, i),
-    )
-    const rs = buildInvestmentRankings({ envelopes, properties: [], cashAccounts: [], topN: 3 })
-    const fin = findCat(rs, 'financier')
-    expect(fin.best).toHaveLength(3)
-    expect(fin.worst).toHaveLength(3)
-  })
-
-  it('tie-breaker stable sur id en cas d\'égalité de TWR', () => {
-    const envelopes: EnvelopeWithType[] = [
-      env('z', 'Z', 5),
-      env('a', 'A', 5),
-      env('m', 'M', 5),
+  it('MV null → position exclue silencieusement', () => {
+    const positions: PositionForRanking[] = [
+      { id: 'P', label: 'X', assetClass: 'etf', marketValueEur: null, costBasisEur: 1000 },
     ]
-    const rs = buildInvestmentRankings({ envelopes, properties: [], cashAccounts: [] })
-    const fin = findCat(rs, 'financier')
-    expect(fin.best.map((b) => b.id)).toEqual(['a', 'm'])  // tri alphabétique sur id en cas d'égalité
+    const out = buildInvestmentRankings({ ...emptyInput(), positions })
+    expect(out.financier).toBeUndefined()
   })
 })
 
-describe('buildInvestmentRankings — immobilier & cash', () => {
-  it('propage les biens immo et les comptes cash dans les bonnes catégories', () => {
-    const properties = [
-      prop('p1', 'T2 Lyon', 5.5),
-      prop('p2', 'T3 Paris', 2.1),
-      prop('p3', 'Studio Marseille', -1.2),
+describe('buildInvestmentRankings — crypto (séparation stricte vs financier)', () => {
+  it('asset_class crypto → bucket crypto, jamais financier', () => {
+    const positions: PositionForRanking[] = [
+      { id: 'P_btc', label: 'Bitcoin', envelopeLabel: 'Wallet', assetClass: 'crypto',
+        marketValueEur: 11_850, costBasisEur: 10_000 },
+      { id: 'P_xrp', label: 'XRP',     envelopeLabel: 'Wallet', assetClass: 'crypto',
+        marketValueEur:  9_180, costBasisEur: 10_000 },
     ]
-    const cashAccounts = [
-      cash('c1', 'Livret A',   3.0),
-      cash('c2', 'PEL',        2.5),
-      cash('c3', 'CC',         0.0),
+    const out = buildInvestmentRankings({ ...emptyInput(), positions })
+    expect(out.crypto).toBeDefined()
+    expect(out.financier).toBeUndefined()  // pas de mélange
+    expect(out.crypto!.best[0]!.label).toBe('Bitcoin')
+    expect(out.crypto!.best[0]!.yieldPct).toBeCloseTo(18.5, 1)
+    expect(out.crypto!.worst[0]!.label).toBe('XRP')
+    expect(out.crypto!.worst[0]!.yieldPct).toBeCloseTo(-8.2, 1)
+  })
+})
+
+describe('buildInvestmentRankings — immobilier locatif (RP exclue)', () => {
+  it('calcule loyers_nets / valeur × 100 et exclut la RP (fiscalRegime null)', () => {
+    const properties: PropertyForRanking[] = [
+      { id: 'p_tand', label: 'Immeuble Tandoori',
+        netAnnualRentEur: 21_320, currentValueEur: 410_000,
+        fiscalRegime: 'lmnp_reel' },
+      { id: 'p_rp', label: 'Maison RP',
+        netAnnualRentEur: null, currentValueEur: 350_000,
+        fiscalRegime: null },   // ← RP, doit être exclue
     ]
-    const rs = buildInvestmentRankings({ envelopes: [], properties, cashAccounts })
-    const immo = findCat(rs, 'immobilier')
-    const cashRk = findCat(rs, 'cash')
-    expect(immo.best.map((b) => b.label)).toEqual(['T2 Lyon', 'T3 Paris'])
-    expect(immo.worst[0]!.label).toBe('Studio Marseille')
-    expect(cashRk.best.map((b) => b.label)).toEqual(['Livret A', 'PEL'])
-    expect(cashRk.worst[0]!.label).toBe('CC')
+    const out = buildInvestmentRankings({ ...emptyInput(), properties })
+    expect(out.immobilier).toBeDefined()
+    expect(out.immobilier!.best[0]!.label).toBe('Immeuble Tandoori')
+    expect(out.immobilier!.best[0]!.yieldPct).toBeCloseTo(5.2, 1)
+    expect(out.immobilier!.best[0]!.metricType).toBe('rendement_locatif')
+    expect(out.immobilier!.worst).toEqual([])   // 1 seul bien éligible
   })
 
-  it('propage le flag incompleteData pour immo', () => {
-    const properties: PropertyYieldResult[] = [
-      { ...prop('p1', 'X', 4.0), incompleteData: true },
+  it('loyers null ou valeur null → bien exclu', () => {
+    const properties: PropertyForRanking[] = [
+      { id: 'p1', label: 'X', netAnnualRentEur: null, currentValueEur: 100_000, fiscalRegime: 'lmnp_reel' },
+      { id: 'p2', label: 'Y', netAnnualRentEur: 5_000, currentValueEur: null,   fiscalRegime: 'lmnp_reel' },
+      { id: 'p3', label: 'Z', netAnnualRentEur: 5_000, currentValueEur: 0,      fiscalRegime: 'lmnp_reel' },
     ]
-    const rs = buildInvestmentRankings({ envelopes: [], properties, cashAccounts: [] })
-    expect(findCat(rs, 'immobilier').best[0]!.incompleteData).toBe(true)
+    const out = buildInvestmentRankings({ ...emptyInput(), properties })
+    expect(out.immobilier).toBeUndefined()
+  })
+})
+
+describe('buildInvestmentRankings — cash (taux contractuel)', () => {
+  it('utilise interest_rate, exclut les comptes sans taux (compte courant)', () => {
+    const cashAccounts: CashAccountForRanking[] = [
+      { id: 'c_lep',  label: 'LEP',     interestRatePct: 5.0, balanceEur: 10_300 },
+      { id: 'c_la',   label: 'Livret A', interestRatePct: 3.0, balanceEur:  8_000 },
+      { id: 'c_cc',   label: 'CC',       interestRatePct: null, balanceEur:  2_000 },
+    ]
+    const out = buildInvestmentRankings({ ...emptyInput(), cashAccounts })
+    expect(out.cash).toBeDefined()
+    expect(out.cash!.best[0]!.label).toBe('LEP')
+    expect(out.cash!.best[0]!.yieldPct).toBe(5.0)
+    expect(out.cash!.best[0]!.metricType).toBe('taux_contractuel')
+    expect(out.cash!.worst[0]!.label).toBe('Livret A')
+  })
+})
+
+describe('buildInvestmentRankings — règle « 1 position → best only »', () => {
+  it('bucket à 1 candidat → best rempli, worst vide', () => {
+    const positions: PositionForRanking[] = [
+      { id: 'P', label: 'Solo', assetClass: 'etf',
+        marketValueEur: 12_000, costBasisEur: 10_000 },
+    ]
+    const out = buildInvestmentRankings({ ...emptyInput(), positions })
+    expect(out.financier!.best).toHaveLength(1)
+    expect(out.financier!.worst).toHaveLength(0)
+  })
+
+  it('bucket à 2 candidats → best ≠ worst', () => {
+    const positions: PositionForRanking[] = [
+      { id: 'A', label: 'A', assetClass: 'etf', marketValueEur: 11_000, costBasisEur: 10_000 },
+      { id: 'B', label: 'B', assetClass: 'etf', marketValueEur:  9_000, costBasisEur: 10_000 },
+    ]
+    const out = buildInvestmentRankings({ ...emptyInput(), positions })
+    expect(out.financier!.best[0]!.id).toBe('A')
+    expect(out.financier!.worst[0]!.id).toBe('B')
+  })
+})
+
+describe('buildInvestmentRankings — pas de mélange inter-classes', () => {
+  it('un PEA très gagnant ne contamine pas immobilier ni cash', () => {
+    const positions: PositionForRanking[] = [
+      { id: 'P', label: 'PEA gagnant', envelopeLabel: 'PEA', assetClass: 'etf',
+        marketValueEur: 50_000, costBasisEur: 10_000 },
+    ]
+    const out = buildInvestmentRankings({ ...emptyInput(), positions })
+    expect(out.financier).toBeDefined()
+    expect(out.immobilier).toBeUndefined()
+    expect(out.cash).toBeUndefined()
+    expect(out.crypto).toBeUndefined()
   })
 })
