@@ -25,7 +25,8 @@ import { PatrimoineEvolutionChart } from '@/components/dashboard/patrimoine-evol
 import type { PropertyDriftSummary } from '@/components/dashboard/real-estate-alerts-panel'
 import { ZonePilotage } from '@/components/dashboard/zone-pilotage'
 import { ZoneFiscaliteToggle } from '@/components/dashboard/zone-fiscalite-toggle'
-// V2.4 — Z8.5 : Meilleur / Pire investissement par classe d'actif.
+// V2.4 / V2.4-BIS — Z8.5 : Meilleur / Pire investissement par classe d'actif.
+// V2.4-BIS : rendement instantané (plus-value latente / rendement locatif / taux), sans seuil 90 j.
 import { ZoneChampionsCasseroles } from '@/components/dashboard/zone-champions-casseroles'
 // V2.1 — `RealEstatePortfolioBlock` (4 KPIs) remplacé par `ImmoSummaryCompact` (1 ligne).
 // Le composant complet reste dans le repo (peut servir ailleurs), simplement plus consommé ici.
@@ -269,8 +270,9 @@ export default async function DashboardPage() {
         </div>
       )}
 
-      {/* Z8.5 — Meilleur / Pire investissement par catégorie (V2.4 P0.7).
-            Auto-masque si 0 candidat dans les 4 catégories. */}
+      {/* Z8.5 — Meilleur / Pire investissement par catégorie (V2.4 / V2.4-BIS).
+            V2.4-BIS : rendement instantané, sans seuil temporel.
+            Auto-masque si aucun bucket n'a de candidat éligible. */}
       <ZoneChampionsCasseroles rankings={dashboardData.investmentRankings} />
 
       {/* Z9 — Fiscalité (toggle persistant en localStorage, masquée par défaut) */}

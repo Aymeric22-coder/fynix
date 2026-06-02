@@ -1,31 +1,32 @@
 /**
- * ZoneChampionsCasseroles — Z8.5 de l'architecture Dashboard V2.4.
+ * ZoneChampionsCasseroles — Z8.5 du Dashboard, V2.4-BIS.
  *
- * Affiche le meilleur et le pire investissement annualisé par CATÉGORIE
- * (financier, crypto, immobilier, cash). Strictement isolé inter-classes :
- * un PEA n'est jamais comparé à un livret A, un T2 jamais à du Bitcoin.
+ * Affiche le **meilleur** et le **pire** investissement de chaque bucket,
+ * sur la base de rendements INSTANTANÉS (pas d'annualisation, pas de seuil
+ * temporel). Disponible dès le jour 1.
+ *
+ * Buckets strictement isolés (pas de mélange inter-classes) :
+ *   - 💼 Financier   : plus-value latente
+ *   - ₿  Crypto      : plus-value latente
+ *   - 🏠 Immo locatif: rendement locatif net (RP exclue)
+ *   - 💰 Cash        : taux contractuel
  *
  * Layout :
- *   2 cartes côte à côte
- *     ┌─────────────────────────────┐ ┌─────────────────────────────┐
- *     │ 🏆 Champions                 │ │ 🍳 Casseroles                │
- *     │   Financier                  │ │   Financier                  │
- *     │     PEA Boursorama +12,3 %/an│ │     CTO Trade Rep. -4,5 %/an │
- *     │   Crypto                     │ │   Crypto                     │
- *     │     Ledger Nano X +85 %/an   │ │     Binance       -15 %/an   │
- *     │   Immobilier                 │ │   Immobilier                 │
- *     │     T2 Lyon +5,5 %/an        │ │     Studio Marseille -1,2 %  │
- *     │   Cash                       │ │   Cash                       │
- *     │     Livret A 3,0 %/an        │ │     CC 0,0 %/an              │
- *     └─────────────────────────────┘ └─────────────────────────────┘
+ *   2 cartes côte à côte (« Meilleurs » à gauche, « Pires » à droite).
+ *   Chaque carte affiche 1 ligne par bucket actif.
  *
- * **Règles d'affichage** :
- *   - Auto-masquage complet si aucune catégorie n'a de candidat (`return null`)
- *   - Une sous-section catégorie est masquée si `totalCandidates === 0`
- *   - Une sous-section avec 1 seul candidat affiche la même ligne dans les
- *     2 cartes (champion = casserole d'une catégorie à 1 candidat)
- *   - Le badge ⚠️ « estimé » s'affiche si `extrapole === true` (TWR < 365 j)
- *   - Le badge ⚠️ « incomplet » s'affiche si `incompleteData === true` (immo)
+ * Règles d'affichage :
+ *   - Card « Meilleurs » : 1 ligne / bucket actif, montrant le #1
+ *   - Card « Pires » : 1 ligne / bucket actif, montrant la dernière
+ *     UNIQUEMENT s'il y a ≥ 2 positions dans le bucket
+ *   - Bucket vide → absent des 2 cards (clé omise par le pipeline)
+ *   - Si TOUS les buckets sont vides → composant retourne `null`
+ *   - Si aucun bucket n'a de « pire » (tous à 1 position) → card « Pires » disparaît
+ *
+ * Étiquettes :
+ *   - Pour financier / crypto : `+24,3 %` (cumul depuis l'achat, sans /an)
+ *   - Pour immo locatif       : `5,2 %` (rendement annuel par construction)
+ *   - Pour cash               : `5,0 %` (taux annuel par construction)
  *
  * Server Component pur — pas d'état, juste de la composition.
  */
@@ -34,20 +35,27 @@ import { Trophy, AlertTriangle, ArrowRight } from 'lucide-react'
 import { formatPercent } from '@/lib/utils/format'
 import type {
   InvestmentRanking,
-  InvestmentRankingItem,
+  InvestmentRankings,
+  InvestmentRankingBucket,
   InvestmentCategory,
 } from '@/lib/portfolio/investment-rankings'
 
 interface Props {
-  /** Sorti directement par le pipeline `computeDashboardData(inputs)`. */
-  rankings: InvestmentRanking[]
+  rankings: InvestmentRankings
 }
 
 const CATEGORY_LABELS: Record<InvestmentCategory, string> = {
   financier:  'Financier',
   crypto:     'Crypto',
-  immobilier: 'Immobilier',
+  immobilier: 'Immobilier locatif',
   cash:       'Cash',
+}
+
+const CATEGORY_ICONS: Record<InvestmentCategory, string> = {
+  financier:  '💼',
+  crypto:     '₿',
+  immobilier: '🏠',
+  cash:       '💰',
 }
 
 const CATEGORY_HREF: Record<InvestmentCategory, string> = {
@@ -57,31 +65,33 @@ const CATEGORY_HREF: Record<InvestmentCategory, string> = {
   cash:       '/cash',
 }
 
-export function ZoneChampionsCasseroles({ rankings }: Props) {
-  // Auto-masquage complet si rien à montrer (0 candidats partout).
-  const hasAnyCandidate = rankings.some((r) => r.totalCandidates > 0)
-  if (!hasAnyCandidate) return null
+/** Ordre d'affichage stable des buckets dans chaque card. */
+const CATEGORY_ORDER: InvestmentCategory[] = ['financier', 'crypto', 'immobilier', 'cash']
 
-  // Catégories à afficher : celles avec >= 1 candidat. Les autres sont skip.
-  const visibleRankings = rankings.filter((r) => r.totalCandidates > 0)
+interface CategoryEntry {
+  category: InvestmentCategory
+  bucket:   InvestmentRankingBucket
+}
+
+export function ZoneChampionsCasseroles({ rankings }: Props) {
+  // Enumération des buckets présents, dans l'ordre canonique.
+  const entries: CategoryEntry[] = CATEGORY_ORDER
+    .map((cat) => ({ category: cat, bucket: rankings[cat] }))
+    .filter((e): e is CategoryEntry => e.bucket !== undefined)
+
+  if (entries.length === 0) return null
+
+  const hasAnyWorst = entries.some((e) => e.bucket.worst.length > 0)
 
   return (
     <section
       aria-label="Meilleur et pire investissement par catégorie"
-      className="grid grid-cols-1 md:grid-cols-2 gap-4"
+      className={`grid grid-cols-1 ${hasAnyWorst ? 'md:grid-cols-2' : ''} gap-4`}
     >
-      <RankingCard
-        title="Champions"
-        icon="trophy"
-        rankings={visibleRankings}
-        side="best"
-      />
-      <RankingCard
-        title="Casseroles"
-        icon="alert"
-        rankings={visibleRankings}
-        side="worst"
-      />
+      <RankingCard title="Meilleurs investissements" icon="trophy" entries={entries} side="best" />
+      {hasAnyWorst && (
+        <RankingCard title="Pires investissements" icon="alert" entries={entries} side="worst" />
+      )}
     </section>
   )
 }
@@ -91,15 +101,27 @@ export function ZoneChampionsCasseroles({ rankings }: Props) {
 // ─────────────────────────────────────────────────────────────────────
 
 interface RankingCardProps {
-  title:    string
-  icon:     'trophy' | 'alert'
-  rankings: InvestmentRanking[]
-  side:     'best' | 'worst'
+  title:   string
+  icon:    'trophy' | 'alert'
+  entries: CategoryEntry[]
+  side:    'best' | 'worst'
 }
 
-function RankingCard({ title, icon, rankings, side }: RankingCardProps) {
+function RankingCard({ title, icon, entries, side }: RankingCardProps) {
   const IconComp = icon === 'trophy' ? Trophy : AlertTriangle
   const iconColor = icon === 'trophy' ? 'text-accent' : 'text-danger'
+
+  // Filtre les entries qui ont effectivement une ligne pour ce côté.
+  const rows = entries
+    .map<{ category: InvestmentCategory; item: InvestmentRanking } | null>((e) => {
+      const item = (side === 'best' ? e.bucket.best[0] : e.bucket.worst[0])
+      return item ? { category: e.category, item } : null
+    })
+    .filter((r): r is { category: InvestmentCategory; item: InvestmentRanking } => r !== null)
+
+  // Sécurité : si aucune ligne, on rend une carte vide (mais le parent évite
+  // déjà ce cas en testant `hasAnyWorst`). On rend explicite tout de même.
+  if (rows.length === 0) return null
 
   return (
     <div className="card p-5">
@@ -108,83 +130,62 @@ function RankingCard({ title, icon, rankings, side }: RankingCardProps) {
         <h3 className="text-sm font-medium text-primary">{title}</h3>
       </div>
 
-      <ul className="space-y-4">
-        {rankings.map((r) => (
-          <CategoryBlock key={r.category} ranking={r} side={side} />
+      <ul className="space-y-2.5">
+        {rows.map((r) => (
+          <RankingRow key={r.category} category={r.category} item={r.item} side={side} />
         ))}
       </ul>
     </div>
   )
 }
 
-interface CategoryBlockProps {
-  ranking: InvestmentRanking
-  side:    'best' | 'worst'
-}
-
-function CategoryBlock({ ranking, side }: CategoryBlockProps) {
-  const items = side === 'best' ? ranking.best : ranking.worst
-  if (items.length === 0) return null
-
-  return (
-    <li>
-      <div className="flex items-center justify-between mb-1.5">
-        <span className="text-xs uppercase tracking-wide text-secondary">
-          {CATEGORY_LABELS[ranking.category]}
-        </span>
-        <Link
-          href={CATEGORY_HREF[ranking.category]}
-          className="inline-flex items-center gap-0.5 text-[10px] text-accent/80 hover:text-accent transition-colors"
-        >
-          Voir
-          <ArrowRight size={9} />
-        </Link>
-      </div>
-      <ul className="space-y-1">
-        {items.map((item) => (
-          <RankingRow key={item.id} item={item} side={side} />
-        ))}
-      </ul>
-    </li>
-  )
-}
-
 interface RankingRowProps {
-  item: InvestmentRankingItem
-  side: 'best' | 'worst'
+  category: InvestmentCategory
+  item:     InvestmentRanking
+  side:     'best' | 'worst'
 }
 
-function RankingRow({ item, side }: RankingRowProps) {
-  const positive  = item.annualizedReturnPct >= 0
-  // Sur la carte « Champions » on encourage le vert, sur « Casseroles » le rouge.
+function RankingRow({ category, item, side }: RankingRowProps) {
+  const positive   = item.yieldPct >= 0
+  // Sur la card « Meilleurs » on encourage le vert ; sur « Pires » le rouge.
   const valueClass = side === 'best'
     ? (positive ? 'text-accent' : 'text-warning')
     : (positive ? 'text-secondary' : 'text-danger')
 
   return (
     <li className="flex items-center justify-between gap-2 text-sm">
-      <span className="truncate text-primary min-w-0 flex items-center gap-1.5">
-        <span className="truncate">{item.label}</span>
-        {item.extrapole && (
-          <span
-            title="Annualisation extrapolée — historique < 1 an"
-            className="text-[10px] text-warning flex-shrink-0"
-          >
-            ⚠
-          </span>
+      <Link
+        href={CATEGORY_HREF[category]}
+        className="flex items-center gap-1.5 min-w-0 group"
+      >
+        <span aria-hidden="true" className="flex-shrink-0">{CATEGORY_ICONS[category]}</span>
+        <span className="text-xs uppercase tracking-wide text-secondary flex-shrink-0 group-hover:text-accent transition-colors">
+          {CATEGORY_LABELS[category]}
+        </span>
+        <span className="text-muted flex-shrink-0">·</span>
+        <span className="truncate text-primary">{item.label}</span>
+        {item.envelopeLabel && (
+          <span className="text-xs text-muted flex-shrink-0">({item.envelopeLabel})</span>
         )}
-        {item.incompleteData && (
-          <span
-            title="Simulation immobilière avec données partielles"
-            className="text-[10px] text-warning flex-shrink-0"
-          >
-            (incomplet)
-          </span>
-        )}
-      </span>
-      <span className={`financial-value flex-shrink-0 ${valueClass}`}>
-        {formatPercent(item.annualizedReturnPct, { sign: true, decimals: 1 })}/an
+        <ArrowRight size={9} className="text-accent/0 group-hover:text-accent/70 transition-colors flex-shrink-0" />
+      </Link>
+      <span
+        className={`financial-value flex-shrink-0 ${valueClass}`}
+        title={metricTooltip(item.metricType)}
+      >
+        {formatPercent(item.yieldPct, { sign: true, decimals: 1 })}
       </span>
     </li>
   )
+}
+
+function metricTooltip(metricType: InvestmentRanking['metricType']): string {
+  switch (metricType) {
+    case 'plus_value_latente':
+      return 'Plus-value latente cumulée depuis l’achat — (valeur actuelle − coût d’acquisition) / coût d’acquisition'
+    case 'rendement_locatif':
+      return 'Rendement locatif net annuel — loyers nets annuels / valeur estimée actuelle'
+    case 'taux_contractuel':
+      return 'Taux contractuel annuel servi par la banque'
+  }
 }
