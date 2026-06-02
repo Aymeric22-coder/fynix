@@ -184,7 +184,8 @@ export default async function DashboardPage() {
   // BUG-3 (label CF immo explicite), BUG-6 (taxonomie d'allocation unifiée).
   const kpis      = dashboardData.kpis
   const alerts    = dashboardData.alerts
-  const topAssets = dashboardData.topAssets
+  // V2.3 — Top 5 consolidé par enveloppe / bien / compte (BUG-5 corrigé).
+  const topAssets = dashboardData.topAssetsConsolidated
   const driftSummaries = dashboardData.realEstateDriftSummaries
   // V2.1 — `confScore` n'est plus consommé (wrapper Évolution + ConfidenceBadge supprimés).
 
@@ -262,7 +263,7 @@ export default async function DashboardPage() {
         accountsCount={dashboardData.cashSummary.accountsCount}
       />
 
-      {/* Z8 — Top 5 actifs (atomique en V2.2 ; consolidation par enveloppe en V2.3) */}
+      {/* Z8 — Top 5 actifs consolidés par enveloppe / bien / compte (V2.3, BUG-5 corrigé). */}
       {topAssets.length > 0 && (
         <div className="card p-6">
           <h2 className="text-sm font-medium text-primary mb-6">
