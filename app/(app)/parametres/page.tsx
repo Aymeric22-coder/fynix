@@ -2,6 +2,8 @@ import { Metadata } from 'next'
 import { createServerClient } from '@/lib/supabase/server'
 import { PageHeader } from '@/components/shared/page-header'
 import ParametresForm from './parametres-form'
+// V2.2-BIS — Section listant les masquages d'alertes / recos, avec réactivation.
+import { DismissalsList } from '@/components/parametres/dismissals-list'
 
 export const metadata: Metadata = { title: 'Paramètres' }
 
@@ -19,6 +21,7 @@ export default async function ParametresPage() {
     <div className="max-w-2xl">
       <PageHeader title="Paramètres" subtitle="Profil fiscal et préférences de l'application" />
       <ParametresForm profile={profile} userEmail={user!.email ?? ''} />
+      <DismissalsList />
     </div>
   )
 }
