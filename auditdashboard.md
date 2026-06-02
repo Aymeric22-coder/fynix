@@ -1852,3 +1852,72 @@ Le Dashboard expose enfin une réponse claire à la question « quel est mon mei
 - Affichage du top 2 (plutôt que top 1) dans chaque card si l'utilisateur a beaucoup de positions par bucket — feedback à recueillir d'abord.
 - Le code TWR par enveloppe peut être recyclé en V2.3 (top consolidé par enveloppe avec MV + perf annualisée séparées) — pas perdu.
 
+### V2.2-BIS — Réalisme des alertes / recos + système de masquage personnalisé — 2026-06-02
+
+**Constat** : les alertes (« Sur-exposition immobilier 85 % » sur un patrimoine financé à 90 % par crédit) et les recommandations (« Rebalancer 243 321 € de Immobilier vers ETF/Fonds » en un mois) étaient à la fois techniquement fausses et indignes d'un conseiller pro. Aucun mécanisme ne permettait à l'utilisateur d'assumer une stratégie (« je suis pro crypto ») sans subir l'alerte tous les jours.
+
+**Sprint correctif** : nouveaux seuils calibrés métier, plafond mensuel réaliste sur les recos, table `user_alert_dismissals` avec RLS + modal de masquage avec raisons + page de gestion dans `/parametres`.
+
+**5 commits atomiques sur master + 1 commit docs** :
+
+| Sprint | SHA | Type | Message d'en-tête |
+|---|---|---|---|
+| ST1 | `2d84af0` | feat | V2.2-BIS ST1 - seuils d'alertes realistes par classe |
+| ST2 | `9814920` | feat | V2.2-BIS ST2 - plafonnement des recommandations |
+| ST3 | `29fdb1d` | feat | V2.2-BIS ST3 - table user_alert_dismissals + filtrage pipeline |
+| ST4 | `01828a7` | feat | V2.2-BIS ST4 - modal de masquage + boutons inline |
+| ST5 | `466ae3b` | feat | V2.2-BIS ST5 - section masquages d'alertes et recos |
+| doc | _(this commit)_ | docs | V2.2-BIS - journal Phase 6 |
+
+**Décisions techniques majeures** :
+
+1. **Suppression franche de la règle « > 70 % du brut »** (ST1) — l'ancienne logique ignorait le levier et mélangeait toutes les classes au même seuil. Remplacée par 4 règles calibrées :
+   * **Immobilier NET > 60 %** du patrimoine net — moyenne FR ~62 %, signal au-delà car impact diversification + cycle.
+   * **Crypto > 15 %** du patrimoine net — classe spéculative volatile.
+   * **Concentration > 25 %** sur 1 position financière (signature unique par position pour masquage individuel).
+   * **Cash > 30 %** du patrimoine net ET stable depuis ≥ 6 mois consécutifs (pas d'alerte sur un pic ponctuel — historique snapshots vérifié).
+2. **Signature stable par alerte** (ST1) — `DashboardAlert.signature?: string`. Convention :
+   * Alertes globales : signature = type (`over_exposure_immo_net`, `over_exposure_crypto`, `cash_dormant_6m`).
+   * Alertes par position : suffixe id (`concentration_position:<positionId>`).
+   * Alertes informatives (`stale_data`, `sim_incomplete`) : **pas de signature** → non masquables intentionnellement (signal système, pas opinion produit).
+3. **Plafond mensuel réaliste** (ST2) — `computePlafondMensuelRealiste(p) = max(epargne_mensuelle, 5 % patrimoine_net / 12)`. Recommandation qui dépasse :
+   * **Reformulée** en plan progressif (« Réorienter ~X €/mois pendant N mois »).
+4. **Suppression structurelle (> 10 % net)** (ST2) — uniquement pour les **rebalances** (cas typique : vendre un bien immo de 243 k€ en 1 mois). Pour le **cash dormant**, pas de suppression (le cash est déjà liquide, ce n'est pas une vente d'actif). Distinguer ces 2 cas est crucial pour ne pas faire disparaître des recos pertinentes.
+5. **Convention `actionSignature` exportée** (ST2) — `reco:<action.id>` (ex: `reco:rebalance-classes`, `reco:invest-cash-dormant`, `reco:fiscal-<oppId>`). Permet à l'UI et au pipeline de partager exactement la même clé sans risque de drift.
+6. **Filtrage pipeline avant exposition** (ST3) — `loadDashboardInputs` charge les masquages actifs (`expires_at IS NULL OR > now()`) en parallèle des autres queries → `Set<string>` injecté dans `DashboardPipelineInputs`. `computeDashboardData` filtre les alertes ; `genererActionsMensuelles` filtre les actions via la nouvelle option `dismissedSignatures`. Aucune fuite possible côté composant.
+7. **Index Postgres sans prédicat partiel** (ST3) — première tentative avec `WHERE expires_at IS NULL OR expires_at > now()` a échoué (PostgreSQL impose IMMUTABLE en index WHERE, `now()` est volatile). Solution : index simple `(user_id, alert_signature)` + filtrage `expires_at` côté lecture. Performance suffisante (volumes par utilisateur très faibles).
+8. **Modal embarqué dans un mini-Client Component** (ST4) — `DismissButton` (Client, ~45 l.) gère son propre état d'ouverture et embarque `DismissAlertModal`. Permet à `AlertsPanel` et `ActionsDuMois` de rester Server Components. Pattern réutilisable pour de futurs items masquables (drift immo, événements fiscaux…).
+9. **RLS strict** (ST3) — 4 policies user_select/insert/update/delete avec `auth.uid() = user_id`. Aucun risque qu'un utilisateur lise / réactive les masquages d'un autre.
+
+**Migration SQL appliquée** :
+
+- Fichier : `supabase/migrations/054_user_alert_dismissals.sql` (+ DOWN)
+- Table : `user_alert_dismissals` avec `UNIQUE(user_id, alert_signature)`, CHECK sur `reason_code`, trigger `updated_at` partagé.
+- Appliquée en remote Supabase Fynix (project `ahmmpigmjdlfyokvljma`) — vérifié via `information_schema.tables`.
+
+**Avant / après sur le compte de référence (~470 k€ patrimoine, 410 k€ immo, 351 k€ CRD)** :
+
+| Avant V2.2-BIS | Après V2.2-BIS | Décision |
+|---|---|---|
+| ⚠ « Sur-exposition Immobilier : 85 % du patrimoine » (basée sur le **brut**) | Disparue. Immo NET = 59 k€ ≈ 12,5 % du patrimoine net, sous le seuil 60 %. | Alerte légitimement supprimée. |
+| 🔁 « Rebalancer 243 321 € de Immobilier vers ETF/Fonds » | Supprimée (mouvement > 10 % du net → structurellement irréaliste). | Plus de pop-up infantilisant. |
+| 💰 « 28 000 € de cash dormant à mettre au travail » | Reformulée en plan mensuel : « Réinvestir ~X €/mois pendant N mois » (X ≈ plafond mensuel, N ajusté). | Action redevient actionnable. |
+| ✓ DCA en retard si applicable | Inchangée (déjà mensuelle par construction). | Pas de régression. |
+
+**Vérifications** :
+
+- `npx vitest run` : 618 passed | 25 todo | 3 skipped (1 nouveau test sur la suppression structurelle V2.2-BIS).
+- `npx tsc --noEmit` : silencieux.
+- `npm run build` : succès, route `/parametres` enrichie sans régression de taille notable.
+- Migration vérifiée en prod via `execute_sql` sur Supabase MCP.
+
+**Captures impossibles côté Claude Code** : la validation visuelle de la modal et de la page paramètres est laissée à l'utilisateur après push (le SDK ne dispose pas d'un browser headless ici).
+
+**Points ouverts pour V2.3 / V2.4 / V2.5** :
+
+- **V2.3** (Top consolidé par enveloppe) : la convention `concentration_position:<positionId>` se transposera naturellement en `concentration_envelope:<envelopeId>` quand on consolidera.
+- **V2.4** (Champions / Casseroles déjà livrée en V2.4-BIS) : pas d'impact direct, le composant Z8.5 ne déclenche pas d'alerte.
+- **V2.5** : ajouter le bouton « Masquer » aux alertes drift immobilier (`RealEstateAlertsPanel`) une fois que la convention de signature par bien sera figée.
+
+**Stratégie git** : master direct (5 commits + push), conforme à la stratégie V2 actée en V2.1-BIS.
+
