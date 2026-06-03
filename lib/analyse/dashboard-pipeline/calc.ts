@@ -48,6 +48,7 @@ import {
   type PropertyForTop,
   type CashAccountForTop,
 } from '@/lib/portfolio/top-assets-consolidated'
+import { computeCashTotalsSync } from '@/lib/cash/totals'
 import type {
   DashboardData, DashboardPipelineInputs,
   DashboardAllocationSlice, DashboardAlert,
@@ -511,42 +512,34 @@ function computeInvestmentRankings(
  * Agrège le total cash (en EUR) en évitant le double comptage entre les
  * sources `cash_accounts` (table moderne) et `assets` filtré `cash` (legacy).
  *
- * Règle de dédup : si un compte `cash_accounts` a un `asset_id` non null,
- * on compte SA balance et on SKIP l'asset correspondant. Les `assets` cash
- * non rattachés à un cash_account sont également comptés.
- *
- * Hypothèse devise : on suppose EUR pour V2.1-BIS. La conversion FX
- * patrimoniale viendra plus tard si besoin (cf. `toEur` dans aggregateur).
+ * V1.1 — Délègue la sommation/dédup au helper unifié `computeCashTotalsSync`
+ * (variante synchrone, assume EUR cf. V2.1-BIS). Comportement strictement
+ * identique à l'implémentation V2.1-BIS d'origine.
  */
 function computeCashSummary(
   inputs: DashboardPipelineInputs,
 ): { totalEur: number; accountsCount: number } {
-  const accounts = inputs.cashAccounts ?? []
-  const cashAssetIdsCovered = new Set<string>(
-    accounts
-      .map((a) => a.asset_id)
-      .filter((id): id is string => id !== null),
-  )
-
   const numOrZero = (v: number | string | null | undefined): number => {
     if (v === null || v === undefined) return 0
     const n = typeof v === 'number' ? v : Number(v)
     return Number.isFinite(n) ? n : 0
   }
-
-  const cashFromAccounts = accounts.reduce((s, a) => s + numOrZero(a.balance), 0)
-
-  const legacyCashAssets = inputs.assets.filter(
-    (a) => a.asset_type === 'cash' && !cashAssetIdsCovered.has(a.id),
-  )
-  const cashFromLegacy = legacyCashAssets.reduce(
-    (s, a) => s + numOrZero(a.current_value),
-    0,
-  )
-
-  const totalEur      = Math.round((cashFromAccounts + cashFromLegacy) * 100) / 100
-  const accountsCount = accounts.length + legacyCashAssets.length
-  return { totalEur, accountsCount }
+  const accounts = (inputs.cashAccounts ?? []).map((a) => ({
+    id:           a.id,
+    asset_id:     a.asset_id,
+    balance:      numOrZero(a.balance),
+    currency:     a.currency ?? 'EUR',
+    account_type: a.account_type ?? 'autre',
+  }))
+  const legacyAssets = inputs.assets
+    .filter((a) => a.asset_type === 'cash')
+    .map((a) => ({
+      id:            a.id,
+      current_value: numOrZero(a.current_value),
+      currency:      'EUR',
+    }))
+  const totals = computeCashTotalsSync(accounts, { legacyAssets })
+  return { totalEur: totals.totalEur, accountsCount: totals.countAccounts }
 }
 
 // ─────────────────────────────────────────────────────────────────────

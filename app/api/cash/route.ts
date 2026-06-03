@@ -1,5 +1,6 @@
 import { createServerClient } from '@/lib/supabase/server'
 import { ok, err, withAuth, parseBody } from '@/lib/utils/api'
+import { computeCashTotals } from '@/lib/cash/totals'
 import type { User } from '@supabase/supabase-js'
 
 interface CreateCashBody {
@@ -31,8 +32,18 @@ export const GET = withAuth(async (_req: Request, user: User) => {
 
   if (error) return err(error.message, 500)
 
-  const totalCash = (data ?? []).reduce((sum, a) => sum + a.balance, 0)
-  return ok({ items: data, total_cash: Math.round(totalCash * 100) / 100 })
+  // V1.1 P0 — Total cash via helper unifié `computeCashTotals` (multi-devise
+  // FX-safe). L'arrondi au centime est déjà appliqué par le helper.
+  const totals = await computeCashTotals(
+    (data ?? []).map((a) => ({
+      id:           a.id,
+      asset_id:     a.asset_id,
+      balance:      Number(a.balance),
+      currency:     a.currency ?? 'EUR',
+      account_type: a.account_type,
+    })),
+  )
+  return ok({ items: data, total_cash: totals.totalEur })
 })
 
 // POST /api/cash — créer asset + cash_account + premier historique de solde

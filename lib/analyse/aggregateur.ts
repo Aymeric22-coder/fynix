@@ -23,6 +23,7 @@ import {
   swrPctFromFireType, calculerCiblePatrimoine, RENDEMENT_PAR_CLASSE,
 } from './constants'
 import { computeCashYield, type CashAccountForYield } from '@/lib/cash/rendement'
+import { computeCashTotals } from '@/lib/cash/totals'
 import { devLog, devWarn } from '@/lib/utils/devLog'
 import { getEtfComposition } from './etfCompositions'
 import {
@@ -295,41 +296,54 @@ async function loadCash(userId: string): Promise<{
     return { comptes: [], totalCash: 0, totalCashInvestissable: 0, cashAccountsForYield: [] }
   }
 
-  // CS2 LOT 2 : on calcule maintenant 2 totaux distincts.
-  //   - totalCash : brut (conservé pour score Couverture cash).
-  //   - totalCashInvestissable : exclut les comptes courants
-  //     (`account_type === 'compte_courant'`). Composer un fond de
-  //     roulement courant à 3 %/an comme un Livret A surévalue la
-  //     projection FIRE. La projection utilise totalCashInvestissable.
-  let totalCash = 0
-  let totalCashInvestissable = 0
-  const cashAccountsForYield: CashAccountForYield[] = []
-  const comptes: CompteCash[] = await Promise.all((data as unknown as CashRow[]).map(async (r) => {
+  // V1.1 — Refactor B : conversion EUR + shaping en une seule passe, puis
+  // sommation/split déléguée à `computeCashTotals` (helper unifié).
+  //
+  // CS2 LOT 2 (préservé) : la projection FIRE consomme `totalCashInvestissable`
+  // (exclut les `compte_courant`), le score Couverture cash consomme
+  // `totalCash` brut.
+  const enriched = await Promise.all((data as unknown as CashRow[]).map(async (r) => {
     const asset = Array.isArray(r.asset) ? r.asset[0] : r.asset
     const local = num(r.balance)
     const devise = (r.currency ?? 'EUR').toUpperCase()
     const eur = await toEur(local, devise as CurrencyCode).catch(() => local)
     const typeRaw = (r.account_type ?? 'autre').toLowerCase()
-    totalCash += eur
-    if (typeRaw !== 'compte_courant') totalCashInvestissable += eur
-    // V1.0 fix C14 — la balance est déjà en EUR ici (post `toEur`), on
-    // déclare 'EUR' à `computeCashYield` pour éviter un second appel FX.
-    cashAccountsForYield.push({
-      balance:       eur,
-      currency:      'EUR',
-      interest_rate: num(r.interest_rate),
-    })
-    return {
-      id:     r.id,
-      nom:    asset?.name ?? CASH_LABEL[typeRaw] ?? 'Compte',
-      type:   typeRaw,
-      banque: r.bank_name ?? null,
-      solde:  eur,
-      devise,
-    }
+    return { row: r, asset, eur, devise, typeRaw }
   }))
 
-  return { comptes, totalCash, totalCashInvestissable, cashAccountsForYield }
+  const comptes: CompteCash[] = enriched.map(({ row, asset, eur, devise, typeRaw }) => ({
+    id:     row.id,
+    nom:    asset?.name ?? CASH_LABEL[typeRaw] ?? 'Compte',
+    type:   typeRaw,
+    banque: row.bank_name ?? null,
+    solde:  eur,
+    devise,
+  }))
+
+  const cashAccountsForYield: CashAccountForYield[] = enriched.map(({ row, eur }) => ({
+    balance:       eur,
+    currency:      'EUR',
+    interest_rate: num(row.interest_rate),
+  }))
+
+  // Sommation/split via le helper unifié — balances déjà en EUR,
+  // fxResolver par défaut s'applique en identité.
+  const totals = await computeCashTotals(
+    enriched.map(({ row, asset, eur, typeRaw }) => ({
+      id:           row.id,
+      asset_id:     asset?.id ?? null,
+      balance:      eur,
+      currency:     'EUR',
+      account_type: typeRaw,
+    })),
+  )
+
+  return {
+    comptes,
+    totalCash:              totals.totalEur,
+    totalCashInvestissable: totals.totalInvestissableEur,
+    cashAccountsForYield,
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────

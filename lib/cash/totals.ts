@@ -136,3 +136,68 @@ export async function computeCashTotals(
     countAccounts:         accounts.length + legacyCount,
   }
 }
+
+/**
+ * Variante synchrone — assume EUR pour toutes les balances.
+ *
+ * Existe pour les call-sites qui ne peuvent pas être rendus `async` sans
+ * propager le mot-clé à toute leur chaîne d'appel (en pratique : le
+ * pipeline Dashboard `computeDashboardData`, consommé en sync par
+ * `app/(app)/dashboard/page.tsx` et par 30+ tests). Le pipeline V2.1-BIS
+ * documente déjà cette hypothèse (« on suppose EUR pour V2.1-BIS, la
+ * conversion FX patrimoniale viendra plus tard si besoin »).
+ *
+ * Comportement strictement identique à `computeCashTotals(accounts, {
+ * legacyAssets, fxResolver: (a) => a })` mais sans le coût d'un microtask
+ * await par compte. Pour les call-sites multi-devise réels, utiliser la
+ * version `async`.
+ */
+export function computeCashTotalsSync(
+  accounts: CashAccountForTotal[],
+  options?: { legacyAssets?: LegacyCashAsset[] },
+): CashTotalsResult {
+  const legacy = options?.legacyAssets ?? []
+  if (accounts.length === 0 && legacy.length === 0) return { ...EMPTY }
+
+  const numOrZero = (v: number | string | null | undefined): number => {
+    if (v === null || v === undefined) return 0
+    const n = typeof v === 'number' ? v : Number(v)
+    return Number.isFinite(n) ? n : 0
+  }
+
+  let totalEur              = 0
+  let totalInvestissableEur = 0
+  let totalCompteCourantEur = 0
+
+  for (const a of accounts) {
+    const eur = numOrZero(a.balance)
+    totalEur += eur
+    if (a.account_type === 'compte_courant') {
+      totalCompteCourantEur += eur
+    } else {
+      totalInvestissableEur += eur
+    }
+  }
+
+  const coveredAssetIds = new Set<string>(
+    accounts
+      .map((a) => a.asset_id)
+      .filter((id): id is string => id !== null && id.length > 0),
+  )
+
+  let legacyCount = 0
+  for (const l of legacy) {
+    if (coveredAssetIds.has(l.id)) continue
+    const eur = numOrZero(l.current_value)
+    totalEur += eur
+    totalInvestissableEur += eur
+    legacyCount++
+  }
+
+  return {
+    totalEur:              round2(totalEur),
+    totalInvestissableEur: round2(totalInvestissableEur),
+    totalCompteCourantEur: round2(totalCompteCourantEur),
+    countAccounts:         accounts.length + legacyCount,
+  }
+}
