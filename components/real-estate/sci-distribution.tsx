@@ -4,6 +4,49 @@ import { useMemo, useState } from 'react'
 import { Star, Info } from 'lucide-react'
 import { formatCurrency, formatPercent } from '@/lib/utils/format'
 import { computeDividendDistribution } from '@/lib/real-estate/fiscal/sci-is'
+import { InfoTip } from '@/components/ui/info-tip'
+
+/**
+ * V17 — Pédagogie InfoTip sur la ligne « Remboursement CCA ».
+ *
+ * Sans aide contextuelle, un utilisateur lisait « Solde CCA 20 000 € »
+ * et « Remboursement CCA 10 378 € » et croyait à un impôt — alors que
+ * l'écart est juste le plafond annuel de trésorerie. Le texte est
+ * construit à partir des deux valeurs disponibles dans le composant :
+ *   - ccaBalance  = solde de CCA déclaré (= result.ccaAvailable)
+ *   - annualCap   = trésorerie disponible sur l'année 1 (cash-flow
+ *                   après impôt) = prop `availableCashYear`
+ *
+ * Trois cas, dans cet ordre (le premier qui matche gagne) :
+ *   1. annualCap ≤ 0          → pas de trésorerie cette année
+ *   2. ccaBalance ≤ annualCap → un exercice suffit pour solder
+ *   3. cas standard           → estimation du nombre d'années
+ */
+function buildCcaHelpText(ccaBalance: number, annualCap: number): string {
+  const fmt = (v: number) => formatCurrency(v, 'EUR')
+  if (annualCap <= 0) {
+    return (
+      `La SCI ne génère pas de trésorerie positive cette année ; ` +
+      `aucun remboursement possible pour l'instant. Vous pourrez ` +
+      `récupérer votre CCA (${fmt(ccaBalance)}) en franchise d'impôt ` +
+      `dès que la trésorerie redeviendra positive.`
+    )
+  }
+  if (ccaBalance <= annualCap) {
+    return (
+      `Vous pouvez récupérer la totalité de votre CCA ` +
+      `(${fmt(ccaBalance)}) dès cette année, en franchise d'impôt.`
+    )
+  }
+  const years = Math.ceil(ccaBalance / annualCap)
+  return (
+    `Vous pouvez récupérer l'intégralité de votre CCA ` +
+    `(${fmt(ccaBalance)}) en franchise d'impôt. La SCI vous rembourse ` +
+    `dans la limite du cash qu'elle génère chaque année ` +
+    `(~${fmt(annualCap)} en année 1), soit environ ${years} ans pour ` +
+    `solder le compte courant.`
+  )
+}
 
 interface Props {
   /** Résultat net après IS (année 1) — calculé par la projection. */
@@ -139,7 +182,10 @@ export function SciDistribution({ netProfitAfterIS, ccaAmount, availableCashYear
           }`}>
             <div className="flex items-center gap-2 min-w-0">
               {ccaIsBest && <Star size={12} className="text-accent fill-accent" />}
-              <span className="text-sm text-primary">Remboursement CCA (non imposable)</span>
+              <span className="text-sm text-primary flex items-center gap-1.5">
+                Remboursement CCA (non imposable)
+                <InfoTip text={buildCcaHelpText(result.ccaAvailable, availableCashYear)} />
+              </span>
             </div>
             <div className="text-right">
               <p className="text-sm financial-value text-accent">
