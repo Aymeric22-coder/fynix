@@ -241,8 +241,13 @@ describe('getPatrimoineComplet — QW2 stabilité effective', () => {
         prenom: null,
       }],
       cash_accounts: [{
+        // V1.1 P0 — `interest_rate: 3` ajouté pour fermer le gap V1.0 :
+        // depuis le fix C14, `loadCash` sélectionne ce champ et le passe à
+        // `computeCashYield`. Sans valeur, `num(undefined) = 0` rendait la
+        // contribution cash silencieusement nulle (au lieu des 3 %
+        // attendus en prod pour un Livret A).
         id: 'c1', account_type: 'livret_a', balance: 20000,
-        currency: 'EUR', bank_name: 'Test', asset: null,
+        currency: 'EUR', bank_name: 'Test', asset: null, interest_rate: 3,
       }],
     }
   }

@@ -89,6 +89,35 @@ export const HNW_COMPLEXE_FIXTURE: DashboardFixture = {
     },
     transactionsPortefeuille: [],
     asOfDate: '2026-05-30',
+    // ── Cash V1.1 — 4 livrets réalistes pour tester le taux moyen pondéré ─
+    // Les 2 premiers ont `asset_id` correspondant aux assets legacy
+    // `a-livret-a` / `a-ldds` → dédup activée côté `computeCashSummary` :
+    // ces livrets remplacent les balances legacy au niveau de cashSummary.
+    // Les 2 derniers (LEP, CEL) ont `asset_id: null` → ajoutés sans dédup.
+    //
+    // Total cash (via cashAccounts) = 22 950 + 12 000 + 10 000 + 8 000 = 52 950 €
+    // Taux moyen pondéré attendu :
+    //   (22950×3 + 12000×3 + 10000×4 + 8000×1,5) / 52950
+    //   = 1 568,50 / 52 950 = 2,962 % (≈ 2,92 % annoncé dans le brief V1.1)
+    //
+    // Note : `grossValueMVStrict` reste à 3 450 000 € (calculé sur
+    // `assets[].current_value`, qui inclut toujours les 50 k€ de cash
+    // legacy). La divergence brut Dashboard vs cashSummary est précisément
+    // ce que le refactor totals (Volet B) va corriger en V1.1.
+    cashAccounts: [
+      { id: 'c-la',   asset_id: 'a-livret-a', balance: 22_950, currency: 'EUR',
+        account_type: 'livret_a', interest_rate: 3.0, bank_name: 'Bourso',
+        created_at: '2023-01-15' },
+      { id: 'c-ldds', asset_id: 'a-ldds',     balance: 12_000, currency: 'EUR',
+        account_type: 'ldds',     interest_rate: 3.0, bank_name: 'Bourso',
+        created_at: '2023-01-15' },
+      { id: 'c-lep',  asset_id: null,         balance: 10_000, currency: 'EUR',
+        account_type: 'lep',      interest_rate: 4.0, bank_name: 'BNP',
+        created_at: '2023-06-01' },
+      { id: 'c-cel',  asset_id: null,         balance:  8_000, currency: 'EUR',
+        account_type: 'cel',      interest_rate: 1.5, bank_name: 'BNP',
+        created_at: '2023-06-01' },
+    ],
   },
 
   expected: {

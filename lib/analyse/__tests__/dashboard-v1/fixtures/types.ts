@@ -122,6 +122,14 @@ export interface DashboardFixture {
     // ── V1.3 P0.3 — Inputs TWR ────────────────────────────────────────
     transactionsPortefeuille?: import('@/lib/portfolio/transaction-segments').TransactionForTwr[]
     asOfDate?:                 string | Date
+    // ── Cash V1.1 — Slot optionnel pour fixtures multi-livrets ────────
+    // Reprend exactement le shape `DashboardCashAccountRow` consommé par
+    // le pipeline (cf. `dashboard-pipeline/types.ts`). Pour les fixtures
+    // qui n'en ont pas besoin, le champ reste `undefined` (l'ancienne
+    // simulation via `assets[].asset_type === 'cash'` continue de
+    // fonctionner). Une fois renseigné, le pipeline le consomme via
+    // `computeCashSummary` (dédup avec `assets.cash` legacy).
+    cashAccounts?: import('@/lib/analyse/dashboard-pipeline/types').DashboardCashAccountRow[]
   }
 
   /**
