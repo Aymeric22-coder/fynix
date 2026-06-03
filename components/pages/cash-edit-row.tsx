@@ -28,8 +28,11 @@ export function CashEditRow({ account, children }: Props) {
         {children}
         <button
           onClick={() => setOpen(true)}
-          className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded hover:bg-surface-2 text-muted hover:text-primary flex-shrink-0"
+          // V1.1 C.4 — Bouton edit visible sans hover (fix UX mobile).
+          // Opacité réduite par défaut, opacité pleine au survol/focus.
+          className="opacity-40 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity p-1.5 rounded hover:bg-surface-2 text-muted hover:text-primary flex-shrink-0"
           title="Modifier"
+          aria-label="Modifier le compte"
         >
           <Pencil size={14} />
         </button>

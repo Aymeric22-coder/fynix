@@ -1,12 +1,16 @@
 import { Metadata } from 'next'
 import { PiggyBank } from 'lucide-react'
 import { createServerClient } from '@/lib/supabase/server'
-import { PageHeader }   from '@/components/shared/page-header'
-import { EmptyState }   from '@/components/ui/empty-state'
-import { Badge }        from '@/components/ui/badge'
-import { CashActions }  from '@/components/pages/cash-actions'
-import { CashEditRow }  from '@/components/pages/cash-edit-row'
+import { PageHeader }       from '@/components/shared/page-header'
+import { EmptyState }       from '@/components/ui/empty-state'
+import { Badge }            from '@/components/ui/badge'
+import { CashActions }      from '@/components/pages/cash-actions'
+import { CashEditRow }      from '@/components/pages/cash-edit-row'
+import { CashMatelasCard }  from '@/components/pages/cash-matelas-card'
+import { CashKpis }         from '@/components/pages/cash-kpis'
 import { formatCurrency, formatPercent, formatDate } from '@/lib/utils/format'
+import { computeCashTotals } from '@/lib/cash/totals'
+import { getProfileContext } from '@/lib/profil/getProfileContext'
 
 export const metadata: Metadata = { title: 'Cash & Épargne' }
 
@@ -20,16 +24,43 @@ export default async function CashPage() {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  const { data: accounts } = await supabase
-    .from('cash_accounts')
-    .select(`
-      *,
-      asset:assets!asset_id ( name, status )
-    `)
-    .eq('user_id', user!.id)
-    .order('account_type')
+  // V1.1 C — Profil lu en parallèle pour alimenter le bloc matelas.
+  // Dégradation propre : si la ligne `profiles` est absente ou si un
+  // champ est ≤ 0, `profileContext` est tout-null et `CashMatelasCard`
+  // propose un CTA vers Profil au lieu d'une cible erronée.
+  const [{ data: accounts }, profileContext] = await Promise.all([
+    supabase
+      .from('cash_accounts')
+      .select(`
+        *,
+        asset:assets!asset_id ( name, status )
+      `)
+      .eq('user_id', user!.id)
+      .order('account_type'),
+    getProfileContext(supabase, user!.id),
+  ])
 
-  const total = (accounts ?? []).reduce((s, a) => s + a.balance, 0)
+  // V1.1 P0 — Total cash unifié via `computeCashTotals`, supporte le
+  // multi-devise (corrige le bug FX silencieux de la page identifié dans
+  // l'audit C9). Pour un utilisateur 100 % EUR, le résultat est strictement
+  // identique à l'ancien `reduce(balance)`.
+  const totals = await computeCashTotals(
+    (accounts ?? []).map((a) => ({
+      id:           a.id,
+      asset_id:     a.asset_id,
+      balance:      Number(a.balance),
+      currency:     a.currency ?? 'EUR',
+      account_type: a.account_type,
+    })),
+  )
+  const total = totals.totalEur
+
+  // V1.1 C.3 — KPI cash (intérêts + taux moyen pondéré). Pré-mapping vers
+  // `CashAccountForYield`-friendly : balance en EUR, interest_rate normalisé.
+  const accountsForKpi = (accounts ?? []).map((a) => ({
+    balance:       Number(a.balance),
+    interest_rate: typeof a.interest_rate === 'number' ? a.interest_rate : Number(a.interest_rate ?? 0),
+  }))
 
   return (
     <div>
@@ -40,13 +71,21 @@ export default async function CashPage() {
       />
 
       {!accounts?.length ? (
-        <EmptyState
-          icon={PiggyBank}
-          title="Aucun compte"
-          description="Ajoutez vos livrets et comptes courants pour centraliser votre cash."
-          action={<CashActions />}
-          ariaPrompt="Je n'ai pas encore de compte renseigné. Explique-moi comment organiser mon épargne de précaution avec mon profil."
-        />
+        <>
+          <EmptyState
+            icon={PiggyBank}
+            title="Aucun compte"
+            description="Ajoutez vos livrets et comptes courants pour centraliser votre cash."
+            action={<CashActions />}
+            ariaPrompt="Je n'ai pas encore de compte renseigné. Explique-moi comment organiser mon épargne de précaution avec mon profil."
+          />
+          {/* V1.1 C.5 — Pédagogie inline sous l'état vide. */}
+          <p className="max-w-md mx-auto text-center text-xs text-muted mt-4 px-4">
+            Le cash sert de <strong className="text-secondary">matelas de sécurité</strong> :
+            3 à 6 mois de charges pour un revenu stable, 6 à 12 mois pour un revenu variable.
+            Tes paramètres Profil détermineront ta cible.
+          </p>
+        </>
       ) : (
         <>
           {/* Total */}
@@ -56,6 +95,12 @@ export default async function CashPage() {
               {formatCurrency(total, 'EUR', { compact: true })}
             </p>
           </div>
+
+          {/* V1.1 C.3 — KPI cash : intérêts annuels + taux moyen pondéré */}
+          <CashKpis accounts={accountsForKpi} />
+
+          {/* V1.1 C.2 — Bloc matelas (4 états) */}
+          <CashMatelasCard totalCash={total} profile={profileContext} />
 
           <div className="space-y-3">
             {accounts.map((account) => {
