@@ -126,3 +126,113 @@ describe('computeJaugeMatelas — robustesse', () => {
     expect(r.segments.orange.widthPct).toBeGreaterThanOrEqual(0)
   })
 })
+
+// ──────────────────────────────────────────────────────────────────────
+// V1.2-POLISH — Double marqueur (curseur effectif + marker brut)
+// ──────────────────────────────────────────────────────────────────────
+describe('computeJaugeMatelas — V1.2-POLISH double marqueur', () => {
+  // Cas Aymeric stable 3-6 mois (cibleBasse 5025, cibleHaute 10050).
+  // Cap = 15 075. (Cibles inférieures au cas Aymeric instable 9-12.)
+  const AYMERIC_STABLE = {
+    cibleBasseEur:  5_025,
+    cibleHauteEur: 10_050,
+  }
+
+  it('pas d\'intent (cashBrutEur === totalCashEur) → showBrutMarker = false', () => {
+    const r = computeJaugeMatelas({
+      totalCashEur:  18_578,
+      cashBrutEur:   18_578,
+      ...AYMERIC_STABLE,
+    })
+    expect(r.showBrutMarker).toBe(false)
+    expect(r.cursorEffectifPct).toBe(r.cursorBrutPct)
+  })
+
+  it('cashBrutEur omis → showBrutMarker = false (rétro-compat V1.1)', () => {
+    const r = computeJaugeMatelas({
+      totalCashEur:  18_578,
+      ...AYMERIC_STABLE,
+    })
+    expect(r.showBrutMarker).toBe(false)
+    // Alias V1.2-POLISH = champs V1.1
+    expect(r.cursorEffectifPct).toBe(r.cursorPct)
+    expect(r.cursorEffectifOverflow).toBe(r.overflow)
+  })
+
+  it('Aymeric stable, brut 18 578 € + intent 8 000 € → 2 curseurs distincts', () => {
+    // cap = 15 075. Effectif 10 578 → ≈ 70,2 %. Brut 18 578 → overflow (100 %).
+    const r = computeJaugeMatelas({
+      totalCashEur:  10_578,
+      cashBrutEur:   18_578,
+      ...AYMERIC_STABLE,
+    })
+    expect(r.cursorEffectifPct).toBeCloseTo(70.2, 1)
+    expect(r.cursorEffectifOverflow).toBe(false)
+    expect(r.cursorBrutPct).toBe(100)
+    expect(r.cursorBrutOverflow).toBe(true)
+    expect(r.showBrutMarker).toBe(true)
+  })
+
+  it('intent ramenant l\'effectif en zone verte, brut clampé à droite', () => {
+    // cap = 15 075. Effectif 7 000 → ≈ 46,4 %. Brut 18 578 → overflow.
+    const r = computeJaugeMatelas({
+      totalCashEur:  7_000,
+      cashBrutEur:   18_578,
+      ...AYMERIC_STABLE,
+    })
+    expect(r.cursorEffectifPct).toBeCloseTo(46.4, 1)
+    expect(r.cursorEffectifOverflow).toBe(false)
+    expect(r.cursorBrutPct).toBe(100)
+    expect(r.cursorBrutOverflow).toBe(true)
+    expect(r.showBrutMarker).toBe(true)
+  })
+
+  it('petite intent (écart < 2 % du cap) → showBrutMarker = false', () => {
+    // cap = 15 075. Écart visuel cible < 2 % → ≤ 301,5 €.
+    // Effectif 10 000, brut 10 200 (écart 200 € = 1,33 % → trop proche).
+    const r = computeJaugeMatelas({
+      totalCashEur:  10_000,
+      cashBrutEur:   10_200,
+      ...AYMERIC_STABLE,
+    })
+    expect(Math.abs(r.cursorBrutPct - r.cursorEffectifPct)).toBeLessThan(2)
+    expect(r.showBrutMarker).toBe(false)
+  })
+
+  it('grosse intent amenant effectif à 0 → cursorEffectifPct = 0, marker brut visible', () => {
+    const r = computeJaugeMatelas({
+      totalCashEur:  0,
+      cashBrutEur:   18_578,
+      ...AYMERIC_STABLE,
+    })
+    expect(r.cursorEffectifPct).toBe(0)
+    expect(r.cursorEffectifOverflow).toBe(false)
+    expect(r.cursorBrutOverflow).toBe(true)
+    expect(r.showBrutMarker).toBe(true)
+  })
+
+  it('cap exact 15 075 € (cas Aymeric stable) : effectif 10 578 → ≈ 70,2 %', () => {
+    const r = computeJaugeMatelas({
+      totalCashEur:  10_578,
+      cashBrutEur:   18_578,
+      ...AYMERIC_STABLE,
+    })
+    expect(r.domainMaxEur).toBe(15_075)
+    expect(r.cursorEffectifPct).toBeCloseTo(70.2, 1)
+    expect(r.cursorBrutOverflow).toBe(true)
+  })
+
+  it('cashBrutEur < totalCashEur (cas patho : intent négative théorique) → toujours évité par computeMatelasEffectif, garde défensive ici', () => {
+    // Si on appelle directement avec brut < effectif, on doit quand
+    // même retourner un résultat cohérent (pas de NaN).
+    const r = computeJaugeMatelas({
+      totalCashEur:  10_000,
+      cashBrutEur:    5_000,
+      ...AYMERIC_STABLE,
+    })
+    expect(r.cursorEffectifPct).toBeGreaterThanOrEqual(0)
+    expect(r.cursorBrutPct).toBeGreaterThanOrEqual(0)
+    // L'écart absolu reste affiché si > MIN_GAP_PCT.
+    expect(r.showBrutMarker).toBe(true)
+  })
+})

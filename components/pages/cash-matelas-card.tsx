@@ -155,19 +155,25 @@ export function CashMatelasCard({
         </div>
       </header>
 
-      {/* V1.1-POLISH — Jauge auto-suffisante. Curseur sur cash BRUT pour
-          préserver la lecture instantanée du cash réel ; le statut au-dessus
-          est calculé sur l'effectif (cf. V1.2 Volet D). */}
-      <MatelasJauge totalCash={totalCash} cibleBasse={cibleBasse} cibleHaute={cibleHaute} />
+      {/* V1.2-POLISH — Jauge à 2 marqueurs :
+          - Curseur principal ▼ sur cashEffectif (= matelas réel, cohérent
+            avec le statut affiché).
+          - Marker secondaire ○ sur totalCash brut, visible seulement
+            quand hasIntents ET écart visuel suffisant. */}
+      <MatelasJauge
+        cashEffectif={cashEffectif}
+        cashBrut={hasIntents ? totalCash : undefined}
+        cibleBasse={cibleBasse}
+        cibleHaute={cibleHaute}
+      />
 
       {hasIntents && (
         <a
           href="#cash-intents"
           className="block mt-3 text-center text-[11px] text-muted hover:text-secondary transition-colors"
         >
-          dont {formatCurrency(totalIntentsActives, 'EUR')} volontaire
+          {formatCurrency(totalIntentsActives, 'EUR')} volontaire
           {countIntentsActives > 1 ? `s (${countIntentsActives} intentions actives)` : ' (1 intention active)'}
-          {' '}— matelas effectif <span className="text-secondary financial-value">{formatCurrency(cashEffectif, 'EUR')}</span>
         </a>
       )}
 
@@ -184,36 +190,69 @@ export function CashMatelasCard({
 /* ────────────────────────────────────────────────────────────────── */
 
 /**
- * Jauge horizontale 3 segments + curseur triangulaire avec label.
+ * Jauge horizontale 3 segments + 1 ou 2 marqueurs avec labels.
  *
  * Layout :
  *   - Ligne 1 : labels « Insuffisant / Cible / Excédent » centrés sur leur
- *     segment, plus le triangle ▼ + label montant aligné sur le curseur.
- *   - Ligne 2 : barre 3 segments aux largeurs proportionnelles à la plage
- *     réelle (cf. `computeJaugeMatelas`).
+ *     segment, plus :
+ *     • Curseur PRINCIPAL ▼ sur `cashEffectif` (signal fort, plein, opaque).
+ *     • Marker SECONDAIRE ○ sur `cashBrut` si fourni ET écart visuel
+ *       suffisant (cf. `showBrutMarker` du helper). Discret, opacity ~60 %.
+ *   - Ligne 2 : barre 3 segments aux largeurs proportionnelles.
  *   - Ligne 3 : 4 graduations chiffrées (0 / cibleBasse / cibleHaute /
- *     domainMax) centrées sur leur position. Sur mobile (< sm), version
- *     compacte (« 15 k€ »).
+ *     domainMax). Mobile : version compacte (« 15 k€ »).
  *
- * Responsive : largeur 100 % du parent, hauteur fixe.
+ * Cas 0 intent (cashBrut undefined) : 1 seul curseur, label « Cash actuel »
+ * (au lieu de « Matelas effectif ») pour éviter une terminologie inutilement
+ * technique. Comportement strictement identique à V1.1-POLISH.
+ *
+ * Évitement de chevauchement vertical : si les 2 marqueurs sont proches
+ * (≤ 10 % d'écart mais ≥ MIN_GAP_PCT), on décale le marker brut vers le
+ * haut pour éviter que les labels se chevauchent.
+ *
+ * Responsive : largeur 100 % du parent, hauteur fixe (un peu plus haute
+ * que V1.1 pour accommoder 2 niveaux de labels).
  */
 function MatelasJauge({
-  totalCash, cibleBasse, cibleHaute,
-}: { totalCash: number; cibleBasse: number; cibleHaute: number }) {
+  cashEffectif, cashBrut, cibleBasse, cibleHaute,
+}: {
+  cashEffectif: number
+  cashBrut?:    number
+  cibleBasse:   number
+  cibleHaute:   number
+}) {
   const layout = computeJaugeMatelas({
-    totalCashEur:  totalCash,
+    totalCashEur:  cashEffectif,
+    cashBrutEur:   cashBrut,
     cibleBasseEur: cibleBasse,
     cibleHauteEur: cibleHaute,
   })
 
-  // Position du LABEL au-dessus du curseur. On la borne entre 5 % et 95 %
-  // pour éviter que le label déborde du conteneur.
-  const labelLeftPct = Math.max(5, Math.min(95, layout.cursorPct))
+  // Position des labels : bornée [5 ; 95] pour ne pas déborder.
+  const effectifLabelLeft = Math.max(5, Math.min(95, layout.cursorEffectifPct))
+  const brutLabelLeft     = Math.max(5, Math.min(95, layout.cursorBrutPct))
+
+  // Si les 2 marqueurs sont assez proches sur l'axe X (< 12 %), on
+  // décale verticalement le marker brut pour éviter le chevauchement
+  // des labels (chacun fait ~80 px de large). Au-delà, ils sont sur la
+  // même ligne.
+  const closeOnX = layout.showBrutMarker
+    && Math.abs(layout.cursorBrutPct - layout.cursorEffectifPct) < 12
+
+  const hasBrutMarker = layout.showBrutMarker
+  // Label du curseur principal : V1.2-POLISH renomme en « Matelas effectif »
+  // s'il y a des intentions actives (= il a un sens distinct du brut),
+  // sinon on garde un terme neutre.
+  const effectifLabel = hasBrutMarker ? 'Matelas effectif' : 'Cash actuel'
+
+  // Hauteur du conteneur : 14 si on a 2 marqueurs avec décalage vertical,
+  // 11 sinon (V1.1-POLISH = 9).
+  const topPaddingClass = closeOnX ? 'pt-14' : 'pt-11'
 
   return (
-    <div className="relative w-full pt-9 pb-7" aria-hidden>
-      {/* Ligne 1 — labels de segments + curseur */}
-      <div className="absolute inset-x-0 top-0 h-9 pointer-events-none">
+    <div className={`relative w-full ${topPaddingClass} pb-7`} aria-hidden>
+      {/* Ligne 1 — labels de segments + curseur(s) */}
+      <div className={`absolute inset-x-0 top-0 ${closeOnX ? 'h-14' : 'h-11'} pointer-events-none`}>
         {/* Labels segments centrés sur chaque segment, opacity réduite */}
         <span
           className="absolute top-1 text-[10px] uppercase tracking-widest text-muted/70"
@@ -240,15 +279,36 @@ function MatelasJauge({
           Excédent
         </span>
 
-        {/* Curseur triangulaire + label montant */}
+        {/* Marker SECONDAIRE (brut) — rendu D'ABORD pour qu'il passe
+            sous le principal en cas de superposition partielle. Décalé
+            d'un cran vers le haut si proche du principal. */}
+        {hasBrutMarker && (
+          <div
+            className={`absolute ${closeOnX ? 'top-0' : 'bottom-0'} flex flex-col items-center opacity-60`}
+            style={{ left: `${brutLabelLeft}%`, transform: 'translateX(-50%)' }}
+          >
+            <span className="text-[10px] financial-value text-secondary whitespace-nowrap">
+              {layout.cursorBrutOverflow ? '> ' : ''}{formatCurrency(cashBrut as number, 'EUR')}
+            </span>
+            <span className="text-[8px] uppercase tracking-widest text-muted leading-none">
+              Cash total
+            </span>
+            <span className="text-secondary leading-none mt-0.5" aria-hidden>○</span>
+          </div>
+        )}
+
+        {/* Curseur PRINCIPAL (effectif) — triangle plein. */}
         <div
           className="absolute bottom-0 flex flex-col items-center"
-          style={{ left: `${labelLeftPct}%`, transform: 'translateX(-50%)' }}
+          style={{ left: `${effectifLabelLeft}%`, transform: 'translateX(-50%)' }}
         >
           <span className="text-[11px] financial-value font-semibold text-primary whitespace-nowrap">
-            {layout.overflow ? '> ' : ''}{formatCurrency(totalCash, 'EUR')}
+            {layout.cursorEffectifOverflow ? '> ' : ''}{formatCurrency(cashEffectif, 'EUR')}
           </span>
-          <span className="text-primary leading-none -mt-0.5" aria-hidden>▼</span>
+          <span className="text-[8px] uppercase tracking-widest text-muted/70 leading-none">
+            {effectifLabel}
+          </span>
+          <span className="text-primary leading-none mt-0.5" aria-hidden>▼</span>
         </div>
       </div>
 

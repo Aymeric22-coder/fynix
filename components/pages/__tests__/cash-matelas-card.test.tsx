@@ -295,3 +295,91 @@ describe('CashMatelasCard — V1.2 Volet D intents', () => {
     expect(screen.getByText(/8 000.*au-delà/i)).toBeTruthy()
   })
 })
+
+// ──────────────────────────────────────────────────────────────────────
+// V1.2-POLISH — Jauge double marqueur
+// ──────────────────────────────────────────────────────────────────────
+describe('CashMatelasCard — V1.2-POLISH double marqueur', () => {
+  const PROFIL_SUR_LIQUIDE: ProfileContext = {
+    revenuMensuel:     3_000,
+    chargesMensuelles: 2_000,
+    statutPro:         'cdi',
+    stabiliteRevenus:  null,
+  }
+
+  it('aucune intent : 1 seul curseur, label « Cash actuel »', () => {
+    render(<CashMatelasCard totalCash={49_000} profile={PROFIL_SUR_LIQUIDE} />)
+    expect(screen.getByText(/^Cash actuel$/i)).toBeTruthy()
+    expect(screen.queryByText(/^Cash total$/i)).toBeNull()
+    expect(screen.queryByText(/^Matelas effectif$/i)).toBeNull()
+  })
+
+  it('intent visible : 2 marqueurs distincts (« Matelas effectif » + « Cash total »)', () => {
+    // Cible CDI charges 2000 = [6000 ; 12000]. Cap = 18000.
+    // Effectif 9000 (~50 %) + brut 49000 (overflow → 100 %). Écart > 2 %.
+    render(
+      <CashMatelasCard
+        totalCash={49_000}
+        profile={PROFIL_SUR_LIQUIDE}
+        cashEffectif={9_000}
+        totalIntentsActives={40_000}
+        countIntentsActives={1}
+      />,
+    )
+    expect(screen.getByText(/^Matelas effectif$/i)).toBeTruthy()
+    expect(screen.getByText(/^Cash total$/i)).toBeTruthy()
+    expect(screen.queryByText(/^Cash actuel$/i)).toBeNull()
+  })
+
+  it('badge sous la jauge SIMPLIFIÉ : ne mentionne plus « matelas effectif X € »', () => {
+    render(
+      <CashMatelasCard
+        totalCash={49_000}
+        profile={PROFIL_SUR_LIQUIDE}
+        cashEffectif={9_000}
+        totalIntentsActives={40_000}
+        countIntentsActives={1}
+      />,
+    )
+    // Le badge mentionne le montant volontaire + le nombre d'intentions,
+    // mais PLUS « matelas effectif X € » (info portée par le curseur).
+    expect(screen.getByText(/40 000.*volontaire.*intention active/i)).toBeTruthy()
+    expect(screen.queryByText(/matelas effectif 9/i)).toBeNull()
+  })
+
+  it('cas overflow brut : marker brut clampé à droite avec préfixe « > »', () => {
+    render(
+      <CashMatelasCard
+        totalCash={100_000} // largement > cap 18 000 → overflow
+        profile={PROFIL_SUR_LIQUIDE}
+        cashEffectif={9_000}
+        totalIntentsActives={91_000}
+        countIntentsActives={2}
+      />,
+    )
+    // Au moins un node doit contenir le préfixe « > » devant 100 000.
+    const overflowNodes = screen.getAllByText((_text, node) =>
+      node?.textContent?.includes('>') === true
+      && node?.textContent?.includes('100') === true,
+    )
+    expect(overflowNodes.length).toBeGreaterThan(0)
+  })
+
+  it('superposition (effectif ≈ brut) : marker secondaire masqué', () => {
+    // Effectif 18 000 vs brut 18 100 → écart 100 € / 18 000 cap = 0,56 %
+    // < MIN_GAP_PCT (2 %) → marker brut masqué.
+    render(
+      <CashMatelasCard
+        totalCash={18_100}
+        profile={PROFIL_SUR_LIQUIDE}
+        cashEffectif={18_000}
+        totalIntentsActives={100}
+        countIntentsActives={1}
+      />,
+    )
+    // Le badge mentionne quand même les intentions (toute valeur > 0).
+    expect(screen.getByText(/100.*volontaire/i)).toBeTruthy()
+    // Mais le label « Cash total » ne doit PAS apparaître (marker masqué).
+    expect(screen.queryByText(/^Cash total$/i)).toBeNull()
+  })
+})
