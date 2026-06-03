@@ -2052,3 +2052,103 @@ Le Dashboard expose enfin une réponse claire à la question « quel est mon mei
 
 **Stratégie git** : master direct (3 commits + push), conforme à la stratégie V2 actée en V2.1-BIS.
 
+### V2.5 — Stabilisation technique (clôture V2) — 2026-06-03
+
+Sprint final de V2 : aucune nouvelle fonctionnalité visuelle, **on stabilise**. Trois priorités calibrées sur les retours d'expérience V1.4-BIS (CAGR aberrant, Vitest qui ne valide pas le rendu page) et les points ouverts de V2.3 / V2.4-TER (donut, alerte cash dormant).
+
+**3 commits de code + 1 commit docs** :
+
+| Sprint | SHA | Type | Message d'en-tête |
+|---|---|---|---|
+| ST1 | `840c63a` | feat | V2.5 ST1 - floor protection sur Croissance patrimoniale |
+| ST2 | `d7af100` | feat | V2.5 ST2 - Playwright e2e minimal (3 tests publics) |
+| ST3 | `930a16a` | feat | V2.5 ST3 - donut d'allocation réactivé avec tooltip pédagogique |
+| doc | _(this commit)_ | docs | V2.5 - journal Phase 6 + clôture V2 |
+
+**Décisions techniques majeures** :
+
+1. **Floor protection à 3 garde-fous superposés** (ST1) — Le seuil 90 j (V1.3) protège déjà beaucoup mais ne couvre pas l'incident V1.4-BIS (`oldest = 100 €` puis saisie tardive d'un bien immo). Trois nouveaux floors :
+   * `FLOOR_OLDEST_NET_VALUE_EUR = 1000` — base d'annualisation instable en-dessous.
+   * `FLOOR_VALUE_RATIO = 50` — ratio `latest/oldest > 50×` interprété comme snapshot pollué.
+   * `FLOOR_ANNUALIZED_PCT = 500` — garde-fou final : même si les 2 premiers floors passent, `|rate| > 500 %/an` est statistiquement inutilisable.
+   Chaque floor produit un label explicite (« Données insuffisantes pour une croissance fiable (historique pollué) » / « ...variation trop forte » / « Variation patrimoniale trop forte pour annualiser ») pour que l'utilisateur comprenne pourquoi le KPI est masqué.
+2. **Auth Playwright option (c) du brief** (ST2) — Pour V2.5, on saute l'auth. Justifications : (a) le sprint vise un filet anti-régression rapide, pas une couverture exhaustive ; (b) les routes publiques + le redirect `/dashboard → /login` suffisent comme canari technique ; (c) l'infra (Playwright config + scripts npm + .gitignore) est posée, il restera juste à peupler `e2e/.auth/storageState.json` dans un futur sprint pour activer les tests authentifiés. Décision **assumée, pas un raccourci**.
+3. **3 tests e2e (`e2e/dashboard.spec.ts`)** :
+   * `/login` rend le formulaire (input email + password visibles)
+   * `/dashboard` sans session redirige vers `/login` (vérifie le middleware d'auth Next.js)
+   * Aucune chaîne aberrante dans le HTML de `/login` (`132 026 369`, `asset:`, `class:asset_type`, `CAGR`) — interdit le retour des bugs V1 sous forme de pollution du layout serveur.
+4. **Donut d'allocation = wrapper de l'existant + bandeau pédagogique** (ST3) — Le composant `components/charts/donut-chart.tsx` existe depuis V1.0 ; je ne le ré-écris pas. Nouveau wrapper `AllocationDonut` (~50 l.) qui mappe `DashboardAllocationSlice` vers `DonutSlice` et ajoute le bandeau d'aide conditionnel pour la classe `obligations`. Justification : la décision V1.2 P0.6 classe les fonds euros d'AV en `obligations` (risque économique majoritaire) — sans ce bandeau, l'utilisateur peut s'étonner de voir son AV classée comme obligation.
+5. **Position du donut dans Z4 (Pilotage)** — Inséré entre les 4 KPIs et le sous-titre « Ce qui demande ton attention ». `ZonePilotage` accepte désormais 2 nouveaux props (`allocation` + `totalGrossEur`) et la numérotation interne décale (KPIs → donut → sous-titre → alertes → drift → actions). Pas d'impact sur Z5/Z6/Z7 (lignes compactes immo / portefeuille / cash), ni sur Z8 / Z8.5 / Z9.
+
+**Tests** :
+
+- `lib/analyse/__tests__/dashboard-v1/specs/croissancePatrimoineCAGR.test.ts` — **6 nouveaux tests** sur les floors (oldest < 1 k€, ratio > 50×, annualisation > 500 %, plus 2 cas réalistes ±12 %/an, −5 %/an).
+- `e2e/dashboard.spec.ts` — **3 tests Playwright** (login, redirect, anti-régression chaînes V1).
+- Total : **2 416 tests Vitest** passés (vs 2 410 V2.3) + 3 tests Playwright à exécuter localement via `npm run test:e2e`.
+
+**Vérifications** :
+
+- `npx vitest run` : 173 fichiers · 2 416 passed · 18 todo · 2 skipped · 0 fail
+- `npx tsc --noEmit` : silencieux
+- `npm run build` : succès
+- `npm run test:e2e` : à exécuter en local (nécessite `next dev` ou `PLAYWRIGHT_BASE_URL=https://fynix-mu.vercel.app`)
+
+**Points ouverts pour V3+** :
+
+- **Auth Playwright** : peupler `e2e/.auth/storageState.json` via `npx playwright codegen` ou un script de seed dédié, puis ajouter une suite « dashboard authentifié » qui couvre Z1 → Z9.
+- **Intégration CI Playwright** : ajouter `npm run test:e2e` dans le pipeline GitHub Actions / Vercel preview-deploy hook.
+- **Refonte section `/cash`** + alerte « matelas de sécurité » conditionnée au statut pro (6 mois CDI / 12 mois TNS) — idée mémorisée en V2.4-TER.
+- **Drill-down par enveloppe** dans `TopAssetsList` (query-param sur `/portefeuille`).
+- **`subType` réutilisable** dans un écran analytique « répartition crypto vs financier dans le bucket marché » (V2.4-TER).
+
+**Stratégie git** : master direct (3 commits code + 1 docs + push), conforme à la stratégie V2 actée en V2.1-BIS.
+
+---
+
+## 🏁 Clôture V2 — Statut final
+
+Tous les sprints V2 sont **mergés et déployés en production** sur `fynix-mu.vercel.app`.
+
+| Sprint | Livré le | Objet principal |
+|---|---|---|
+| **V2.1** | 2026-06-02 | Purge doublon graphe + compactage Z5/Z6 |
+| **V2.1-BIS** | 2026-06-02 | Ligne compacte Cash Z7 + bascule stratégie git V2 (master direct) |
+| **V2.2** | 2026-06-02 | Réordonnancement narratif Z1→Z9 + ZonePilotage + ZoneFiscaliteToggle |
+| **V2.2-BIS** | 2026-06-02 | Réalisme des alertes / recos + système de masquage personnalisé |
+| **V2.4** | 2026-06-02 | Best/Worst par classe d'actif (TWR annualisé, seuil 90 j) |
+| **V2.4-BIS** | 2026-06-02 | Pivot vers rendement instantané (plus-value latente) — abandonne l'annualisation TWR pour Z8.5 |
+| **V2.4-TER** | 2026-06-02 | Simplification à 2 buckets (marché + immobilier) + suppression du cash de Z8.5 |
+| **V2.3** | 2026-06-02 | Top consolidé par enveloppe / bien / compte (BUG-5 corrigé) |
+| **V2.5** | 2026-06-03 | Stabilisation technique (floor protection + Playwright + donut) |
+
+**Architecture finale Z1 → Z9** (page Dashboard) :
+1. **Z1** FIREProgressHero — toujours en haut
+2. **Z2** PatrimoineEvolutionChart — évolution patrimoine
+3. **Z3** TropheesCard — jalons franchis
+4. **Z4** ZonePilotage — KPIs + **donut allocation (V2.5)** + alertes + actions non-fiscales
+5. **Z5** ImmoSummaryCompact — ligne compacte immobilier
+6. **Z6** PortefeuilleSummaryCompact — ligne compacte portefeuille
+7. **Z7** CashSummaryCompact — ligne compacte cash
+8. **Z8** TopAssetsList — top 5 **consolidé par enveloppe (V2.3)**
+9. **Z8.5** ZoneChampionsCasseroles — 2 buckets marché + immobilier (V2.4-TER)
+10. **Z9** ZoneFiscaliteToggle — fiscalité masquée par défaut (V2.2)
+
+**Bugs corrigés (vs audit initial V1.0)** :
+
+| Bug | Statut | Sprint |
+|---|---|---|
+| BUG-1 — Brut hybride MV/CB | ✅ Corrigé | V1.2 |
+| BUG-2 — TWR + croissance fusionnés | ✅ Corrigé | V1.3 |
+| BUG-3 — Label CF immo trompeur | ✅ Corrigé | V1.2 |
+| BUG-4 — Alertes « > 70 % » mensongères | ✅ Corrigé | V2.2-BIS |
+| BUG-5 — Top atomique mélangé | ✅ Corrigé | V2.3 |
+| BUG-6 — Taxonomie allocation hétérogène | ✅ Corrigé | V1.2 |
+| BUG-7 — Confidence score immo non précis | ⏳ Reporté V3 | — |
+
+**Protections techniques posées par V2.5** :
+- Floor protection sur Croissance patrimoniale → plus aucun chiffre aberrant possible
+- Suite Playwright minimale → canari anti-régression silencieuse (leçon V1.4-BIS)
+- Donut d'allocation avec tooltip pédagogique → cohérence visuelle du Dashboard
+
+**V2 = complet et stable**. La prochaine étape (V3) sera un cycle distinct avec ses propres sprints d'audit et de roadmap.
+
