@@ -22,7 +22,7 @@ describe('hnw-complexe — taux moyen pondéré multi-livrets (V1.1)', () => {
     expect(balances).toEqual([22_950, 12_000, 10_000, 8_000])
     const rates = hnw.inputs.cashAccounts!.map((a) => a.interest_rate)
     expect(rates).toEqual([3.0, 3.0, 4.0, 1.5])
-    const totalBalance = balances.reduce((s, b) => s + (b as number), 0)
+    const totalBalance = balances.reduce<number>((s, b) => s + Number(b ?? 0), 0)
     expect(totalBalance).toBe(52_950)
   })
 
