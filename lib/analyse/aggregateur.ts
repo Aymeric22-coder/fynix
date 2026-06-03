@@ -22,6 +22,7 @@ import { INFLATION_DEFAUT_PCT } from './projectionFIRE'
 import {
   swrPctFromFireType, calculerCiblePatrimoine, RENDEMENT_PAR_CLASSE,
 } from './constants'
+import { computeCashYield, type CashAccountForYield } from '@/lib/cash/rendement'
 import { devLog, devWarn } from '@/lib/utils/devLog'
 import { getEtfComposition } from './etfCompositions'
 import {
@@ -256,11 +257,14 @@ interface PrincipalDebtMeta {
 // ─────────────────────────────────────────────────────────────────
 
 interface CashRow {
-  id:           string
-  account_type: string | null
-  balance:      number | string | null
-  currency:     string | null
-  bank_name:    string | null
+  id:            string
+  account_type:  string | null
+  balance:       number | string | null
+  currency:      string | null
+  bank_name:     string | null
+  // V1.0 fix C14 — `interest_rate` sélectionné pour alimenter
+  // `computeCashYield` (taux moyen pondéré réel, cf. lib/cash/rendement.ts).
+  interest_rate: number | string | null
   asset?: { id: string; name: string | null } | null
 }
 
@@ -278,15 +282,17 @@ async function loadCash(userId: string): Promise<{
   comptes:                CompteCash[]
   totalCash:              number
   totalCashInvestissable: number
+  /** V1.0 fix C14 — comptes pré-convertis EUR pour `computeCashYield`. */
+  cashAccountsForYield:   CashAccountForYield[]
 }> {
   const supabase = await createServerClient()
   const { data } = await supabase
     .from('cash_accounts')
-    .select('id, account_type, balance, currency, bank_name, asset:assets!asset_id (id, name)')
+    .select('id, account_type, balance, currency, bank_name, interest_rate, asset:assets!asset_id (id, name)')
     .eq('user_id', userId)
 
   if (!data || data.length === 0) {
-    return { comptes: [], totalCash: 0, totalCashInvestissable: 0 }
+    return { comptes: [], totalCash: 0, totalCashInvestissable: 0, cashAccountsForYield: [] }
   }
 
   // CS2 LOT 2 : on calcule maintenant 2 totaux distincts.
@@ -297,6 +303,7 @@ async function loadCash(userId: string): Promise<{
   //     projection FIRE. La projection utilise totalCashInvestissable.
   let totalCash = 0
   let totalCashInvestissable = 0
+  const cashAccountsForYield: CashAccountForYield[] = []
   const comptes: CompteCash[] = await Promise.all((data as unknown as CashRow[]).map(async (r) => {
     const asset = Array.isArray(r.asset) ? r.asset[0] : r.asset
     const local = num(r.balance)
@@ -305,6 +312,13 @@ async function loadCash(userId: string): Promise<{
     const typeRaw = (r.account_type ?? 'autre').toLowerCase()
     totalCash += eur
     if (typeRaw !== 'compte_courant') totalCashInvestissable += eur
+    // V1.0 fix C14 — la balance est déjà en EUR ici (post `toEur`), on
+    // déclare 'EUR' à `computeCashYield` pour éviter un second appel FX.
+    cashAccountsForYield.push({
+      balance:       eur,
+      currency:      'EUR',
+      interest_rate: num(r.interest_rate),
+    })
     return {
       id:     r.id,
       nom:    asset?.name ?? CASH_LABEL[typeRaw] ?? 'Compte',
@@ -315,7 +329,7 @@ async function loadCash(userId: string): Promise<{
     }
   }))
 
-  return { comptes, totalCash, totalCashInvestissable }
+  return { comptes, totalCash, totalCashInvestissable, cashAccountsForYield }
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -723,11 +737,25 @@ function buildAllocations(positions: EnrichedPosition[]): {
  * pas un calcul TWR. Une vraie version branchera les dividendes via Yahoo
  * (yieldRate) plus tard.
  */
-function rendementEstime(
-  positions: EnrichedPosition[],
-  biens:     BienImmo[],
-  totalCash: number,
-  total:     number,
+/**
+ * V1.0 fix C14 — `tauxCashDecimal` est désormais passé en argument.
+ *
+ * Si l'utilisateur a saisi des comptes cash, on utilise le **taux moyen
+ * pondéré réel** (cf. `computeCashYield`). Si la liste est vide ou si le
+ * taux est `null`, on retombe sur la constante centralisée
+ * `RENDEMENT_PAR_CLASSE.cash` (préserve le comportement avant la PR pour
+ * les utilisateurs sans compte cash saisi). Un taux pondéré nul
+ * (utilisateur a explicitement déclaré du cash à 0 %) est respecté tel
+ * quel et ne déclenche PAS le fallback.
+ *
+ * Export : utile pour les tests unitaires (`__tests__/aggregateur-rendement-c14.test.ts`).
+ */
+export function rendementEstime(
+  positions:       EnrichedPosition[],
+  biens:           BienImmo[],
+  totalCash:       number,
+  total:           number,
+  tauxCashDecimal: number | null = null,
 ): number {
   if (total <= 0) return 0
 
@@ -738,8 +766,12 @@ function rendementEstime(
     const r = Number.isFinite(b.rendement_brut) ? b.rendement_brut : RENDEMENT_PAR_CLASSE.immo * 100
     weightedReturn += (b.valeur / total) * r
   }
-  // Cash : taux centralisé (I10 — avant 1 % en dur ici, 3 % ailleurs)
-  weightedReturn += (totalCash / total) * (RENDEMENT_PAR_CLASSE.cash * 100)
+  // Cash : V1.0 fix C14 — taux moyen pondéré réel des comptes, ou fallback
+  // sur RENDEMENT_PAR_CLASSE.cash si aucun compte (tauxCashDecimal === null).
+  const cashRatePct = tauxCashDecimal !== null
+    ? tauxCashDecimal * 100
+    : RENDEMENT_PAR_CLASSE.cash * 100
+  weightedReturn += (totalCash / total) * cashRatePct
   // Portefeuille : par classe (crypto via constante dédiée, fallback actions)
   for (const p of positions) {
     const cls =
@@ -764,7 +796,7 @@ export async function getPatrimoineComplet(userId: string): Promise<PatrimoineCo
   const [
     { positions, totalValue: totalPortefeuille },
     immoData,
-    { comptes, totalCash, totalCashInvestissable },
+    { comptes, totalCash, totalCashInvestissable, cashAccountsForYield },
     profile,
     lifeEvents,
   ] = await Promise.all([
@@ -791,7 +823,15 @@ export async function getPatrimoineComplet(userId: string): Promise<PatrimoineCo
   const repSecteur = allocs.secteur
   const repGeo     = allocs.geo
 
-  const rendement      = rendementEstime(positions, biens, totalCash, totalBrut)
+  // V1.0 fix C14 — taux moyen pondéré réel du cash. Si aucun compte saisi,
+  // `tauxCashDecimal` reste `null` et `rendementEstime` retombe sur
+  // `RENDEMENT_PAR_CLASSE.cash`. Les comptes sont déjà en EUR ici, donc le
+  // resolver FX par défaut n'est jamais appelé.
+  const cashYield = cashAccountsForYield.length > 0
+    ? await computeCashYield(cashAccountsForYield)
+    : null
+  const tauxCashDecimal = cashYield !== null ? cashYield.tauxMoyenPondereDecimal : null
+  const rendement      = rendementEstime(positions, biens, totalCash, totalBrut, tauxCashDecimal)
   // Revenu passif TOTAL : cashflow net immo (peut être négatif si bien en
   // levier fort en début de remboursement) + estimation dividendes (2 %
   // du portfolio hors crypto, proxy moyen du dividend yield européen).
