@@ -24,3 +24,9 @@ npm-debug.log*
 
 .vercel
 .env*.local
+
+# Playwright (V2.5)
+/test-results/
+/playwright-report/
+/playwright/.cache/
+/e2e/.auth/
