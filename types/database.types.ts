@@ -654,6 +654,30 @@ export interface CashBalanceHistory {
   created_at: string
 }
 
+/** Migration 055 — V1.2 « cash volontaire ». */
+export type CashIntentMotif =
+  | 'apport_immo'
+  | 'achat_planifie'
+  | 'voyage'
+  | 'precaution_assumee'
+  | 'autre'
+
+export interface CashIntent {
+  id:              string
+  user_id:         string
+  /** NULL = intention globale, non rattachée à un compte précis. */
+  cash_account_id: string | null
+  /** EUR. Contrainte DB : > 0. */
+  montant:         number
+  motif:           CashIntentMotif
+  /** Précision libre (≤ 280 char appliqué côté API zod). */
+  motif_libre:     string | null
+  /** ISO `YYYY-MM-DD` ou null = sans deadline. */
+  target_date:     string | null
+  created_at:      string
+  updated_at:      string
+}
+
 export interface FxRate {
   id: string
   base_currency: CurrencyCode

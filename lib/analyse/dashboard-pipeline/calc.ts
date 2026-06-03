@@ -49,6 +49,7 @@ import {
   type CashAccountForTop,
 } from '@/lib/portfolio/top-assets-consolidated'
 import { computeCashTotalsSync } from '@/lib/cash/totals'
+import { computeMatelasEffectif } from '@/lib/cash/intents'
 import type {
   DashboardData, DashboardPipelineInputs,
   DashboardAllocationSlice, DashboardAlert,
@@ -328,8 +329,18 @@ export function computeDashboardData(inputs: DashboardPipelineInputs): Dashboard
   //   (c) historique disponible : ≥ 2 snapshots ET span ≥ 180 j
   // Si l'historique est trop court, on s'abstient (mieux pas d'alerte
   // qu'une fausse alerte — cf. brief V2.2-BIS).
+  // V1.2 Volet D — `cashEffectif` = cash brut − Σ intents actives. Ferme
+  // le faux positif P5 « sur-liquide volontaire » : un utilisateur qui a
+  // déclaré un apport immo de 5 000 € ne se voit plus reprocher ces 5 000 €.
+  // Les snapshots historiques (`total_cash`) restent évalués sur le brut
+  // faute d'historique d'intentions — on ne déclenche que si la fenêtre
+  // ET la valeur actuelle effective dépassent le seuil.
+  const cashEffectifNow = computeMatelasEffectif(
+    cashSummary.totalEur,
+    [...(inputs.cashIntents ?? [])],
+  ).cashEffectif
   if (netValue > 0 && snapshots.length >= 2) {
-    const cashTodayPct = (cashSummary.totalEur / netValue) * 100
+    const cashTodayPct = (cashEffectifNow / netValue) * 100
     if (cashTodayPct > CASH_THRESHOLD_PCT) {
       const latestDate = new Date(snapshots[0]!.snapshot_date)
       const horizonDate = new Date(latestDate)

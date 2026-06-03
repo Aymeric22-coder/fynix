@@ -310,6 +310,19 @@ export interface PatrimoineComplet {
    *  un compte courant à 3 %/an comme un Livret A. Le score Couverture
    *  cash continue d'utiliser `totalCash` brut. */
   totalCashInvestissable: number
+  /**
+   * V1.2 — Cash effectif = `max(0, totalCash − Σ intents actives)`.
+   * Source de vérité pour les règles d'alerte sur-liquidité
+   * (`recommandations.ts > cash-excessif`, alerte Dashboard cash > 30 %
+   * net). Une intention « active » est sans `target_date` OU avec
+   * `target_date >= today`. Cf. `lib/cash/intents.ts > computeMatelasEffectif`.
+   *
+   * **Optionnel** pour préserver les fixtures pré-V1.2 : les consommateurs
+   * appliquent `p.cashEffectif ?? p.totalCash` (= comportement V1.1 strict).
+   */
+  cashEffectif?:          number
+  /** V1.2 — Somme des montants des intents actives en EUR. Optionnel cf. ci-dessus. */
+  totalIntentsActives?:   number
   totalDettes:      number     // capital restant dû tous crédits
 
   // Phase 8 — KPIs immobilier agrégés (utiles aux scores + UI)

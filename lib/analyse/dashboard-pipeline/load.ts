@@ -57,6 +57,7 @@ export async function loadDashboardInputs(
     cashAccountsRes,
     envelopesRes, realEstatePropsRes,
     alertDismissalsRes,
+    cashIntentsRes,
   ] = await Promise.all([
     // V2.4 P0.7 — on récupère aussi `acquisition_date` pour le filtre 90 j immobilier.
     supabase
@@ -118,6 +119,13 @@ export async function loadDashboardInputs(
     supabase
       .from('user_alert_dismissals')
       .select('alert_signature,expires_at')
+      .eq('user_id', userId),
+    // V1.2 Cash — Intentions de cash volontaire (mig 055).
+    // Le pipeline soustrait les intents actives de `cashSummary.totalEur`
+    // avant d'évaluer l'alerte `cash_dormant_6m` (ferme le faux positif P5).
+    supabase
+      .from('cash_intents')
+      .select('id,user_id,cash_account_id,montant,motif,motif_libre,target_date,created_at,updated_at')
       .eq('user_id', userId),
   ])
 
@@ -265,6 +273,7 @@ export async function loadDashboardInputs(
     envelopes,
     alertDismissalsActive,
     transactionsPortefeuille,
+    cashIntents:         cashIntentsRes.data ?? [],
     asOfDate: new Date(),
   }
 }

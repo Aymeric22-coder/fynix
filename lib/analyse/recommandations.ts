@@ -162,9 +162,15 @@ export function genererRecommandations(
   }
 
   // 3. Cash excessif (>20 % du patrimoine)
-  const partCash = p.totalBrut > 0 ? (p.totalCash / p.totalBrut) * 100 : 0
+  // V1.2 Volet D — La règle d'alerte consomme `cashEffectif` (= totalCash
+  // − Σ intents actives). L'utilisateur qui a déclaré un projet ne se voit
+  // plus reprocher son cash mis de côté volontairement (ferme le faux
+  // positif P5 de l'audit § 7). Fallback `?? totalCash` pour la rétro-
+  // compatibilité tests dont la fixture pre-V1.2 n'expose pas le champ.
+  const cashAlerte = p.cashEffectif ?? p.totalCash
+  const partCash = p.totalBrut > 0 ? (cashAlerte / p.totalBrut) * 100 : 0
   if (partCash > 20) {
-    const moitieCashAInvestir = p.totalCash * 0.5
+    const moitieCashAInvestir = cashAlerte * 0.5
     let impact: string | null = null
     // Calcul d'impact : que se passe-t-il si on convertit 50% du cash en
     // épargne mensuelle équivalente (étalée sur 24 mois) ?
@@ -190,7 +196,7 @@ export function genererRecommandations(
       priorite:     partCash > 30 ? 'haute' : 'moyenne',
       categorie:    'liquidite',
       titre:        'Trop de cash non investi',
-      description:  `${p.totalCash.toFixed(0)} € (${partCash.toFixed(0)} % du patrimoine) dort sur vos livrets / comptes.`,
+      description:  `${cashAlerte.toFixed(0)} € (${partCash.toFixed(0)} % du patrimoine) dort sur vos livrets / comptes.`,
       impact_estime: impact,
       gain_estime_eur:   Math.round(moitieCashAInvestir),
       gain_estime_label: ' à investir progressivement',

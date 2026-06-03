@@ -216,3 +216,82 @@ describe('CashMatelasCard — V1.1-POLISH jauge auto-suffisante', () => {
     expect(screen.queryByText('Cible haute')).toBeNull()
   })
 })
+
+// ──────────────────────────────────────────────────────────────────────
+// V1.2 Volet D — Neutralisation par les intents (cash volontaire)
+// ──────────────────────────────────────────────────────────────────────
+describe('CashMatelasCard — V1.2 Volet D intents', () => {
+  const PROFIL_SUR_LIQUIDE: ProfileContext = {
+    revenuMensuel:     3_000,
+    chargesMensuelles: 2_000,
+    statutPro:         'cdi',
+    stabiliteRevenus:  null,
+  }
+  // Cibles CDI charges 2 000 € → multiplier 3-6 → [6 000 ; 12 000].
+
+  it('aucune intent → comportement V1.1-POLISH inchangé (sur-liquide)', () => {
+    render(<CashMatelasCard totalCash={49_000} profile={PROFIL_SUR_LIQUIDE} />)
+    expect(screen.getByText(/Excédent de liquidité/i)).toBeTruthy()
+    // Pas de badge intents
+    expect(screen.queryByText(/intention/i)).toBeNull()
+  })
+
+  it('1 intent qui ramène l\'effectif dans la cible → statut « Équilibré »', () => {
+    render(
+      <CashMatelasCard
+        totalCash={49_000}
+        profile={PROFIL_SUR_LIQUIDE}
+        cashEffectif={9_000}
+        totalIntentsActives={40_000}
+        countIntentsActives={1}
+      />,
+    )
+    expect(screen.getByText(/Matelas équilibré/i)).toBeTruthy()
+    expect(screen.getByText(/intention active/i)).toBeTruthy()
+    expect(screen.getByText(/matelas effectif/i)).toBeTruthy()
+  })
+
+  it('badge intents : « N intentions actives » au pluriel quand N > 1', () => {
+    render(
+      <CashMatelasCard
+        totalCash={49_000}
+        profile={PROFIL_SUR_LIQUIDE}
+        cashEffectif={9_000}
+        totalIntentsActives={40_000}
+        countIntentsActives={3}
+      />,
+    )
+    expect(screen.getByText(/3 intentions actives/i)).toBeTruthy()
+  })
+
+  it('badge intents : ancre #cash-intents pour scroll vers la section', () => {
+    render(
+      <CashMatelasCard
+        totalCash={49_000}
+        profile={PROFIL_SUR_LIQUIDE}
+        cashEffectif={9_000}
+        totalIntentsActives={40_000}
+        countIntentsActives={1}
+      />,
+    )
+    const link = screen.getByText(/intention active/i).closest('a')
+    expect(link?.getAttribute('href')).toBe('#cash-intents')
+  })
+
+  it('intent qui ne suffit pas à neutraliser → reste sur-liquide mais effectif < brut', () => {
+    // cible haute 12 000. cashEffectif 20 000 > 12 000 → toujours sur-liquide.
+    render(
+      <CashMatelasCard
+        totalCash={49_000}
+        profile={PROFIL_SUR_LIQUIDE}
+        cashEffectif={20_000}
+        totalIntentsActives={29_000}
+        countIntentsActives={2}
+      />,
+    )
+    expect(screen.getByText(/Excédent de liquidité/i)).toBeTruthy()
+    // Le message reflète le delta EFFECTIF, pas le brut.
+    // 20 000 - 12 000 = 8 000 €
+    expect(screen.getByText(/8 000.*au-delà/i)).toBeTruthy()
+  })
+})

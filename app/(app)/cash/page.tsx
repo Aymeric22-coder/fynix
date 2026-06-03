@@ -8,9 +8,12 @@ import { CashActions }      from '@/components/pages/cash-actions'
 import { CashEditRow }      from '@/components/pages/cash-edit-row'
 import { CashMatelasCard }  from '@/components/pages/cash-matelas-card'
 import { CashKpis }         from '@/components/pages/cash-kpis'
+import { CashIntentsList }  from '@/components/pages/cash-intents-list'
 import { formatCurrency, formatPercent, formatDate } from '@/lib/utils/format'
 import { computeCashTotals } from '@/lib/cash/totals'
+import { computeMatelasEffectif } from '@/lib/cash/intents'
 import { getProfileContext } from '@/lib/profil/getProfileContext'
+import type { CashIntent } from '@/lib/cash/intents'
 
 export const metadata: Metadata = { title: 'Cash & Épargne' }
 
@@ -28,7 +31,7 @@ export default async function CashPage() {
   // Dégradation propre : si la ligne `profiles` est absente ou si un
   // champ est ≤ 0, `profileContext` est tout-null et `CashMatelasCard`
   // propose un CTA vers Profil au lieu d'une cible erronée.
-  const [{ data: accounts }, profileContext] = await Promise.all([
+  const [{ data: accounts }, profileContext, { data: intentsRaw }] = await Promise.all([
     supabase
       .from('cash_accounts')
       .select(`
@@ -38,7 +41,13 @@ export default async function CashPage() {
       .eq('user_id', user!.id)
       .order('account_type'),
     getProfileContext(supabase, user!.id),
+    supabase
+      .from('cash_intents')
+      .select('*')
+      .eq('user_id', user!.id)
+      .order('created_at', { ascending: false }),
   ])
+  const intents = (intentsRaw ?? []) as CashIntent[]
 
   // V1.1 P0 — Total cash unifié via `computeCashTotals`, supporte le
   // multi-devise (corrige le bug FX silencieux de la page identifié dans
@@ -60,6 +69,16 @@ export default async function CashPage() {
   const accountsForKpi = (accounts ?? []).map((a) => ({
     balance:       Number(a.balance),
     interest_rate: typeof a.interest_rate === 'number' ? a.interest_rate : Number(a.interest_rate ?? 0),
+  }))
+
+  // V1.2 Volet D — matelas effectif = cash brut − Σ intents actives.
+  const matelasEffectif = computeMatelasEffectif(total, intents)
+
+  // Méta des comptes cash pour le sélecteur de la modale d'intentions
+  // ET la liste (libellé « depuis … »).
+  const cashAccountMeta = (accounts ?? []).map((a) => ({
+    id:   a.id as string,
+    name: (a.asset?.name as string | null | undefined) ?? 'Compte',
   }))
 
   return (
@@ -99,8 +118,14 @@ export default async function CashPage() {
           {/* V1.1 C.3 — KPI cash : intérêts annuels + taux moyen pondéré */}
           <CashKpis accounts={accountsForKpi} />
 
-          {/* V1.1 C.2 — Bloc matelas (4 états) */}
-          <CashMatelasCard totalCash={total} profile={profileContext} />
+          {/* V1.1 C.2 — Bloc matelas (4 états) + V1.2 D — statut sur effectif */}
+          <CashMatelasCard
+            totalCash={total}
+            profile={profileContext}
+            cashEffectif={matelasEffectif.cashEffectif}
+            totalIntentsActives={matelasEffectif.totalIntentsActives}
+            countIntentsActives={matelasEffectif.countIntentsActives}
+          />
 
           <div className="space-y-3">
             {accounts.map((account) => {
@@ -131,6 +156,12 @@ export default async function CashPage() {
               )
             })}
           </div>
+
+          {/* V1.2 Volet E — Section Cash volontaire (ancre #cash-intents) */}
+          <CashIntentsList
+            intents={matelasEffectif.intentsActives}
+            cashAccounts={cashAccountMeta}
+          />
         </>
       )}
     </div>

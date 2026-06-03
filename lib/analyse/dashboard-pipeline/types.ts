@@ -137,6 +137,14 @@ export interface DashboardPipelineInputs {
    * avant de les exposer à l'UI.
    */
   alertDismissalsActive?: ReadonlySet<string>
+  /**
+   * V1.2 Cash — Intentions de cash volontaire déclarées par l'utilisateur
+   * (table `cash_intents`, mig 055). Le pipeline soustrait les intents
+   * actives de `cashSummary.totalEur` AVANT d'évaluer l'alerte
+   * `cash_dormant_6m`, fermant le faux positif P5 (« sur-liquide
+   * volontaire »).
+   */
+  cashIntents?: ReadonlyArray<import('@/types/database.types').CashIntent>
   // ── V1.3 P0.3 — Inputs TWR ──────────────────────────────────────────
   /** Transactions du portefeuille financier (sous-ensemble dédié au TWR). */
   transactionsPortefeuille?: import('@/lib/portfolio/transaction-segments').TransactionForTwr[]

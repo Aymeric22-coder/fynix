@@ -30,8 +30,18 @@ import type { ProfileContext } from '@/lib/profil/getProfileContext'
 import { formatCurrency } from '@/lib/utils/format'
 
 interface Props {
-  totalCash:      number
-  profile:        ProfileContext
+  totalCash:           number
+  profile:             ProfileContext
+  /**
+   * V1.2 Volet D — Cash effectif = `totalCash − Σ intents actives`.
+   * Quand > 0 et différent de totalCash, on calcule le statut sur cette
+   * valeur (et on affiche un badge sous la jauge). Le curseur reste
+   * positionné sur `totalCash` brut pour préserver la lecture instantanée.
+   * Si non fourni → comportement V1.1-POLISH strictement préservé.
+   */
+  cashEffectif?:       number
+  totalIntentsActives?: number
+  countIntentsActives?: number
 }
 
 const PROFIL_LABEL: Record<'stable' | 'standard' | 'volatil', string> = {
@@ -40,7 +50,19 @@ const PROFIL_LABEL: Record<'stable' | 'standard' | 'volatil', string> = {
   volatil:  'Profil volatil',
 }
 
-export function CashMatelasCard({ totalCash, profile }: Props) {
+export function CashMatelasCard({
+  totalCash, profile,
+  cashEffectif:        cashEffectifProp,
+  totalIntentsActives: totalIntentsActivesProp,
+  countIntentsActives: countIntentsActivesProp,
+}: Props) {
+  // V1.2 — Si aucune info intent fournie, `cashEffectif` = `totalCash` :
+  // comportement strictement V1.1-POLISH préservé.
+  const totalIntentsActives = totalIntentsActivesProp ?? 0
+  const countIntentsActives = countIntentsActivesProp ?? 0
+  const cashEffectif        = cashEffectifProp ?? totalCash
+  const hasIntents          = totalIntentsActives > 0 && countIntentsActives > 0
+
   const m = computeMatelasCible({
     chargesMensuelles:  profile.chargesMensuelles ?? 0,
     statutPro:          profile.statutPro,
@@ -76,9 +98,12 @@ export function CashMatelasCard({ totalCash, profile }: Props) {
   const cibleHaute = m.cibleHauteEur as number
 
   // ── État applicable : sous-liquide / OK / sur-liquide ──────────────
+  // V1.2 Volet D — Statut calculé sur `cashEffectif` (= brut − intents
+  // actives). Un utilisateur sur-liquide qui a déclaré ses intentions
+  // peut passer de « Excédent » à « Équilibré ».
   const status: 'sous' | 'ok' | 'sur' =
-    totalCash < cibleBasse ? 'sous' :
-    totalCash > cibleHaute ? 'sur'  : 'ok'
+    cashEffectif < cibleBasse ? 'sous' :
+    cashEffectif > cibleHaute ? 'sur'  : 'ok'
 
   const STATUS_META = {
     sous: {
@@ -87,7 +112,7 @@ export function CashMatelasCard({ totalCash, profile }: Props) {
       ring:    'border-danger/30',
       bg:      'bg-danger-muted',
       title:   'Matelas insuffisant',
-      message: `Il manque ${formatCurrency(cibleBasse - totalCash, 'EUR')} pour atteindre la cible basse.`,
+      message: `Il manque ${formatCurrency(cibleBasse - cashEffectif, 'EUR')} pour atteindre la cible basse.`,
     },
     ok: {
       icon:    Shield,
@@ -103,7 +128,7 @@ export function CashMatelasCard({ totalCash, profile }: Props) {
       ring:    'border-warning/30',
       bg:      'bg-warning-muted',
       title:   'Excédent de liquidité',
-      message: `${formatCurrency(totalCash - cibleHaute, 'EUR')} au-delà de la cible haute — à investir potentiellement.`,
+      message: `${formatCurrency(cashEffectif - cibleHaute, 'EUR')} au-delà de la cible haute — à investir potentiellement.`,
     },
   }[status]
   const Icon = STATUS_META.icon
@@ -130,8 +155,21 @@ export function CashMatelasCard({ totalCash, profile }: Props) {
         </div>
       </header>
 
-      {/* V1.1-POLISH — Jauge auto-suffisante */}
+      {/* V1.1-POLISH — Jauge auto-suffisante. Curseur sur cash BRUT pour
+          préserver la lecture instantanée du cash réel ; le statut au-dessus
+          est calculé sur l'effectif (cf. V1.2 Volet D). */}
       <MatelasJauge totalCash={totalCash} cibleBasse={cibleBasse} cibleHaute={cibleHaute} />
+
+      {hasIntents && (
+        <a
+          href="#cash-intents"
+          className="block mt-3 text-center text-[11px] text-muted hover:text-secondary transition-colors"
+        >
+          dont {formatCurrency(totalIntentsActives, 'EUR')} volontaire
+          {countIntentsActives > 1 ? `s (${countIntentsActives} intentions actives)` : ' (1 intention active)'}
+          {' '}— matelas effectif <span className="text-secondary financial-value">{formatCurrency(cashEffectif, 'EUR')}</span>
+        </a>
+      )}
 
       {moisDeSalaire !== null && (
         <p className="text-[11px] text-muted mt-4 text-center">

@@ -24,6 +24,9 @@ import {
 } from './constants'
 import { computeCashYield, type CashAccountForYield } from '@/lib/cash/rendement'
 import { computeCashTotals } from '@/lib/cash/totals'
+import { computeMatelasEffectif } from '@/lib/cash/intents'
+import { computeChargesMensuelles } from '@/lib/profil/charges'
+import type { CashIntent } from '@/types/database.types'
 import { devLog, devWarn } from '@/lib/utils/devLog'
 import { getEtfComposition } from './etfCompositions'
 import {
@@ -444,6 +447,30 @@ async function loadLifeEvents(userId: string): Promise<LifeEventRow[]> {
   }
 }
 
+/**
+ * V1.2 — Charge les intentions de cash volontaire de l'utilisateur. Triées
+ * par création décroissante. RLS appliquée côté DB. Tolère l'absence de la
+ * table 055 (défense en profondeur, comme `loadLifeEvents`).
+ */
+async function loadCashIntents(userId: string): Promise<CashIntent[]> {
+  try {
+    const supabase = await createServerClient()
+    const { data, error } = await supabase
+      .from('cash_intents')
+      .select('id, user_id, cash_account_id, montant, motif, motif_libre, target_date, created_at, updated_at')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+    if (error) {
+      devWarn(`[aggregateur] loadCashIntents fail: ${error.message}`)
+      return []
+    }
+    return (data ?? []) as CashIntent[]
+  } catch (e) {
+    devWarn(`[aggregateur] loadCashIntents crash: ${String(e)}`)
+    return []
+  }
+}
+
 async function loadProfile(userId: string): Promise<ProfileLoaded> {
   const supabase = await createServerClient()
   const { data } = await supabase
@@ -493,7 +520,15 @@ async function loadProfile(userId: string): Promise<ProfileLoaded> {
     crypto: { correct: countCorrect(p.quiz_crypto), total: 4 },
     immo:   { correct: countCorrect(p.quiz_immo),   total: 3 },
   }, p.quiz_self_declared_domains ?? [])
-  const charges       = num(p.loyer) + num(p.autres_credits) + num(p.charges_fixes) + num(p.depenses_courantes)
+  // V1.2 Volet C — dette V1.1-PATCH fermée : consomme le helper unifié.
+  // Comportement strictement identique (mêmes sous-postes, même robustesse
+  // null/NaN/négatifs), source de vérité partagée avec `getProfileContext`.
+  const charges       = computeChargesMensuelles({
+    loyer:              p.loyer,
+    autres_credits:     p.autres_credits,
+    charges_fixes:      p.charges_fixes,
+    depenses_courantes: p.depenses_courantes,
+  })
   const revenuMensuel = num(p.revenu_mensuel) + num(p.revenu_conjoint) + num(p.autres_revenus)
 
   // QW9 + QW9-bis — Cible FIRE ajustée à la composition du foyer.
@@ -813,13 +848,19 @@ export async function getPatrimoineComplet(userId: string): Promise<PatrimoineCo
     { comptes, totalCash, totalCashInvestissable, cashAccountsForYield },
     profile,
     lifeEvents,
+    cashIntents,
   ] = await Promise.all([
     getEnrichedPositions(userId),
     loadImmo(userId),
     loadCash(userId),
     loadProfile(userId),
     loadLifeEvents(userId),
+    loadCashIntents(userId),
   ])
+
+  // V1.2 Volet D — matelas effectif = cash brut − Σ intents actives.
+  // Source de vérité pour les règles d'alerte sur-liquidité.
+  const matelasEffectif = computeMatelasEffectif(totalCash, cashIntents)
   const {
     biens, totalImmo, totalDettes,
     totalImmoEquity, risqueImmoGlobal, revenuPassifImmo,
@@ -900,7 +941,12 @@ export async function getPatrimoineComplet(userId: string): Promise<PatrimoineCo
   // PatrimoineComplet partiellement rempli sans les scores eux-mêmes).
   const partial: PatrimoineComplet = {
     totalBrut, totalNet,
-    totalPortefeuille, totalImmo, totalCash, totalCashInvestissable, totalDettes,
+    totalPortefeuille, totalImmo, totalCash, totalCashInvestissable,
+    // V1.2 Volet D — exposé pour `recommandations.ts > cash-excessif` +
+    // composant matelas (badge intents).
+    cashEffectif:        matelasEffectif.cashEffectif,
+    totalIntentsActives: matelasEffectif.totalIntentsActives,
+    totalDettes,
     totalImmoEquity, risqueImmoGlobal, revenuPassifImmo,
     mensualitesImmoTotal, rendementNetImmoMoyen,
     positions, biens, comptes,
