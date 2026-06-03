@@ -137,3 +137,82 @@ describe('CashMatelasCard — robustesse multi-profils (audit § 7)', () => {
     expect(screen.getByText(/mois de salaire/i)).toBeTruthy()
   })
 })
+
+// ──────────────────────────────────────────────────────────────────────
+// V1.1-POLISH — Nouveau design de la jauge
+// ──────────────────────────────────────────────────────────────────────
+describe('CashMatelasCard — V1.1-POLISH jauge auto-suffisante', () => {
+  const PROFIL_AYMERIC: ProfileContext = {
+    revenuMensuel:     2_600,
+    chargesMensuelles: 1_675,
+    statutPro:         'independant',
+    stabiliteRevenus:  'instable',
+  }
+
+  it('affiche les 3 labels de segments « Insuffisant / Cible / Excédent »', () => {
+    render(<CashMatelasCard totalCash={18_578} profile={PROFIL_AYMERIC} />)
+    expect(screen.getByText(/Insuffisant/i)).toBeTruthy()
+    expect(screen.getByText(/^Cible$/i)).toBeTruthy()
+    expect(screen.getByText(/Excédent/i)).toBeTruthy()
+  })
+
+  it('cas Aymeric (cible 9-12 mois) : affiche le label montant sur le curseur', () => {
+    render(<CashMatelasCard totalCash={18_578} profile={PROFIL_AYMERIC} />)
+    // Le label montant du curseur utilise formatCurrency(18578, EUR)
+    // (présent au moins une fois — sur le curseur). On vérifie sa présence.
+    const matches = screen.getAllByText((_content, node) =>
+      node?.textContent?.includes('18') === true
+      && node?.textContent?.includes('578') === true,
+    )
+    expect(matches.length).toBeGreaterThan(0)
+  })
+
+  it('cas overflow (totalCash > cibleHaute × 1,5) : affiche le préfixe « > »', () => {
+    // cibleHaute = 1675 × 12 = 20100, × 1,5 = 30150. 50000 > 30150 → overflow.
+    render(<CashMatelasCard totalCash={50_000} profile={PROFIL_AYMERIC} />)
+    expect(screen.getByText(/^> /)).toBeTruthy()
+  })
+
+  it('graduations chiffrées : 4 valeurs (0 / cibleBasse / cibleHaute / cap) rendues', () => {
+    // Cas P3 indépendant non override : charges 3000, cible 18 000-36 000.
+    // Graduations attendues : 0, 18 000, 36 000, 54 000.
+    const profile: ProfileContext = {
+      revenuMensuel:     4_000,
+      chargesMensuelles: 3_000,
+      statutPro:         'independant',
+      stabiliteRevenus:  null,
+    }
+    render(<CashMatelasCard totalCash={28_000} profile={profile} />)
+    // Les valeurs apparaissent en double (mobile compact + desktop) →
+    // on cherche au moins une occurrence pour chaque.
+    expect(screen.getAllByText((_content, node) =>
+      node?.textContent === '0 €',
+    ).length).toBeGreaterThan(0)
+    expect(screen.getAllByText((_content, node) =>
+      node?.textContent?.includes('18') === true
+      && node?.textContent?.includes('000') === true,
+    ).length).toBeGreaterThan(0)
+    expect(screen.getAllByText((_content, node) =>
+      node?.textContent?.includes('36') === true
+      && node?.textContent?.includes('000') === true,
+    ).length).toBeGreaterThan(0)
+    expect(screen.getAllByText((_content, node) =>
+      node?.textContent?.includes('54') === true
+      && node?.textContent?.includes('000') === true,
+    ).length).toBeGreaterThan(0)
+  })
+
+  it('suppression des 3 colonnes redondantes Total / Cible basse / Cible haute', () => {
+    render(<CashMatelasCard totalCash={28_000} profile={{
+      revenuMensuel:     4_000,
+      chargesMensuelles: 3_000,
+      statutPro:         'independant',
+      stabiliteRevenus:  null,
+    }} />)
+    // Les labels littéraux « Total cash », « Cible basse », « Cible haute »
+    // de l'ancienne V1.1 ne doivent plus apparaître.
+    expect(screen.queryByText('Total cash')).toBeNull()
+    expect(screen.queryByText('Cible basse')).toBeNull()
+    expect(screen.queryByText('Cible haute')).toBeNull()
+  })
+})
