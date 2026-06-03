@@ -27,11 +27,18 @@ function mockSupabase(profileRow: Record<string, unknown> | null, throwOnSelect 
   return { from: () => builder } as unknown as SupabaseClient
 }
 
+// V1.1-PATCH — Le helper somme désormais les 4 sous-postes de charges
+// (loyer, autres_credits, charges_fixes, depenses_courantes). La pseudo-
+// colonne `charges_mensuelles` n'existe pas sur la table `profiles`.
+
 describe('getProfileContext — 4 cas de complétude', () => {
-  it('profil complet (CDI) → tous les champs remplis', async () => {
+  it('profil complet (CDI) → charges sommées sur 4 sous-postes', async () => {
     const supabase = mockSupabase({
       revenu_mensuel:     3_500,
-      charges_mensuelles: 2_200,
+      loyer:              800,
+      autres_credits:     200,
+      charges_fixes:      500,
+      depenses_courantes: 700,
       statut_pro:         'Salarié',
       stabilite_revenus:  'Très stables (CDI)',
     })
@@ -44,10 +51,13 @@ describe('getProfileContext — 4 cas de complétude', () => {
     })
   })
 
-  it('charges manquantes → chargesMensuelles = null, le reste OK', async () => {
+  it('aucun sous-poste de charges → chargesMensuelles = null, le reste OK', async () => {
     const supabase = mockSupabase({
       revenu_mensuel:     3_500,
-      charges_mensuelles: null,
+      loyer:              null,
+      autres_credits:     null,
+      charges_fixes:      null,
+      depenses_courantes: null,
       statut_pro:         'Salarié',
       stabilite_revenus:  null,
     })
@@ -57,10 +67,13 @@ describe('getProfileContext — 4 cas de complétude', () => {
     expect(ctx.statutPro).toBe('cdi')
   })
 
-  it('statut manquant → statutPro = null, le reste OK', async () => {
+  it('statut manquant → statutPro = null, charges OK', async () => {
     const supabase = mockSupabase({
       revenu_mensuel:     2_800,
-      charges_mensuelles: 1_500,
+      loyer:              700,
+      autres_credits:     0,
+      charges_fixes:      300,
+      depenses_courantes: 500,
       statut_pro:         null,
       stabilite_revenus:  null,
     })
@@ -72,7 +85,10 @@ describe('getProfileContext — 4 cas de complétude', () => {
   it('tout null → contexte tout null (pas de throw)', async () => {
     const supabase = mockSupabase({
       revenu_mensuel:     null,
-      charges_mensuelles: null,
+      loyer:              null,
+      autres_credits:     null,
+      charges_fixes:      null,
+      depenses_courantes: null,
       statut_pro:         null,
       stabilite_revenus:  null,
     })
@@ -83,6 +99,31 @@ describe('getProfileContext — 4 cas de complétude', () => {
       statutPro:         null,
       stabiliteRevenus:  null,
     })
+  })
+})
+
+// ──────────────────────────────────────────────────────────────────────
+// V1.1-PATCH — Régression visée : cas réel observé en prod sur fynix-mu.
+// Un utilisateur Indépendant avec loyer 375 / crédits 0 / charges 500 /
+// dépenses 800 voyait l'état « données manquantes » au lieu de la cible
+// matelas 6-12 mois × 1 675 € = [10 050 ; 20 100] €.
+// ──────────────────────────────────────────────────────────────────────
+describe('getProfileContext — V1.1-PATCH régression Aymeric', () => {
+  it('charges 375 + 0 + 500 + 800 = 1 675 € (et non null)', async () => {
+    const ctx = await getProfileContext(mockSupabase({
+      revenu_mensuel:     null,
+      loyer:              375,
+      autres_credits:     0,
+      charges_fixes:      500,
+      depenses_courantes: 800,
+      statut_pro:         'Indépendant / Freelance',
+      stabilite_revenus:  null,
+    }), 'u-1')
+    expect(ctx.chargesMensuelles).toBe(1_675)
+    expect(ctx.statutPro).toBe('independant')
+    // Avec un cash de 18 600 € et charges 1 675 €, le helper matelas doit
+    // produire cible basse 10 050 (6× charges) et cible haute 20 100 (12×).
+    // Test du helper matelas couvert separement dans lib/cash/__tests__/.
   })
 })
 
@@ -98,10 +139,13 @@ describe('getProfileContext — robustesse', () => {
     expect(ctx.statutPro).toBeNull()
   })
 
-  it('valeurs ≤ 0 → null (et non 0)', async () => {
+  it('revenu ≤ 0 → null (et non 0)', async () => {
     const ctx = await getProfileContext(mockSupabase({
       revenu_mensuel:     0,
-      charges_mensuelles: -100,
+      loyer:              null,
+      autres_credits:     null,
+      charges_fixes:      null,
+      depenses_courantes: -100, // ignoré silencieusement par le helper
       statut_pro:         'Salarié',
       stabilite_revenus:  null,
     }), 'u-1')
@@ -109,15 +153,18 @@ describe('getProfileContext — robustesse', () => {
     expect(ctx.chargesMensuelles).toBeNull()
   })
 
-  it('valeurs string-typées (Supabase NUMERIC) → parsées', async () => {
+  it('charges string-typées (Supabase NUMERIC sérialisé) → parsées', async () => {
     const ctx = await getProfileContext(mockSupabase({
       revenu_mensuel:     '3500',
-      charges_mensuelles: '2200.50',
+      loyer:              '800',
+      autres_credits:     '0',
+      charges_fixes:      '500.25',
+      depenses_courantes: '900',
       statut_pro:         'Salarié',
       stabilite_revenus:  null,
     }), 'u-1')
     expect(ctx.revenuMensuel).toBe(3_500)
-    expect(ctx.chargesMensuelles).toBe(2_200.5)
+    expect(ctx.chargesMensuelles).toBe(2_200.25)
   })
 })
 

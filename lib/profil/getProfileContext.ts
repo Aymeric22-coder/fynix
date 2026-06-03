@@ -28,6 +28,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { StatutPro, StabiliteRevenus } from '@/lib/cash/matelas'
+import { computeChargesMensuelles } from './charges'
 
 export interface ProfileContext {
   revenuMensuel:     number | null
@@ -115,17 +116,36 @@ export async function getProfileContext(
   userId:   string,
 ): Promise<ProfileContext> {
   try {
+    // V1.1-PATCH — Lecture des 4 sous-postes de charges (migration 015) au
+    // lieu de la colonne `charges_mensuelles` qui N'EXISTE PAS sur la table
+    // `profiles` (elle n'existe que sur `acquisitions_futures`, cf. mig 017).
+    // L'aggregateur calcule déjà cette même somme à la volée (aggregateur.ts
+    // :496) — on partage maintenant le helper `computeChargesMensuelles`.
     const { data, error } = await supabase
       .from('profiles')
-      .select('revenu_mensuel, charges_mensuelles, statut_pro, stabilite_revenus')
+      .select(`
+        revenu_mensuel,
+        loyer, autres_credits, charges_fixes, depenses_courantes,
+        statut_pro, stabilite_revenus
+      `)
       .eq('id', userId)
       .maybeSingle()
     if (error || !data) return { ...NULL_CONTEXT }
+    const row = data as Record<string, unknown>
+    const chargesSum = computeChargesMensuelles({
+      loyer:              row.loyer              as number | string | null,
+      autres_credits:     row.autres_credits     as number | string | null,
+      charges_fixes:      row.charges_fixes      as number | string | null,
+      depenses_courantes: row.depenses_courantes as number | string | null,
+    })
     return {
-      revenuMensuel:     toPositiveNumber((data as Record<string, unknown>).revenu_mensuel),
-      chargesMensuelles: toPositiveNumber((data as Record<string, unknown>).charges_mensuelles),
-      statutPro:         mapStatutProToEnum((data as Record<string, unknown>).statut_pro as string | null),
-      stabiliteRevenus:  mapStabiliteToEnum((data as Record<string, unknown>).stabilite_revenus as string | null),
+      revenuMensuel:     toPositiveNumber(row.revenu_mensuel),
+      // `null` plutôt que `0` quand aucune charge n'est déclarée — sinon
+      // `computeMatelasCible` retournerait `charges_manquantes` ET
+      // `chargesMensuelles: 0` simultanément, confusion potentielle.
+      chargesMensuelles: chargesSum > 0 ? chargesSum : null,
+      statutPro:         mapStatutProToEnum(row.statut_pro as string | null),
+      stabiliteRevenus:  mapStabiliteToEnum(row.stabilite_revenus as string | null),
     }
   } catch {
     return { ...NULL_CONTEXT }
