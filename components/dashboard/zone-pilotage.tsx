@@ -4,10 +4,11 @@
  * Bloc fusionné qui regroupe ce que l'utilisateur doit voir « tout de suite »
  * pour piloter son patrimoine :
  *   1. 4 KPIs Net / Brut+badge / CF immo / Performance
- *   2. (conditionnel) Sous-titre « Ce qui demande ton attention »
- *   3. (conditionnel) Alertes générales (sur-exposition, stale data, etc.)
- *   4. (conditionnel) Alertes drift immobilier
- *   5. (conditionnel) Actions du mois NON-FISCALES (rebalance, cash dormant, DCA en retard)
+ *   2. (V2.5) Donut d'allocation par classe d'actif (taxonomie unifiée V1.2)
+ *   3. (conditionnel) Sous-titre « Ce qui demande ton attention »
+ *   4. (conditionnel) Alertes générales (sur-exposition, stale data, etc.)
+ *   5. (conditionnel) Alertes drift immobilier
+ *   6. (conditionnel) Actions du mois NON-FISCALES (rebalance, cash dormant, DCA en retard)
  *
  * Les actions fiscales (optim PER, AV vs CTO…) sont reléguées dans
  * `ZoneFiscaliteToggle` (Z9), masquées par défaut derrière un toggle.
@@ -21,7 +22,10 @@ import {
   type PropertyDriftSummary,
 } from '@/components/dashboard/real-estate-alerts-panel'
 import { ActionsDuMois } from '@/components/dashboard/actions-du-mois'
-import type { DashboardKpis, DashboardAlert } from '@/lib/analyse/dashboard-pipeline'
+import { AllocationDonut } from '@/components/dashboard/allocation-donut'
+import type {
+  DashboardKpis, DashboardAlert, DashboardAllocationSlice,
+} from '@/lib/analyse/dashboard-pipeline'
 import type { ActionMensuelle } from '@/lib/analyse/recoMensuelles'
 
 interface Props {
@@ -37,6 +41,10 @@ interface Props {
   driftSummaries: PropertyDriftSummary[]
   /** Toutes les actions du mois (fiscales + non-fiscales) — on filtre côté UI. */
   actions: ActionMensuelle[]
+  /** V2.5 — Tranches d'allocation par classe (taxonomie unifiée V1.2). */
+  allocation: DashboardAllocationSlice[]
+  /** V2.5 — Total brut servant d'ancre visuelle au centre du donut. */
+  totalGrossEur: number
 }
 
 export function ZonePilotage({
@@ -46,6 +54,8 @@ export function ZonePilotage({
   alerts,
   driftSummaries,
   actions,
+  allocation,
+  totalGrossEur,
 }: Props) {
   // Y a-t-il quelque chose à signaler en dessous des KPIs ?
   // (au moins une alerte OU une action non-fiscale)
@@ -62,7 +72,11 @@ export function ZonePilotage({
         unvaluedPositionsLabel={unvaluedPositionsLabel}
       />
 
-      {/* (2) Sous-titre uniquement si on a au moins un item à signaler */}
+      {/* (2) V2.5 — Donut d'allocation par classe d'actif (taxonomie unifiée).
+                Le composant `return null` lui-même si `allocation` est vide. */}
+      <AllocationDonut slices={allocation} totalGrossEur={totalGrossEur} />
+
+      {/* (3) Sous-titre uniquement si on a au moins un item à signaler */}
       {hasAttention && (
         <h3 className="text-xs font-medium text-secondary uppercase tracking-widest pt-2">
           Ce qui demande ton attention

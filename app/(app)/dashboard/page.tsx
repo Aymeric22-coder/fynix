@@ -221,7 +221,7 @@ export default async function DashboardPage() {
       {/* Z3 — Jalons franchis */}
       <TropheesCard jalons={jalonsEnrichis} />
 
-      {/* Z4 — Pilotage : KPIs + Alertes (sur-exposition, drift immo) + Actions non-fiscales */}
+      {/* Z4 — Pilotage : KPIs + Donut allocation (V2.5) + Alertes + Actions non-fiscales */}
       <ZonePilotage
         kpis={kpis}
         unvaluedPositionsCount={dashboardData.unvaluedPositionsCount}
@@ -229,6 +229,8 @@ export default async function DashboardPage() {
         alerts={alerts}
         driftSummaries={driftSummaries as PropertyDriftSummary[]}
         actions={actionsDuMois}
+        allocation={dashboardData.allocation}
+        totalGrossEur={dashboardData.kpis.gross_value}
       />
 
       {/* Z5 — Résumé immobilier compact */}
