@@ -53,7 +53,12 @@ export const STEPS: ReadonlyArray<StepMeta> = [
 export const SITUATIONS_FAMILIALES = ['Célibataire', 'En couple', 'Marié(e) / PACS', 'Autre'] as const
 export const STATUTS_PRO           = ['Salarié', 'Indépendant / Freelance', 'Chef d\'entreprise', 'Retraité', 'Autre'] as const
 export const ENFANTS               = ['0', '1', '2', '3', '4+'] as const
-export const STABILITES_REVENUS    = ['Très stables (CDI)', 'Stables mais variables', 'Irréguliers', 'Très variables'] as const
+// V1.4 Vol F — Retrait de la mention « (CDI) » du chip : un indépendant
+// long-terme ou un dirigeant à revenus historiquement réguliers peut
+// légitimement se positionner « Très stables ». Le mapping
+// `mapStabiliteToEnum` continue à retourner 'stable' sur ce libellé
+// (basé sur le tag « stable », pas sur la mention CDI).
+export const STABILITES_REVENUS    = ['Très stables', 'Stables mais variables', 'Irréguliers', 'Très variables'] as const
 // CS5 dette — Source unique des chips Step 4 dans `enveloppesConstants.ts`.
 // On re-exporte ici la liste de libellés pour rester compatible avec les
 // consommateurs existants (Step4.tsx, ProfilCard, etc.). NE PAS éditer

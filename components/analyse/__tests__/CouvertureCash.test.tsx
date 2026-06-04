@@ -101,3 +101,37 @@ describe('CouvertureCash — V1.3-PATCH harmonisation charges seules', () => {
     expect(container.firstChild).toBeNull()
   })
 })
+
+// ──────────────────────────────────────────────────────────────────────
+// V1.4 Vol B — Suppression du verdict qualificatif (dissonance vs /cash)
+// ──────────────────────────────────────────────────────────────────────
+describe('CouvertureCash — V1.4 Vol B suppression verdict', () => {
+  it('aucun verdict qualificatif n\'est rendu (« Excellent », « Cash excessif », etc.)', () => {
+    const data = patrimoine({ totalCash: 50_000, charges: 2_000, mensualitesImmo: 0 })
+    render(<CouvertureCash data={data} />)
+    expect(screen.queryByText(/Excellent coussin/i)).toBeNull()
+    expect(screen.queryByText(/Cash excessif/i)).toBeNull()
+    expect(screen.queryByText(/Correct — visez/i)).toBeNull()
+    expect(screen.queryByText(/Épargne de précaution insuffisante/i)).toBeNull()
+  })
+
+  it('phrase neutre de redirection vers /cash est présente', () => {
+    const data = patrimoine({ totalCash: 10_000, charges: 2_000, mensualitesImmo: 0 })
+    render(<CouvertureCash data={data} />)
+    expect(screen.getByText(/Diagnostic complet/i)).toBeTruthy()
+  })
+
+  it('cas bas (cash 3 000 / 2 000) → métrique factuelle 1,5 mois, pas de verdict', () => {
+    const data = patrimoine({ totalCash: 3_000, charges: 2_000, mensualitesImmo: 0 })
+    render(<CouvertureCash data={data} />)
+    expect(screen.getByText(/1\.5 mois/)).toBeTruthy()
+    expect(screen.queryByText(/insuffisante/i)).toBeNull()
+  })
+
+  it('cas élevé (cash 30 000 / 2 000) → métrique factuelle 15 mois, pas de verdict', () => {
+    const data = patrimoine({ totalCash: 30_000, charges: 2_000, mensualitesImmo: 0 })
+    render(<CouvertureCash data={data} />)
+    expect(screen.getByText(/15\.0 mois/)).toBeTruthy()
+    expect(screen.queryByText(/excessif/i)).toBeNull()
+  })
+})

@@ -514,11 +514,39 @@ export function calculerSolidite(p: PatrimoineComplet): Score {
   const seuilBas  = matelas.applicable ? matelas.multiplicateurMin : 3
   const seuilHaut = matelas.applicable ? matelas.multiplicateurMax : 6
 
+  // V1.4 Vol A — Wording contextualisé au statut. Le qualificatif dépend
+  // de la position de `moisCouverts` par rapport aux multiplicateurs réels :
+  //   - matelas applicable → 4 paliers (insuffisant / dans la cible /
+  //     au-delà / bien au-delà), bornes calculées sur seuilBas-seuilHaut.
+  //   - profil incomplet (fallback 3/6) → 3 paliers historiques pour
+  //     préserver l'expérience pre-V1.4 (« fragile / correct / excellent »).
+  // L'échelle de points (-20 / +5 / +20) reste inchangée — seul le wording
+  // change, pour fermer la dissonance observée en prod : « 11 mois (très
+  // bien) » pour un indépendant-instable (cible 9-12) → désormais « dans
+  // la cible » (11 ∈ [9 ; 12]).
   let coussinTxt = 'coussin OK'
   if (charges > 0) {
-    if (moisCouverts < seuilBas)        { pts -= 20; coussinTxt = `${moisCouverts.toFixed(1)} mois (fragile)` }
-    else if (moisCouverts < seuilHaut)  { pts +=  5; coussinTxt = `${moisCouverts.toFixed(1)} mois (correct)` }
-    else                                { pts += 20; coussinTxt = `${moisCouverts.toFixed(0)} mois (très bien)` }
+    if (matelas.applicable) {
+      const capHaut = seuilHaut * 1.5
+      if (moisCouverts < seuilBas) {
+        pts -= 20
+        coussinTxt = `${moisCouverts.toFixed(1)} mois (insuffisant)`
+      } else if (moisCouverts <= seuilHaut) {
+        pts +=  5
+        coussinTxt = `${moisCouverts.toFixed(1)} mois (dans la cible)`
+      } else if (moisCouverts <= capHaut) {
+        pts += 20
+        coussinTxt = `${moisCouverts.toFixed(1)} mois (au-delà de la cible)`
+      } else {
+        pts += 20
+        coussinTxt = `${moisCouverts.toFixed(0)} mois (bien au-delà de la cible)`
+      }
+    } else {
+      // Fallback profil incomplet : seuils 3/6 universels.
+      if (moisCouverts < seuilBas)        { pts -= 20; coussinTxt = `${moisCouverts.toFixed(1)} mois (insuffisant)` }
+      else if (moisCouverts < seuilHaut)  { pts +=  5; coussinTxt = `${moisCouverts.toFixed(1)} mois (correct)` }
+      else                                { pts += 20; coussinTxt = `${moisCouverts.toFixed(0)} mois (excellent)` }
+    }
   }
 
   // d) Krach −30 % sur actifs risqués (inchangé)

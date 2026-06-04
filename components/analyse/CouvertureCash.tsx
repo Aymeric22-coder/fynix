@@ -26,11 +26,6 @@ export function CouvertureCash({ data }: Props) {
   // discussion sur la nuance sémantique abandonnée.
   const charges      = data.fireInputs.charges_mensuelles
   const moisCouverts = charges > 0 ? data.totalCash / charges : 0
-  const niveau =
-    moisCouverts < 3   ? { tone: 'rouge',  label: 'Épargne de précaution insuffisante' } :
-    moisCouverts < 6   ? { tone: 'orange', label: 'Correct — visez 6 mois' } :
-    moisCouverts < 12  ? { tone: 'vert',   label: 'Excellent coussin de sécurité' } :
-                         { tone: 'or',     label: 'Cash excessif — une partie pourrait être investie' }
 
   return (
     <div className="card p-5">
@@ -46,20 +41,16 @@ export function CouvertureCash({ data }: Props) {
         )}
       </div>
       <JaugeCoussin mois={moisCouverts} />
-      <p className={`text-xs mt-3 ${
-        niveau.tone === 'rouge'  ? 'text-danger' :
-        niveau.tone === 'orange' ? 'text-warning' :
-        niveau.tone === 'or'     ? 'text-amber-400' :
-                                   'text-accent'
-      }`}>
-        {niveau.label}
+      {/* V1.4 Vol B — Verdict qualificatif retiré pour fermer la dissonance
+          observée en prod : « Excellent coussin » ici + « Excédent de
+          liquidité » sur /cash semblaient contradictoires. Désormais :
+          /analyse = observation factuelle, /cash = diagnostic actionnable. */}
+      <p className="text-[11px] text-muted mt-3">
+        Diagnostic complet sur le bloc Matelas de <span className="text-secondary">/cash</span>.
       </p>
-      {/* V1.3 Volet C — Renvoi vers la version contextualisée par statut
-          pro sur /cash. La logique de CE composant reste sur la métrique
-          brute « mois de charges couverts », inchangée. */}
       <Link
         href="/cash#matelas"
-        className="inline-flex items-center gap-1 mt-3 text-[11px] text-accent/70 hover:text-accent transition-colors"
+        className="inline-flex items-center gap-1 mt-2 text-[11px] text-accent/70 hover:text-accent transition-colors"
       >
         Voir mon matelas de sécurité contextualisé
         <ArrowRight size={11} />

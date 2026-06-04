@@ -3,25 +3,18 @@ import { PiggyBank } from 'lucide-react'
 import { createServerClient } from '@/lib/supabase/server'
 import { PageHeader }       from '@/components/shared/page-header'
 import { EmptyState }       from '@/components/ui/empty-state'
-import { Badge }            from '@/components/ui/badge'
 import { CashActions }      from '@/components/pages/cash-actions'
-import { CashEditRow }      from '@/components/pages/cash-edit-row'
 import { CashMatelasCard }  from '@/components/pages/cash-matelas-card'
 import { CashKpis }         from '@/components/pages/cash-kpis'
 import { CashIntentsList }  from '@/components/pages/cash-intents-list'
-import { formatCurrency, formatPercent, formatDate } from '@/lib/utils/format'
+import { CashAccountsGrouped } from '@/components/pages/cash-accounts-grouped'
+import { formatCurrency } from '@/lib/utils/format'
 import { computeCashTotals } from '@/lib/cash/totals'
 import { computeMatelasEffectif } from '@/lib/cash/intents'
 import { getProfileContext } from '@/lib/profil/getProfileContext'
 import type { CashIntent } from '@/lib/cash/intents'
 
 export const metadata: Metadata = { title: 'Cash & Épargne' }
-
-const ACCOUNT_LABELS: Record<string, string> = {
-  livret_a: 'Livret A', ldds: 'LDDS', lep: 'LEP',
-  livret_jeune: 'Livret Jeune', pel: 'PEL', cel: 'CEL',
-  compte_courant: 'Compte courant', compte_epargne: 'Compte épargne', other: 'Autre',
-}
 
 export default async function CashPage() {
   const supabase = await createServerClient()
@@ -130,35 +123,9 @@ export default async function CashPage() {
             />
           </div>
 
-          <div className="space-y-3">
-            {accounts.map((account) => {
-              const annualInterest = account.balance * (account.interest_rate / 100)
-              return (
-                <CashEditRow key={account.id} account={account}>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <h3 className="font-medium text-primary">{account.asset?.name}</h3>
-                      <Badge variant="muted">{ACCOUNT_LABELS[account.account_type] ?? account.account_type}</Badge>
-                    </div>
-                    <p className="text-xs text-secondary">
-                      {account.bank_name && `${account.bank_name} · `}
-                      Mis à jour {formatDate(account.balance_date, 'medium')}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-lg financial-value font-semibold text-primary">
-                      {formatCurrency(account.balance, 'EUR')}
-                    </p>
-                    {account.interest_rate > 0 && (
-                      <p className="text-xs text-accent mt-0.5">
-                        {formatPercent(account.interest_rate)} · {formatCurrency(annualInterest, 'EUR')} / an
-                      </p>
-                    )}
-                  </div>
-                </CashEditRow>
-              )
-            })}
-          </div>
+          {/* V1.4 Vol C — Groupage Épargne / Liquidité courante.
+              V1.4 Vol D — Badge fraîcheur balance_date intégré aux cartes. */}
+          <CashAccountsGrouped accounts={accounts} />
 
           {/* V1.2 Volet E — Section Cash volontaire (ancre #cash-intents) */}
           <CashIntentsList

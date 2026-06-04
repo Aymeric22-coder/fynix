@@ -6,6 +6,11 @@ import { Button }  from '@/components/ui/button'
 import { Field, Input, Select, FormGrid } from '@/components/ui/field'
 import { useForm } from '@/hooks/use-form'
 import { formatCurrency } from '@/lib/utils/format'
+// V1.4 Vol E — Taux réglementés en vigueur (Banque de France, 1er février 2026).
+// Source de vérité dans `lib/cash/taux-reglementes.ts` — voir ce fichier
+// pour les notes (PEL = plans ouverts depuis 2026-01-01, etc.) et la
+// procédure de mise à jour à chaque révision réglementaire.
+import { DEFAULT_RATES } from '@/lib/cash/taux-reglementes'
 
 interface InitialData {
   id:            string
@@ -43,11 +48,6 @@ const ACCOUNT_OPTIONS = [
   { value: 'compte_epargne',label: 'Compte épargne' },
   { value: 'other',         label: 'Autre' },
 ]
-
-// Taux réglementés courants (indicatifs)
-const DEFAULT_RATES: Record<string, number> = {
-  livret_a: 3.0, ldds: 3.0, lep: 4.0, livret_jeune: 3.0, pel: 2.25,
-}
 
 export function AddCashForm({ open, onClose, initialData }: Props) {
   const router = useRouter()
