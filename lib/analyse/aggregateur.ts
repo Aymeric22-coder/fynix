@@ -418,6 +418,9 @@ interface ProfileLoaded {
   fire_type:            string | null
   priorite:             string | null
   stabilite_revenus:    string | null
+  /** V1.3 — statut_pro brut exposé pour le moteur de scores (Solidité)
+   *  qui paramètre désormais le seuil coussin via computeMatelasCible. */
+  statut_pro:           string | null
   /** CS4 — Boussole 4 axes. NULL si non migré, alors fallback sur `priorite`. */
   objectifs_axes:       { rendement: number; securite: number; optimisation: number; transmission: number } | null
 }
@@ -503,6 +506,7 @@ async function loadProfile(userId: string): Promise<ProfileLoaded> {
       charges_mensuelles: 0, risk_score: 50, enveloppes: [], tmi_rate: null,
       situation_familiale: null, enfants: null, fire_type: null,
       priorite: null, stabilite_revenus: null,
+      statut_pro: null,
       objectifs_axes: null,
     }
   }
@@ -584,6 +588,11 @@ async function loadProfile(userId: string): Promise<ProfileLoaded> {
     priorite:            p.priorite,
     // QW2 — valeur EFFECTIVE (saisie ou fallback statut_pro), pas le brut.
     stabilite_revenus:   stabiliteEffective,
+    // V1.3 — statut_pro brut conservé (en plus de stabilite_revenus
+    // dérivée) pour permettre à `scores.ts > calculerSolidite` et à
+    // `recoMensuelles.ts` de calibrer les seuils coussin via
+    // `computeMatelasCible`.
+    statut_pro:          p.statut_pro,
     // CS4 — Boussole 4 axes (jsonb). NULL = profil pre-CS4 → fallback priorite.
     objectifs_axes:      p.objectifs_axes,
   }
@@ -928,6 +937,10 @@ export async function getPatrimoineComplet(userId: string): Promise<PatrimoineCo
     tmi_estime:           profile.tmi_rate === null,
     actions_eu_value:     actionsEuValue,
     stabilite_revenus:    profile.stabilite_revenus,
+    /** V1.3 — statut_pro brut exposé pour la calibration des seuils
+     *  coussin dans `calculerSolidite` et `recoMensuelles` via
+     *  `computeMatelasCible`. */
+    statut_pro:           profile.statut_pro,
     priorite:             profile.priorite,
     fire_type:            profile.fire_type,
     situation_familiale:  profile.situation_familiale,

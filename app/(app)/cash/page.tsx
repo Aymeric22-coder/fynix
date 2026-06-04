@@ -118,14 +118,17 @@ export default async function CashPage() {
           {/* V1.1 C.3 — KPI cash : intérêts annuels + taux moyen pondéré */}
           <CashKpis accounts={accountsForKpi} />
 
-          {/* V1.1 C.2 — Bloc matelas (4 états) + V1.2 D — statut sur effectif */}
-          <CashMatelasCard
-            totalCash={total}
-            profile={profileContext}
-            cashEffectif={matelasEffectif.cashEffectif}
-            totalIntentsActives={matelasEffectif.totalIntentsActives}
-            countIntentsActives={matelasEffectif.countIntentsActives}
-          />
+          {/* V1.1 C.2 — Bloc matelas (4 états) + V1.2 D — statut sur effectif.
+              V1.3 Vol C — ancre #matelas pour scroll depuis CouvertureCash. */}
+          <div id="matelas" className="scroll-mt-20">
+            <CashMatelasCard
+              totalCash={total}
+              profile={profileContext}
+              cashEffectif={matelasEffectif.cashEffectif}
+              totalIntentsActives={matelasEffectif.totalIntentsActives}
+              countIntentsActives={matelasEffectif.countIntentsActives}
+            />
+          </div>
 
           <div className="space-y-3">
             {accounts.map((account) => {

@@ -24,6 +24,8 @@ import {
 } from './constants'
 import { trackingErrorScore, BENCHMARK_CLASSES_PATRIMOINE } from './benchmarks'
 import { normalizeStabiliteRevenus, type StabiliteRevenusId } from '../profil/calculs'
+import { computeMatelasCible } from '@/lib/cash/matelas'
+import { mapStatutProToEnum, mapStabiliteToEnum } from '@/lib/profil/getProfileContext'
 
 // ─────────────────────────────────────────────────────────────────
 // Type étendu local : permet d'utiliser les champs profil ajoutés en
@@ -40,6 +42,9 @@ type FireInputsExt = PatrimoineComplet['fireInputs'] & {
   fire_type?:            string | null
   situation_familiale?:  string | null
   enfants?:              string | null
+  /** V1.3 — statut_pro brut, lu depuis `aggregateur.fireInputs.statut_pro`.
+   *  Sert à calibrer les seuils coussin via `computeMatelasCible`. */
+  statut_pro?:           string | null
 }
 
 function ext(p: PatrimoineComplet): FireInputsExt {
@@ -480,16 +485,39 @@ export function calculerSolidite(p: PatrimoineComplet): Score {
     else                            { pts -= 10; couvTxt = `${tauxCouverture.toFixed(0)} % (effort important)` }
   }
 
-  // c) Coussin de sécurité — uniquement les charges réelles
-  //    (charges perso + effort mensuel net immo s'il est négatif).
+  // c) Coussin de sécurité — V1.3 : seuils paramétrés par statut_pro via
+  //    MATELAS_MULTIPLIERS, single source of truth avec /cash.
+  //
+  // Sémantique Solidité = résilience absolue → on utilise le cash BRUT
+  // (l'utilisateur peut casser ses intentions volontaires en urgence).
+  // Recos `cash-excessif` et reco mensuelle utilisent au contraire le
+  // cash EFFECTIF (cf. V1.2 Volet D + V1.3 Volet B).
+  //
+  // Asymétrie volontaire et documentée :
+  //   - dénominateur de `moisCouverts` = charges + effortImmoNet
+  //     (mesure de coût total mensuel de vie en urgence)
+  //   - multiplicateurs `computeMatelasCible` calculés sur `charges` SEULES
+  //     (cohérent avec le bloc Matelas /cash, qui n'inclut pas l'immo)
+  //   Un utilisateur avec immo négatif aura donc besoin de plus de cash
+  //   pour valider les mêmes multiplicateurs, ce qui est sain.
   const effortImmoMensuelNet = p.revenuPassifImmo < 0 ? -p.revenuPassifImmo : 0
-  const chargesACouvrir = p.fireInputs.charges_mensuelles + effortImmoMensuelNet
+  const charges = p.fireInputs.charges_mensuelles
+  const chargesACouvrir = charges + effortImmoMensuelNet
   const moisCouverts = chargesACouvrir > 0 ? p.totalCash / chargesACouvrir : 0
+
+  const matelas = computeMatelasCible({
+    chargesMensuelles: charges,
+    statutPro:         mapStatutProToEnum(ext(p).statut_pro),
+    stabiliteRevenus:  mapStabiliteToEnum(ext(p).stabilite_revenus),
+  })
+  const seuilBas  = matelas.applicable ? matelas.multiplicateurMin : 3
+  const seuilHaut = matelas.applicable ? matelas.multiplicateurMax : 6
+
   let coussinTxt = 'coussin OK'
   if (chargesACouvrir > 0) {
-    if (moisCouverts < 3)       { pts -= 20; coussinTxt = `${moisCouverts.toFixed(1)} mois (fragile)` }
-    else if (moisCouverts < 6)  { pts +=  5; coussinTxt = `${moisCouverts.toFixed(1)} mois (correct)` }
-    else                        { pts += 20; coussinTxt = `${moisCouverts.toFixed(0)} mois (très bien)` }
+    if (moisCouverts < seuilBas)        { pts -= 20; coussinTxt = `${moisCouverts.toFixed(1)} mois (fragile)` }
+    else if (moisCouverts < seuilHaut)  { pts +=  5; coussinTxt = `${moisCouverts.toFixed(1)} mois (correct)` }
+    else                                { pts += 20; coussinTxt = `${moisCouverts.toFixed(0)} mois (très bien)` }
   }
 
   // d) Krach −30 % sur actifs risqués (inchangé)
@@ -534,8 +562,11 @@ export function calculerSolidite(p: PatrimoineComplet): Score {
         '     < 33 % → +20 sain / 33-40 % → +5 / > 40 % → −20\n' +
         '  b) Couverture loyers/mensualités :\n' +
         '     > 110 % → +25 / 90-110 % → +10 / 70-90 % → 0 / < 70 % → −10\n' +
-        '  c) Coussin cash vs charges réelles (perso + effort immo net) :\n' +
-        '     < 3 mois → −20 / 3-6 mois → +5 / ≥ 6 mois → +20\n' +
+        '  c) Coussin cash vs charges réelles (perso + effort immo net) — V1.3 :\n' +
+        '     seuils paramétrés par statut_pro via MATELAS_MULTIPLIERS\n' +
+        '     (CDI 3/6, indépendant 6/12, stable forcé 3/6, instable forcé 9/12)\n' +
+        '     < seuilBas → −20 / seuilBas-seuilHaut → +5 / ≥ seuilHaut → +20\n' +
+        '     Fallback 3/6 si profil incomplet.\n' +
         '  d) Krach −30 % sur actifs risqués : impact > 30 % du net → −10, < 10 % → +10\n' +
         '  e) Stabilité des revenus déclarée :\n' +
         '     CDI +5 / retraite 0 / indépendant −5 / chômage −15',

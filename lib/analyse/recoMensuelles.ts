@@ -21,6 +21,8 @@ import type { PatrimoineComplet } from '@/types/analyse'
 import { formatEur } from '@/lib/utils/format'
 import { BENCHMARK_CLASSES_PATRIMOINE } from './benchmarks'
 import type { OpportuniteFiscale } from './optimiseurFiscal'
+import { computeMatelasCible } from '@/lib/cash/matelas'
+import { mapStatutProToEnum, mapStabiliteToEnum } from '@/lib/profil/getProfileContext'
 
 // ─────────────────────────────────────────────────────────────────
 // Seuils
@@ -258,10 +260,21 @@ function detectCashDormant(p: PatrimoineComplet, seuilMois: number): ActionMensu
   const moisCouverts = p.totalCash / charges
   if (moisCouverts <= seuilMois) return null
 
-  // On suggère d'investir l'EXCEDENT au-delà du coussin de sécurité
-  // (par défaut 6 mois — borne inférieure de la fourchette classique).
-  const coussinCible  = charges * 6
-  const aInvestir     = Math.max(0, Math.round(p.totalCash - coussinCible))
+  // V1.3 — Cible coussin paramétrée par statut_pro via computeMatelasCible
+  // (cohérence avec /cash et calculerSolidite). Fallback charges×6 si
+  // profil incomplet (préserve le comportement V1.0-V1.2).
+  const matelas = computeMatelasCible({
+    chargesMensuelles: charges,
+    statutPro:         mapStatutProToEnum((p.fireInputs as { statut_pro?: string | null }).statut_pro ?? null),
+    stabiliteRevenus:  mapStabiliteToEnum((p.fireInputs as { stabilite_revenus?: string | null }).stabilite_revenus ?? null),
+  })
+  const coussinCible = matelas.applicable ? (matelas.cibleHauteEur as number) : charges * 6
+
+  // V1.2/V1.3 — Sémantique recos = excédent réellement investissable
+  // → cash EFFECTIF (hors intentions volontaires déjà engagées). Pour les
+  // fixtures pre-V1.2 sans `cashEffectif`, fallback sur totalCash.
+  const cashAlerte = p.cashEffectif ?? p.totalCash
+  const aInvestir  = Math.max(0, Math.round(cashAlerte - coussinCible))
   if (aInvestir < 500) return null  // pas la peine pour de petits montants
 
   // V2.2-BIS — Plafond réaliste. Réinvestir 80k€ d'un coup n'est pas

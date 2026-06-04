@@ -7,6 +7,8 @@
  */
 'use client'
 
+import Link from 'next/link'
+import { ArrowRight } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils/format'
 import type { PatrimoineComplet } from '@/types/analyse'
 
@@ -47,6 +49,16 @@ export function CouvertureCash({ data }: Props) {
       }`}>
         {niveau.label}
       </p>
+      {/* V1.3 Volet C — Renvoi vers la version contextualisée par statut
+          pro sur /cash. La logique de CE composant reste sur la métrique
+          brute « mois de charges couverts », inchangée. */}
+      <Link
+        href="/cash#matelas"
+        className="inline-flex items-center gap-1 mt-3 text-[11px] text-accent/70 hover:text-accent transition-colors"
+      >
+        Voir mon matelas de sécurité contextualisé
+        <ArrowRight size={11} />
+      </Link>
     </div>
   )
 }

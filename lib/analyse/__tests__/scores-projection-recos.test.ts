@@ -229,13 +229,20 @@ describe('calculerSolidite', () => {
     expect(sCdi.value!).toBe(Math.min(100, sBase.value! + 5))
   })
 
-  it('chomage → -15 pts vs profil sans stabilité renseignée', () => {
+  it('chomage → -30 pts vs profil sans stabilité (V1.3 cumule -15 stabilité + -15 coussin)', () => {
+    // V1.3 — La stabilité « Chômage » → mappée 'instable' par
+    // `mapStabiliteToEnum` → override `MATELAS_MULTIPLIERS.overrideInstable`
+    // (seuils 9/12 mois au lieu du fallback 3/6).
+    // Fixture : totalCash 20 000 €, charges 2 000 € → moisCouverts = 10.
+    //   Avant V1.3 : 10 ≥ 6  → +20 pts coussin
+    //   Après V1.3 : 9 ≤ 10 < 12 → +5 pts coussin
+    // Delta coussin = -15, delta stabilité = -15 → total -30.
     const base = patrimoine()
     const sBase = calculerSolidite(base)
     const sChomage = calculerSolidite(patrimoine({
       fireInputs: { ...base.fireInputs, stabilite_revenus: 'Chômage' } as never,
     }))
-    expect(sChomage.value!).toBe(Math.max(0, sBase.value! - 15))
+    expect(sChomage.value!).toBe(Math.max(0, sBase.value! - 30))
   })
 
   it('expose la stabilité dans les inputs d\'explication', () => {
