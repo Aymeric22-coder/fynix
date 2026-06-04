@@ -485,25 +485,26 @@ export function calculerSolidite(p: PatrimoineComplet): Score {
     else                            { pts -= 10; couvTxt = `${tauxCouverture.toFixed(0)} % (effort important)` }
   }
 
-  // c) Coussin de sécurité — V1.3 : seuils paramétrés par statut_pro via
-  //    MATELAS_MULTIPLIERS, single source of truth avec /cash.
+  // c) Coussin de sécurité — V1.3 + V1.3-PATCH.
   //
   // Sémantique Solidité = résilience absolue → on utilise le cash BRUT
   // (l'utilisateur peut casser ses intentions volontaires en urgence).
   // Recos `cash-excessif` et reco mensuelle utilisent au contraire le
   // cash EFFECTIF (cf. V1.2 Volet D + V1.3 Volet B).
   //
-  // Asymétrie volontaire et documentée :
-  //   - dénominateur de `moisCouverts` = charges + effortImmoNet
-  //     (mesure de coût total mensuel de vie en urgence)
-  //   - multiplicateurs `computeMatelasCible` calculés sur `charges` SEULES
-  //     (cohérent avec le bloc Matelas /cash, qui n'inclut pas l'immo)
-  //   Un utilisateur avec immo négatif aura donc besoin de plus de cash
-  //   pour valider les mêmes multiplicateurs, ce qui est sain.
-  const effortImmoMensuelNet = p.revenuPassifImmo < 0 ? -p.revenuPassifImmo : 0
+  // V1.3-PATCH — Harmonisation sur `charges_mensuelles` SEULES (sans
+  // effort immo) pour cohérence end-to-end avec :
+  //   - le bloc Matelas /cash (composant `CashMatelasCard` V1.x)
+  //   - le composant `CouvertureCash` /analyse (corrigé en V1.3-PATCH)
+  //   - la reco mensuelle `detectCashDormant` (V1.3 Volet B)
+  // L'utilisateur voit désormais une base de charges identique partout.
+  // L'asymétrie historique V1.3 (numérateur incluant l'immo) créait une
+  // dissonance UX directement visible (Aymeric : 5,1 mois sur /analyse
+  // vs 3-6 mois cible /cash → confusion). La perte de la nuance sémantique
+  // (« coût total mensuel de vie en urgence ») est compensée par la
+  // gain de lisibilité.
   const charges = p.fireInputs.charges_mensuelles
-  const chargesACouvrir = charges + effortImmoMensuelNet
-  const moisCouverts = chargesACouvrir > 0 ? p.totalCash / chargesACouvrir : 0
+  const moisCouverts = charges > 0 ? p.totalCash / charges : 0
 
   const matelas = computeMatelasCible({
     chargesMensuelles: charges,
@@ -514,7 +515,7 @@ export function calculerSolidite(p: PatrimoineComplet): Score {
   const seuilHaut = matelas.applicable ? matelas.multiplicateurMax : 6
 
   let coussinTxt = 'coussin OK'
-  if (chargesACouvrir > 0) {
+  if (charges > 0) {
     if (moisCouverts < seuilBas)        { pts -= 20; coussinTxt = `${moisCouverts.toFixed(1)} mois (fragile)` }
     else if (moisCouverts < seuilHaut)  { pts +=  5; coussinTxt = `${moisCouverts.toFixed(1)} mois (correct)` }
     else                                { pts += 20; coussinTxt = `${moisCouverts.toFixed(0)} mois (très bien)` }
@@ -577,7 +578,7 @@ export function calculerSolidite(p: PatrimoineComplet): Score {
         { label: 'Loyers bruts / mois',           value: `${loyersBrutsTotal.toFixed(0)} €` },
         { label: 'Couverture mensualités',        value: p.mensualitesImmoTotal > 0 ? couvTxt : '—' },
         { label: 'Cash disponible',               value: `${p.totalCash.toFixed(0)} €` },
-        { label: 'Coussin de sécurité',           value: chargesACouvrir > 0 ? `${moisCouverts.toFixed(1)} mois (sur ${chargesACouvrir.toFixed(0)} €/mois de charges)` : '—' },
+        { label: 'Coussin de sécurité',           value: charges > 0 ? `${moisCouverts.toFixed(1)} mois (sur ${charges.toFixed(0)} €/mois de charges)` : '—' },
         { label: 'Impact krach −30 %',            value: `${impactKrach.toFixed(0)} € (${partImpact.toFixed(0)} % du net)` },
         { label: 'Stabilité des revenus',
           value: stabiliteId

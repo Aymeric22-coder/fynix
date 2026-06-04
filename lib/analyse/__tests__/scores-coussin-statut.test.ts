@@ -161,4 +161,26 @@ describe('V1.3 Volet A — coussin paramétré par statut_pro', () => {
     // Mesure brut : 20 000 / 2 000 = 10 mois → très bien.
     expect(extractMoisCouverts(p)).toMatch(/10 mois \(très bien\)/i)
   })
+
+  // ────────────────────────────────────────────────────────────────────
+  // V1.3-PATCH — Harmonisation : `moisCouverts` désormais calculé sur
+  // `charges_mensuelles` SEULES (sans effort immo). Cohérent avec
+  // /cash bloc Matelas + composant CouvertureCash /analyse.
+  // ────────────────────────────────────────────────────────────────────
+  it('V1.3-PATCH : effort immo 1 500 € + charges 1 500 € + cash 9 000 € → 6 mois (sur charges seules)', () => {
+    // Avant V1.3-PATCH : moisCouverts = 9 000 / (1 500 + 1 500) = 3 → fragile.
+    // Après V1.3-PATCH : moisCouverts = 9 000 / 1 500 = 6 → très bien (CDI seuilHaut = 6).
+    const p = patrimoine(9_000, 'Salarié')
+    p.fireInputs.charges_mensuelles = 1_500
+    // On simule un cash-flow immo négatif de 1 500 €/mois.
+    p.revenuPassifImmo = -1_500
+    expect(extractMoisCouverts(p)).toMatch(/6 mois \(très bien\)/i)
+  })
+
+  it('V1.3-PATCH : utilisateur sans effort immo → comportement strictement inchangé vs V1.3', () => {
+    // Sans immo (revenuPassifImmo = 0), le numérateur est identique
+    // à V1.3 (charges seules dans les 2 cas).
+    const p = patrimoine(12_000, 'Salarié')
+    expect(extractMoisCouverts(p)).toMatch(/6 mois \(très bien\)/i)
+  })
 })

@@ -19,8 +19,13 @@ interface Props {
 export function CouvertureCash({ data }: Props) {
   if (data.comptes.length === 0) return null
 
-  const chargesTotales = data.fireInputs.charges_mensuelles + data.mensualitesImmoTotal
-  const moisCouverts   = chargesTotales > 0 ? data.totalCash / chargesTotales : 0
+  // V1.3-PATCH — Harmonisation sur `charges_mensuelles` SEULES (sans
+  // mensualités immo) pour cohérence avec `/cash` (bloc Matelas) et
+  // `scores.ts > calculerSolidite`. L'utilisateur voit désormais la
+  // même base de charges partout. Cf. commentaire scores.ts pour la
+  // discussion sur la nuance sémantique abandonnée.
+  const charges      = data.fireInputs.charges_mensuelles
+  const moisCouverts = charges > 0 ? data.totalCash / charges : 0
   const niveau =
     moisCouverts < 3   ? { tone: 'rouge',  label: 'Épargne de précaution insuffisante' } :
     moisCouverts < 6   ? { tone: 'orange', label: 'Correct — visez 6 mois' } :
@@ -34,9 +39,9 @@ export function CouvertureCash({ data }: Props) {
         <p className="text-2xl font-semibold financial-value text-primary">
           {moisCouverts.toFixed(1)} mois
         </p>
-        {chargesTotales > 0 && (
+        {charges > 0 && (
           <p className="text-xs text-secondary">
-            sur {formatCurrency(chargesTotales, 'EUR', { decimals: 0 })}/mois de charges totales
+            sur {formatCurrency(charges, 'EUR', { decimals: 0 })}/mois de charges
           </p>
         )}
       </div>
