@@ -27,6 +27,7 @@ export const GET = withAuth(async (req: Request, user: User) => {
     .from('portfolio_snapshots')
     .select('snapshot_date, snapshot_at, total_market_value, total_cost_basis, total_pnl, total_pnl_pct, positions_count, valued_count, source')
     .eq('user_id', user.id)
+    .is('envelope_id', null)
     .order('snapshot_date', { ascending: false })
     .limit(limit)
 

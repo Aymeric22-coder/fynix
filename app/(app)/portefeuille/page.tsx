@@ -79,6 +79,7 @@ export default async function PortefeuillePage({ searchParams }: Props) {
     .from('portfolio_snapshots')
     .select('snapshot_date, total_market_value, total_cost_basis, total_pnl')
     .eq('user_id', user!.id)
+    .is('envelope_id', null)
     .order('snapshot_date', { ascending: false })
     .limit(90)
   const rawSnapshots: SnapshotPoint[] = (snapshotRows ?? []).slice().reverse().map((r) => ({
