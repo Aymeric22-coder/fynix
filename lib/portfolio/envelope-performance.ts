@@ -24,7 +24,8 @@
 
 import type { PositionValuation } from './types'
 import type { ValuePoint, CashFlow } from './analytics'
-import { computeTWR, computeMWR } from './analytics'
+import { computeTWR, computeMWRDetailed } from './analytics'
+import { resolveMwrDisplay, type MwrDisplay } from './mwr-display'
 
 export interface EnvelopePerformance {
   envelopeId:       string
@@ -47,6 +48,12 @@ export interface EnvelopePerformance {
   twr:              number | null
   /** Money-Weighted Return (IRR annualisé). `null` si < 2 snapshots. */
   mwr:              number | null
+  /**
+   * MWR prêt pour l'affichage (SPRINT 2) : valeur absolue de la période sur
+   * fenêtre < 180 j, annualisée au-delà, + libellé contextuel. `null` si < 2
+   * snapshots. L'UI consomme ce champ ; `mwr` reste l'IRR annualisé brut.
+   */
+  mwrDisplay:       MwrDisplay | null
   /** Part de la valeur totale du portefeuille (toutes enveloppes confondues). */
   weightPct:        number
 }
@@ -108,7 +115,9 @@ export function computeEnvelopePerformance(
     // `computeTWR` / `computeMWR` qui exigent au moins un point initial
     // et un point final). En dessous → null sans erreur.
     const twr = snapshots.length >= 2 ? computeTWR(snapshots, cashFlows) : null
-    const mwr = snapshots.length >= 2 ? computeMWR(snapshots, cashFlows) : null
+    const mwrDetailed = snapshots.length >= 2 ? computeMWRDetailed(snapshots, cashFlows) : null
+    const mwr        = mwrDetailed?.annualized ?? null
+    const mwrDisplay = resolveMwrDisplay(mwrDetailed)
 
     const weightPct =
       args.totalMarketValueRef > 0
@@ -125,6 +134,7 @@ export function computeEnvelopePerformance(
       realizedPnlTtm:   args.realizedPnlTtmByEnvelope[envelopeId] ?? null,
       twr,
       mwr,
+      mwrDisplay,
       weightPct,
     })
   }

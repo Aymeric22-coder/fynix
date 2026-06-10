@@ -28,6 +28,35 @@ describe('computeHistoricalAnalytics avec cash flows', () => {
     expect(r.moneyWeightedReturn).not.toBeNull()
     expect(r.totalReturn).not.toBeNull()
     expect(r.moneyWeightedReturn!).toBeLessThan(r.totalReturn!)
+    // SPRINT 2 — fenêtre 365 j ≥ 180 j → display annualisé, valeur = IRR brut
+    expect(r.moneyWeightedDisplay).not.toBeNull()
+    expect(r.moneyWeightedDisplay!.isAnnualized).toBe(true)
+    expect(r.moneyWeightedDisplay!.periodLabel).toBe('annualisé')
+    expect(r.moneyWeightedDisplay!.value).toBeCloseTo(r.moneyWeightedReturn!, 8)
+  })
+
+  it('moneyWeightedDisplay : fenêtre courte (< 180 j) → rendement absolu + libellé période', () => {
+    // 30 jours, apport intermédiaire : la fenêtre courte doit basculer en
+    // absolu non annualisé (polish SPRINT 2) avec un libellé « sur N j ».
+    const snapshots = [
+      { snapshot_date: '2026-01-01', total_market_value: 1000 },
+      { snapshot_date: '2026-01-31', total_market_value: 1100 },
+    ]
+    const flows: CashFlow[] = [{ date: '2026-01-15', amount: 50 }]
+    const r = computeHistoricalAnalytics(snapshots, flows)
+    expect(r.moneyWeightedDisplay).not.toBeNull()
+    expect(r.moneyWeightedDisplay!.isAnnualized).toBe(false)
+    expect(r.moneyWeightedDisplay!.periodLabel).toBe('sur 30 j')
+    // valeur affichée = absolu de la période, pas l'IRR annualisé extrapolé
+    expect(r.moneyWeightedDisplay!.value).not.toBeCloseTo(r.moneyWeightedReturn!, 2)
+  })
+
+  it('moneyWeightedDisplay = null si aucun cash flow', () => {
+    const r = computeHistoricalAnalytics([
+      { snapshot_date: '2026-01-01', total_market_value: 1000 },
+      { snapshot_date: '2026-12-31', total_market_value: 1100 },
+    ])
+    expect(r.moneyWeightedDisplay).toBeNull()
   })
 
   it('TWR avec cash flow neutralise correctement l\'apport (convention begin-of-period)', () => {

@@ -11,10 +11,11 @@
  */
 
 import {
-  computeTWR, computeMWR, annualizeReturn, computeDrawdown,
+  computeTWR, computeMWRDetailed, annualizeReturn, computeDrawdown,
   computeVolatility, computeSharpe,
 } from './analytics'
 import type { CashFlow, ValuePoint } from './analytics'
+import { resolveMwrDisplay, type MwrDisplay } from './mwr-display'
 
 export interface SnapshotRow {
   snapshot_date:      string
@@ -28,6 +29,12 @@ export interface HistoricalAnalytics {
   annualizedReturn:   number | null
   /** Rendement money-weighted (MWR/IRR, annualisé). null si pas de cash flows. */
   moneyWeightedReturn: number | null
+  /**
+   * MWR prêt pour l'affichage (SPRINT 2) : valeur absolue de la période sur
+   * fenêtre < 180 j, annualisée au-delà, + libellé contextuel. null si pas de
+   * cash flows. L'UI consomme ce champ ; `moneyWeightedReturn` reste l'IRR brut.
+   */
+  moneyWeightedDisplay: MwrDisplay | null
   /** Drawdown courant (négatif ou 0). */
   currentDrawdown:    number | null
   /** Drawdown maximum atteint (négatif ou 0). */
@@ -45,9 +52,10 @@ export interface HistoricalAnalytics {
 }
 
 const EMPTY: HistoricalAnalytics = {
-  totalReturn:         null,
-  annualizedReturn:    null,
-  moneyWeightedReturn: null,
+  totalReturn:          null,
+  annualizedReturn:     null,
+  moneyWeightedReturn:  null,
+  moneyWeightedDisplay: null,
   currentDrawdown:     null,
   maxDrawdown:         null,
   volatility:          null,
@@ -88,9 +96,11 @@ export function computeHistoricalAnalytics(
   const annualizedReturn    = totalReturn !== null && days > 0
     ? annualizeReturn(totalReturn, days)
     : null
-  const moneyWeightedReturn = flowsInRange.length > 0
-    ? computeMWR(sorted, flowsInRange)
+  const mwrDetailed         = flowsInRange.length > 0
+    ? computeMWRDetailed(sorted, flowsInRange)
     : null  // pas de MWR pertinent sans cash flow
+  const moneyWeightedReturn  = mwrDetailed?.annualized ?? null
+  const moneyWeightedDisplay = resolveMwrDisplay(mwrDetailed)
   const dd                  = computeDrawdown(sorted)
   const volatility          = computeVolatility(sorted, flowsInRange)
   const sharpe              = computeSharpe(sorted, flowsInRange, 0)
@@ -99,6 +109,7 @@ export function computeHistoricalAnalytics(
     totalReturn,
     annualizedReturn,
     moneyWeightedReturn,
+    moneyWeightedDisplay,
     currentDrawdown:  dd.current,
     maxDrawdown:      dd.max,
     volatility,

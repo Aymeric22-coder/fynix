@@ -154,6 +154,56 @@ describe('computeEnvelopePerformance', () => {
     expect(out[0]!.mwr).toBeCloseTo(0, 2)
   })
 
+  it('mwrDisplay : fenêtre courte (14 j) → rendement absolu non annualisé + libellé « sur 14 j »', () => {
+    // 1000 → 1050 sur 14 jours = +5 % absolu. Annualisé ce serait ~+257 %,
+    // d'où le polish SPRINT 2 : on affiche l'absolu sur fenêtre < 180 j.
+    const snapshots: ValuePoint[] = [
+      { date: '2026-01-01', value: 1000 },
+      { date: '2026-01-15', value: 1050 },
+    ]
+    const out = computeEnvelopePerformance({
+      ...EMPTY,
+      positions: [pos({ envelopeId: 'env-pea', costBasisRef: 1000, marketValueRef: 1050 })],
+      snapshotsByEnvelope: { 'env-pea': snapshots },
+      totalMarketValueRef: 1050,
+    })
+    const d = out[0]!.mwrDisplay!
+    expect(d).not.toBeNull()
+    expect(d.isAnnualized).toBe(false)
+    expect(d.value).toBeCloseTo(0.05, 4)       // valeur absolue, pas annualisée
+    expect(d.periodLabel).toBe('sur 14 j')
+    // mwr brut (annualisé) reste exposé pour rétro-compat
+    expect(out[0]!.mwr).not.toBeNull()
+    expect(out[0]!.mwr!).toBeGreaterThan(1)    // annualisé ~+257 %
+  })
+
+  it('mwrDisplay : fenêtre longue (365 j) → annualisé + libellé « annualisé »', () => {
+    const snapshots: ValuePoint[] = [
+      { date: '2026-01-01', value: 1000 },
+      { date: '2027-01-01', value: 1100 },
+    ]
+    const out = computeEnvelopePerformance({
+      ...EMPTY,
+      positions: [pos({ envelopeId: 'env-pea', costBasisRef: 1000, marketValueRef: 1100 })],
+      snapshotsByEnvelope: { 'env-pea': snapshots },
+      totalMarketValueRef: 1100,
+    })
+    const d = out[0]!.mwrDisplay!
+    expect(d.isAnnualized).toBe(true)
+    expect(d.periodLabel).toBe('annualisé')
+    expect(d.value).toBeCloseTo(out[0]!.mwr!, 6)   // valeur = IRR annualisé
+  })
+
+  it('mwrDisplay : < 2 snapshots → null', () => {
+    const out = computeEnvelopePerformance({
+      ...EMPTY,
+      positions: [pos({ envelopeId: 'env-pea' })],
+      snapshotsByEnvelope: { 'env-pea': [{ date: '2026-01-01', value: 1000 }] },
+      totalMarketValueRef: 1100,
+    })
+    expect(out[0]!.mwrDisplay).toBeNull()
+  })
+
   it('realizedPnlTtm propagé depuis R6 (avec fallback null si absent)', () => {
     const out = computeEnvelopePerformance({
       ...EMPTY,

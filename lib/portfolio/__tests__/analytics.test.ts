@@ -1,8 +1,16 @@
 import { describe, it, expect } from 'vitest'
 import {
-  computeTWR, computeMWR, computeDrawdown, computeVolatility,
+  computeTWR, computeMWR, computeMWRDetailed, computeDrawdown, computeVolatility,
   computeSharpe, annualizeReturn, TRADING_DAYS_PER_YEAR,
+  MWR_ANNUALIZATION_THRESHOLD_DAYS,
 } from '../analytics'
+
+/** Renvoie la date ISO yyyy-MM-dd décalée de `days` jours (UTC). */
+function isoPlusDays(base: string, days: number): string {
+  const d = new Date(base + 'T00:00:00Z')
+  d.setUTCDate(d.getUTCDate() + days)
+  return d.toISOString().slice(0, 10)
+}
 
 // ─── TWR ────────────────────────────────────────────────────────────────
 
@@ -130,6 +138,58 @@ describe('computeMWR', () => {
   it('renvoie null si la série est trop courte', () => {
     expect(computeMWR([])).toBeNull()
     expect(computeMWR([{ date: '2025-01-01', value: 100 }])).toBeNull()
+  })
+})
+
+// ─── MWR détaillé (SPRINT 2) ────────────────────────────────────────────
+
+describe('computeMWRDetailed', () => {
+  it('seuil exporté = 180 jours', () => {
+    expect(MWR_ANNUALIZATION_THRESHOLD_DAYS).toBe(180)
+  })
+
+  // Lump sum 1000 → 1050 (+5% absolu). On choisit un gain modéré pour que
+  // l'IRR annualisé reste dans la plage de bissection même à 14 j (≈ +257%).
+  // Frontières demandées : 14 / 60 / 179 / 180 / 365 / 730 j.
+  for (const N of [14, 60, 179, 180, 365, 730]) {
+    it(`fenêtre ${N} j : periodDays exact, absolute ≈ +5%, annualized recomposé`, () => {
+      const r = computeMWRDetailed([
+        { date: '2025-01-01', value: 1000 },
+        { date: isoPlusDays('2025-01-01', N), value: 1050 },
+      ])
+      expect(r).not.toBeNull()
+      expect(r!.periodDays).toBe(N)
+      // Rendement absolu d'un lump sum = VT/V0 − 1, indépendant de N.
+      expect(r!.absolute).toBeCloseTo(0.05, 4)
+      // IRR annualisé analytique = 1.05^(365/N) − 1.
+      expect(r!.annualized).toBeCloseTo(Math.pow(1.05, 365 / N) - 1, 3)
+      // Cohérence interne : re-composer l'annualisé sur la durée redonne l'absolu.
+      expect(Math.pow(1 + r!.annualized, N / 365) - 1).toBeCloseTo(r!.absolute, 6)
+    })
+  }
+
+  it('sur une fenêtre longue (≥ 1 an), annualized < absolute (composé)', () => {
+    const r = computeMWRDetailed([
+      { date: '2025-01-01', value: 1000 },
+      { date: isoPlusDays('2025-01-01', 730), value: 1210 },  // +21% sur 2 ans
+    ])
+    expect(r).not.toBeNull()
+    expect(r!.absolute).toBeCloseTo(0.21, 3)
+    expect(r!.annualized).toBeLessThan(r!.absolute)  // ~10% annualisé
+    expect(r!.annualized).toBeCloseTo(Math.sqrt(1.21) - 1, 3)
+  })
+
+  it('< 2 points → null', () => {
+    expect(computeMWRDetailed([])).toBeNull()
+    expect(computeMWRDetailed([{ date: '2025-01-01', value: 100 }])).toBeNull()
+  })
+
+  it('computeMWR est le wrapper annualisé de computeMWRDetailed', () => {
+    const values = [
+      { date: '2025-01-01', value: 1000 },
+      { date: '2026-01-01', value: 1100 },
+    ]
+    expect(computeMWR(values)).toBeCloseTo(computeMWRDetailed(values)!.annualized, 8)
   })
 })
 

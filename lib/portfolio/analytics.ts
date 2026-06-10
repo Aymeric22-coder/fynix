@@ -38,6 +38,22 @@ export interface CashFlow {
 /** Nombre de jours de cotation par an pour annualisation. Standard finance. */
 export const TRADING_DAYS_PER_YEAR = 252
 
+/**
+ * Seuil (en jours) en dessous duquel le MWR doit être affiché en rendement
+ * ABSOLU de la période plutôt qu'annualisé.
+ *
+ * Pourquoi 180 j (6 mois) et pas 365 comme `ANNUALIZATION_MIN_DAYS` côté
+ * benchmark (`benchmark-comparison.ts`) ? Calibration PAR INDICATEUR, pas
+ * incohérence : le MWR/IRR extrapole bien plus violemment que le TWR sur
+ * fenêtre courte. Sur quelques semaines avec un apport récent, l'IRR
+ * annualisé produit des valeurs extrêmes (+122 %, −93 %…) mathématiquement
+ * correctes mais trompeuses. Un garde-fou plus bas (180 j) est donc justifié
+ * pour le MWR, tandis que le TWR (plus stable) tolère 365 j.
+ *
+ * Convention de bordure : `periodDays >= 180` → annualisé ; `< 180` → absolu.
+ */
+export const MWR_ANNUALIZATION_THRESHOLD_DAYS = 180
+
 // ─── TWR (Time-Weighted Return) ──────────────────────────────────────────────
 
 /**
@@ -91,10 +107,25 @@ export function annualizeReturn(totalReturn: number, days: number): number {
 
 // ─── MWR / IRR (Money-Weighted Return) ───────────────────────────────────────
 
+/** Résultat détaillé du MWR : valeur annualisée + valeur absolue + durée. */
+export interface MwrDetailed {
+  /** IRR annualisé (décimal). C'est la valeur historique de `computeMWR`. */
+  annualized: number
+  /**
+   * Rendement money-weighted ABSOLU sur la période (non annualisé, décimal).
+   * Dérivé de l'IRR : `(1 + annualized)^(periodDays/365) − 1`. C'est ce qu'on
+   * affiche sur les fenêtres courtes (< MWR_ANNUALIZATION_THRESHOLD_DAYS) pour
+   * éviter les valeurs extrapolées trompeuses.
+   */
+  absolute: number
+  /** Durée couverte (jours, arrondie) entre le 1er et le dernier ValuePoint. */
+  periodDays: number
+}
+
 /**
- * Calcule le MWR (= IRR annualisé) du portefeuille.
+ * Calcule le MWR détaillé du portefeuille (annualisé + absolu + durée).
  *
- * Modèle : on cherche r tel que la VAN soit nulle :
+ * Modèle : on cherche r (IRR annualisé) tel que la VAN soit nulle :
  *
  *   -V_0 + Σ -cf_i × (1+r)^(-t_i) + V_T × (1+r)^(-T) = 0
  *
@@ -105,10 +136,14 @@ export function annualizeReturn(totalReturn: number, days: number): number {
  *   - t_i et T sont en années
  *
  * Méthode : bissection sur [-0.99, 10]. Robuste, ne diverge pas comme Newton.
+ * Le rendement absolu se déduit de l'IRR par re-composition sur la durée réelle.
  *
- * @returns IRR annualisé (décimal) ou null si pas de solution dans la plage.
+ * @returns `{ annualized, absolute, periodDays }` ou null si pas de solution.
  */
-export function computeMWR(values: ValuePoint[], cashFlows: CashFlow[] = []): number | null {
+export function computeMWRDetailed(
+  values: ValuePoint[],
+  cashFlows: CashFlow[] = [],
+): MwrDetailed | null {
   if (values.length < 2) return null
 
   const sortedV = [...values].sort((a, b) => a.date.localeCompare(b.date))
@@ -139,7 +174,26 @@ export function computeMWR(values: ValuePoint[], cashFlows: CashFlow[] = []): nu
   const npv = (r: number) =>
     flows.reduce((acc, f) => acc + f.amount / Math.pow(1 + r, f.years), 0)
 
-  return bisect(npv, -0.99, 10)
+  const annualized = bisect(npv, -0.99, 10)
+  if (annualized === null) return null
+
+  // Rendement absolu de la période = re-composition de l'IRR sur la durée réelle.
+  const absolute = Math.pow(1 + annualized, totalDays / 365) - 1
+
+  return { annualized, absolute, periodDays: Math.round(totalDays) }
+}
+
+/**
+ * Calcule le MWR (= IRR annualisé) du portefeuille.
+ *
+ * Wrapper rétro-compatible de `computeMWRDetailed` : conserve la signature et
+ * la sémantique historiques (IRR annualisé seul). Tous les appelants existants
+ * qui ne consomment que la valeur annualisée restent inchangés.
+ *
+ * @returns IRR annualisé (décimal) ou null si pas de solution dans la plage.
+ */
+export function computeMWR(values: ValuePoint[], cashFlows: CashFlow[] = []): number | null {
+  return computeMWRDetailed(values, cashFlows)?.annualized ?? null
 }
 
 // ─── Drawdown ────────────────────────────────────────────────────────────────

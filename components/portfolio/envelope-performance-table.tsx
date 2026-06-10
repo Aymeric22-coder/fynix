@@ -16,6 +16,7 @@
 import { formatCurrency, formatPercent } from '@/lib/utils/format'
 import { InfoTip } from '@/components/ui/info-tip'
 import type { EnvelopePerformance } from '@/lib/portfolio/envelope-performance'
+import type { MwrDisplay } from '@/lib/portfolio/mwr-display'
 
 interface Props {
   data:      EnvelopePerformance[]
@@ -77,7 +78,7 @@ export function EnvelopePerformanceTable({ data, currency, className }: Props) {
               <th className="text-right py-2 font-medium hidden sm:table-cell">
                 <span className="inline-flex items-center justify-end gap-1">
                   MWR
-                  <InfoTip placement="bottom" text="Performance annualisée incluant le timing et le montant de tes apports. Sur des fenêtres courtes avec apports récents, les valeurs peuvent paraître extrêmes — c'est mathématiquement normal." />
+                  <InfoTip placement="bottom" text="Performance incluant le timing et le montant de tes apports. Affichage en rendement absolu de la période sur fenêtre < 6 mois (libellé « sur N mois »), annualisé au-delà. Sur séries courtes avec apports récents, l'annualisation peut produire des valeurs extrêmes — c'est mathématiquement normal." />
                 </span>
               </th>
               <th className="text-right py-2 font-medium hidden lg:table-cell">Poids</th>
@@ -111,7 +112,7 @@ export function EnvelopePerformanceTable({ data, currency, className }: Props) {
                   <PctCell value={e.twr !== null ? e.twr * 100 : null} />
                 </td>
                 <td className="py-2.5 text-right financial-value hidden sm:table-cell">
-                  <PctCell value={e.mwr !== null ? e.mwr * 100 : null} />
+                  <MwrCell display={e.mwrDisplay} />
                 </td>
                 <td className="py-2.5 text-right financial-value text-secondary hidden lg:table-cell">
                   {formatPercent(e.weightPct, { decimals: 1 })}
@@ -168,6 +169,23 @@ function PctCell({ value }: { value: number | null }) {
   return (
     <span className={color}>
       {formatPercent(value, { sign: true, decimals: 1 })}
+    </span>
+  )
+}
+
+/**
+ * Cellule MWR (SPRINT 2) : valeur (absolue ou annualisée selon la fenêtre) +
+ * libellé contextuel discret en dessous (« sur 14 j », « sur 2 mois »,
+ * « annualisé »). Rendu stacké pour rester lisible sur mobile.
+ */
+function MwrCell({ display }: { display: MwrDisplay | null }) {
+  if (display === null) return <span className="text-muted">—</span>
+  const pct   = display.value * 100
+  const color = pct >= 0 ? 'text-accent' : 'text-danger'
+  return (
+    <span className="inline-flex flex-col items-end leading-tight">
+      <span className={color}>{formatPercent(pct, { sign: true, decimals: 1 })}</span>
+      <span className="text-[10px] text-muted">{display.periodLabel}</span>
     </span>
   )
 }

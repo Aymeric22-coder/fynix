@@ -481,14 +481,16 @@ export default async function PortefeuillePage({ searchParams }: Props) {
                   <p className="text-xs text-secondary flex items-center gap-1">
                     <TrendingUp size={10} /> MWR (IRR)
                   </p>
-                  {historicalAnalytics.moneyWeightedReturn === null ? (
+                  {historicalAnalytics.moneyWeightedDisplay === null ? (
                     <p className="text-base font-semibold financial-value text-muted mt-1">—</p>
                   ) : (
-                    <p className={`text-base font-semibold financial-value mt-1 ${historicalAnalytics.moneyWeightedReturn >= 0 ? 'text-accent' : 'text-danger'}`}>
-                      {formatPercent(historicalAnalytics.moneyWeightedReturn * 100, { sign: true })}
+                    <p className={`text-base font-semibold financial-value mt-1 ${historicalAnalytics.moneyWeightedDisplay.value >= 0 ? 'text-accent' : 'text-danger'}`}>
+                      {formatPercent(historicalAnalytics.moneyWeightedDisplay.value * 100, { sign: true })}
                     </p>
                   )}
-                  <p className="text-[10px] text-muted mt-0.5">pondéré flux</p>
+                  <p className="text-[10px] text-muted mt-0.5">
+                    {historicalAnalytics.moneyWeightedDisplay?.periodLabel ?? 'pondéré flux'}
+                  </p>
                 </div>
 
                 {/* Drawdown max */}
