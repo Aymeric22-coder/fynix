@@ -30,6 +30,8 @@ import {
 import { PortefeuilleActions }    from '@/components/pages/portefeuille-actions'
 import { PositionRowActions }     from '@/components/pages/position-row-actions'
 import { RefreshPricesButton }    from '@/components/pages/refresh-prices-button'
+import { CsvExportButton }         from '@/components/portfolio/csv-export-button'
+import type { PositionCsvRow }     from '@/lib/portfolio/export-csv'
 import { PortfolioEvolutionChart, type SnapshotPoint } from '@/components/portfolio/evolution-chart'
 import { normalizeSnapshotSeries, checkSeriesMatchesLive } from '@/lib/portfolio/normalize-snapshots'
 import type { PositionInitialData } from '@/components/forms/add-position-form'
@@ -175,6 +177,22 @@ export default async function PortefeuillePage({ searchParams }: Props) {
     })
   }
 
+  // Lignes d'export CSV des positions affichées (vue courante). On enrichit
+  // chaque PositionValuation avec le nom d'enveloppe + l'ISIN (absents du type
+  // de valorisation), et on exporte valeur/coût/+/- en devise de référence.
+  const positionsCsvRows: PositionCsvRow[] = positions.map((p) => ({
+    envelopeName: p.envelopeId ? (envelopeNameById.get(p.envelopeId) ?? '') : '',
+    name:         p.name,
+    isin:         editDataById.get(p.positionId)?.isin || null,
+    ticker:       p.ticker,
+    quantity:     p.quantity,
+    averagePrice: p.averagePrice,
+    currency:     p.currency,
+    marketValue:  p.marketValueRef,
+    costBasis:    p.costBasisRef,
+    pricedAt:     p.priceFreshAt,
+  }))
+
   return (
     <div>
       <PageHeader
@@ -186,6 +204,15 @@ export default async function PortefeuillePage({ searchParams }: Props) {
         }
         action={
           <div className="flex items-center gap-3">
+            {fullResult.summary.positionsCount > 0 && (
+              <CsvExportButton
+                kind="positions"
+                rows={positionsCsvRows}
+                filenamePrefix="positions"
+                refCurrency={fullResult.summary.referenceCurrency}
+                label="Exporter positions"
+              />
+            )}
             {fullResult.summary.positionsCount > 0 && <RefreshPricesButton />}
             <PortefeuilleActions
               envelopes={envelopes ?? []}

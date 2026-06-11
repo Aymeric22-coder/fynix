@@ -13,6 +13,8 @@ import { PriceHistoryChart, type PricePoint } from '@/components/portfolio/price
 import { AddPriceModalTrigger } from '@/components/portfolio/add-price-modal'
 import { PositionTransactionActions } from '@/components/portfolio/position-transaction-actions'
 import { TransactionsList, type TxRow } from '@/components/portfolio/transactions-list'
+import { CsvExportButton } from '@/components/portfolio/csv-export-button'
+import { slugify, type TransactionCsvRow } from '@/lib/portfolio/export-csv'
 import type { TransactionType } from '@/components/portfolio/add-transaction-modal'
 import {
   computePositionDividendMetrics,
@@ -98,7 +100,7 @@ export default async function PositionDetailPage({ params, searchParams }: Props
   // ── Transactions liées (position_id OU instrument_id) ──────────────
   const { data: txRows } = await supabase
     .from('transactions')
-    .select('id, transaction_type, amount, quantity, unit_price, fees, executed_at, label, notes, position_id, currency')
+    .select('id, transaction_type, amount, quantity, unit_price, fees, executed_at, label, notes, position_id, currency, realized_pnl')
     .eq('user_id', user!.id)
     .or(`position_id.eq.${position.id},instrument_id.eq.${instrument.id}`)
     .order('executed_at', { ascending: false })
@@ -113,6 +115,19 @@ export default async function PositionDetailPage({ params, searchParams }: Props
   const pnl       = mv !== null ? mv - cost : null
   const pnlPct    = mv !== null && cost > 0 ? ((mv - cost) / cost) * 100 : null
   const currency  = position.currency as CurrencyCode
+
+  // ── Lignes d'export CSV des transactions liées (Sprint 4) ─────────────
+  const transactionsCsvRows: TransactionCsvRow[] = (txRows ?? []).map((t) => ({
+    executedAt:      String(t.executed_at),
+    transactionType: String(t.transaction_type),
+    quantity:        t.quantity   != null ? Number(t.quantity)   : null,
+    unitPrice:       t.unit_price != null ? Number(t.unit_price) : null,
+    fees:            t.fees       != null ? Number(t.fees)       : null,
+    amount:          t.amount     != null ? Number(t.amount)     : null,
+    currency:        (t.currency as string | null) ?? currency,
+    label:           (t.label as string | null) ?? null,
+    realizedPnl:     t.realized_pnl != null ? Number(t.realized_pnl) : null,
+  }))
 
   // ── Dividendes (E3) ──────────────────────────────────────────────────
   const dividendTxs: DividendTx[] = (txRows ?? [])
@@ -404,14 +419,24 @@ export default async function PositionDetailPage({ params, searchParams }: Props
 
       {/* ── Transactions liées ────────────────────────────────────── */}
       <div className="card overflow-hidden">
-        <div className="px-5 py-4 border-b border-border flex items-center gap-2">
-          <Receipt size={13} className="text-secondary" />
-          <p className="text-xs text-secondary uppercase tracking-widest">
-            Transactions liées
-            <span className="text-muted normal-case font-normal ml-2">
-              · {txRows?.length ?? 0}
-            </span>
-          </p>
+        <div className="px-5 py-4 border-b border-border flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Receipt size={13} className="text-secondary" />
+            <p className="text-xs text-secondary uppercase tracking-widest">
+              Transactions liées
+              <span className="text-muted normal-case font-normal ml-2">
+                · {txRows?.length ?? 0}
+              </span>
+            </p>
+          </div>
+          {txRows && txRows.length > 0 && (
+            <CsvExportButton
+              kind="transactions"
+              rows={transactionsCsvRows}
+              filenamePrefix={`transactions-${slugify(instrument.name)}`}
+              label="Exporter (CSV)"
+            />
+          )}
         </div>
         {(!txRows || txRows.length === 0) ? (
           <EmptyState
