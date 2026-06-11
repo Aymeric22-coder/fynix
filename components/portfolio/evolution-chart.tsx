@@ -199,7 +199,7 @@ export function PortfolioEvolutionChart({ data, live }: Props) {
           fill="url(#portfolio-mv)"
           strokeWidth={2}
           dot={false}
-          style={{ filter: 'drop-shadow(0 0 6px rgba(16,185,129,0.45))' }}
+          style={{ filter: 'drop-shadow(0 0 6px rgba(0,255,135,0.45))' }}
         />
         <Line
           yAxisId="pnl"

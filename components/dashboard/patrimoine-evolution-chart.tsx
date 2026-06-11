@@ -178,7 +178,7 @@ export function PatrimoineEvolutionChart({ cibleFire }: Props) {
               fill="url(#wealth-net)"
               strokeWidth={2}
               dot={false}
-              style={{ filter: 'drop-shadow(0 0 6px rgba(16,185,129,0.45))' }}
+              style={{ filter: 'drop-shadow(0 0 6px rgba(0,255,135,0.45))' }}
             />
             {/* Ligne portefeuille seule en référence légère */}
             <Line

@@ -97,14 +97,16 @@
    Sprint design premium « Fintech Wow Effect »
    ────────────────────────────────────────────────────────────────────
    Couleur d'accent pilotée par une seule variable RGB → swap en 1 ligne.
-     • Émeraude actuel  : 16 185 129  (#10b981)  ← valeur par défaut
-     • Neon mint (brief): 0 255 135   (#00FF87)
-     • Hybride          : garder l'accent émeraude dans @theme et ne
-                          changer --accent-rgb que pour des glows plus vifs.
-   Tout le reste (glows, glass, grille, focus) dérive de --accent-rgb.
+   MODE ACTUEL = HYBRIDE : les éléments pleins (texte/fills/bordures via les
+   classes Tailwind *-accent) restent ÉMERAUDE #10b981 (défini dans @theme),
+   tandis que toute la couche lumineuse (glows, glass, grille, focus, halos)
+   dérive de --accent-rgb réglé sur le NEON MINT #00FF87 → glow plus vif.
+     • Tout émeraude (glow inclus) : --accent-rgb: 16 185 129
+     • Tout neon mint              : --accent-rgb: 0 255 135 + accent @theme mint
+     • Hybride (actuel)            : --accent-rgb: 0 255 135, accent @theme émeraude
    ════════════════════════════════════════════════════════════════════ */
 :root {
-  --accent-rgb: 16 185 129;
+  --accent-rgb: 0 255 135;
 
   /* Luminosité neon */
   --glow-primary:        0 0 20px rgb(var(--accent-rgb) / 0.30);
