@@ -10,7 +10,7 @@ interface BadgeProps {
 
 const VARIANTS: Record<BadgeVariant, string> = {
   default: 'bg-surface-2 text-secondary border-border',
-  success: 'bg-accent-muted text-accent border-accent/20',
+  success: 'badge-premium',
   warning: 'bg-warning-muted text-warning border-warning/20',
   danger:  'bg-danger-muted text-danger border-danger/20',
   info:    'bg-blue-500/10 text-blue-400 border-blue-500/20',

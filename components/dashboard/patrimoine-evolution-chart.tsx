@@ -178,6 +178,7 @@ export function PatrimoineEvolutionChart({ cibleFire }: Props) {
               fill="url(#wealth-net)"
               strokeWidth={2}
               dot={false}
+              style={{ filter: 'drop-shadow(0 0 6px rgba(16,185,129,0.45))' }}
             />
             {/* Ligne portefeuille seule en référence légère */}
             <Line
@@ -228,7 +229,14 @@ function CustomTooltip({ active, payload, label }: {
   if (!active || !payload?.length) return null
   const row = payload[0]!.payload
   return (
-    <div className="bg-surface border border-border rounded-lg px-4 py-3 shadow-card min-w-56">
+    <div
+      className="rounded-lg px-4 py-3 min-w-56 backdrop-blur-md"
+      style={{
+        background: 'rgb(17 17 17 / 0.85)',
+        border: '1px solid rgb(var(--accent-rgb) / 0.25)',
+        boxShadow: 'var(--glow-primary-subtle)',
+      }}
+    >
       <p className="text-xs text-secondary mb-2">{formatDate(label, 'medium')}</p>
       <Row label="Net"          value={row.patrimoine_net}      color="#10b981" />
       <Row label="Brut"         value={row.patrimoine_brut}     color="#9ca3af" />

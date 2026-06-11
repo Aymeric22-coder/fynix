@@ -46,7 +46,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
       {/* Logo */}
       <div className="px-5 py-6 border-b border-border">
         <span className="text-xl font-bold tracking-tight">
-          FIRE<span className="text-accent">CORE</span>
+          FIRE<span className="text-accent text-glow">CORE</span>
         </span>
       </div>
 
@@ -60,10 +60,10 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
               href={href}
               onClick={onNavigate}
               className={`group flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm
-                          transition-all duration-150 ${
+                          border-l-2 transition-all duration-150 ${
                 active
-                  ? 'bg-accent-muted text-accent font-medium'
-                  : 'text-secondary hover:text-primary hover:bg-surface-2'
+                  ? 'bg-accent-muted border-accent text-accent text-glow font-medium'
+                  : 'border-transparent text-secondary hover:text-primary hover:bg-[rgb(var(--accent-rgb)/0.05)]'
               }`}
             >
               <Icon size={16} className="flex-shrink-0" />
@@ -116,7 +116,7 @@ export default function Sidebar() {
   return (
     <>
       {/* Sidebar desktop (>= lg) */}
-      <aside className="hidden lg:flex w-56 flex-shrink-0 flex-col bg-surface border-r border-border h-full">
+      <aside className="hidden lg:flex w-56 flex-shrink-0 flex-col bg-surface border-r border-[rgb(var(--accent-rgb)/0.08)] h-full">
         <SidebarContent />
       </aside>
 

@@ -21,9 +21,9 @@ type ButtonProps =
   | (BaseProps & { href: string; disabled?: boolean })
 
 const VARIANTS: Record<Variant, string> = {
-  primary:   'bg-accent hover:bg-accent-hover text-white',
+  primary:   'bg-accent hover:bg-accent-hover text-white hover:shadow-[0_0_16px_rgb(var(--accent-rgb)/0.35)]',
   secondary: 'bg-surface-2 hover:bg-border text-primary border border-border',
-  ghost:     'text-secondary hover:text-primary hover:bg-surface-2',
+  ghost:     'text-secondary hover:text-primary hover:bg-[rgb(var(--accent-rgb)/0.06)]',
   danger:    'bg-danger-muted hover:bg-danger/20 text-danger border border-danger/30',
 }
 
@@ -41,7 +41,7 @@ export function Button(props: ButtonProps) {
 
   const baseClass = cn(
     'inline-flex items-center justify-center font-medium rounded-lg',
-    'transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed',
+    'transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed',
     VARIANTS[variant],
     SIZES[size],
     (disabled || loading) && 'opacity-50 pointer-events-none',
