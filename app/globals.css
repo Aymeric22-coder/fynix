@@ -93,6 +93,142 @@
   }
 }
 
+/* ════════════════════════════════════════════════════════════════════
+   Sprint design premium « Fintech Wow Effect »
+   ────────────────────────────────────────────────────────────────────
+   Couleur d'accent pilotée par une seule variable RGB → swap en 1 ligne.
+   MODE ACTUEL = HYBRIDE : les éléments pleins (texte/fills/bordures via les
+   classes Tailwind *-accent) restent ÉMERAUDE #10b981 (défini dans @theme),
+   tandis que toute la couche lumineuse (glows, glass, grille, focus, halos)
+   dérive de --accent-rgb réglé sur le NEON MINT #00FF87 → glow plus vif.
+     • Tout émeraude (glow inclus) : --accent-rgb: 16 185 129
+     • Tout neon mint              : --accent-rgb: 0 255 135 + accent @theme mint
+     • Hybride (actuel)            : --accent-rgb: 0 255 135, accent @theme émeraude
+   ════════════════════════════════════════════════════════════════════ */
+:root {
+  --accent-rgb: 0 255 135;
+
+  /* Luminosité neon */
+  --glow-primary:        0 0 20px rgb(var(--accent-rgb) / 0.30);
+  --glow-primary-strong: 0 0 40px rgb(var(--accent-rgb) / 0.50);
+  --glow-primary-subtle: 0 0 10px rgb(var(--accent-rgb) / 0.15);
+
+  /* Surfaces verre */
+  --glass-bg:           rgb(255 255 255 / 0.03);
+  --glass-border:       rgb(var(--accent-rgb) / 0.08);
+  --glass-border-hover: rgb(var(--accent-rgb) / 0.22);
+
+  /* Grille de données en fond */
+  --grid-line: rgb(var(--accent-rgb) / 0.04);
+
+  /* Transitions premium */
+  --transition-smooth: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-spring: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@layer base {
+  /* Scrollbar teintée accent (remplace le gris neutre) */
+  ::-webkit-scrollbar-thumb       { background: rgb(var(--accent-rgb) / 0.22); }
+  ::-webkit-scrollbar-thumb:hover { background: rgb(var(--accent-rgb) / 0.40); }
+
+  /* Focus ring premium (double halo) */
+  :focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / 0.45),
+                0 0 0 4px rgb(var(--accent-rgb) / 0.12);
+    border-radius: var(--radius-sm);
+  }
+}
+
+@layer components {
+  /* Carte : on conserve la surface opaque (#111) pour la lisibilité, on
+     ajoute seulement la finition premium au survol (bordure accent + halo
+     + micro-lift). Pas de régression de contraste. */
+  .card {
+    transition: var(--transition-smooth);
+  }
+  .card:hover {
+    border-color: var(--glass-border-hover);
+    box-shadow: var(--glow-primary-subtle), inset 0 1px 0 rgb(var(--accent-rgb) / 0.05);
+  }
+
+  /* Verre véritable — opt-in (tooltips, surfaces spéciales). */
+  .card-glass {
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    transition: var(--transition-smooth);
+  }
+  .card-glass:hover {
+    border-color: var(--glass-border-hover);
+    box-shadow: var(--glow-primary-subtle), inset 0 1px 0 rgb(var(--accent-rgb) / 0.05);
+  }
+
+  /* Chiffre clé lumineux */
+  .text-glow { text-shadow: 0 0 20px rgb(var(--accent-rgb) / 0.55); }
+
+  /* Séparateur lumineux */
+  .divider-glow {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgb(var(--accent-rgb) / 0.40), transparent);
+  }
+
+  /* Badge premium */
+  .badge-premium {
+    background: rgb(var(--accent-rgb) / 0.08);
+    border: 1px solid rgb(var(--accent-rgb) / 0.22);
+    color: var(--color-accent);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Chiffres alignés */
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
+
+  /* Skeleton premium (shimmer accent) */
+  .skeleton-neon {
+    background: linear-gradient(
+      90deg,
+      rgb(var(--accent-rgb) / 0.03) 25%,
+      rgb(var(--accent-rgb) / 0.08) 50%,
+      rgb(var(--accent-rgb) / 0.03) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer-neon 1.5s infinite;
+  }
+}
+
+@layer utilities {
+  /* Grille de données en fond (data terminal aesthetic) */
+  .bg-data-grid {
+    background-image:
+      linear-gradient(var(--grid-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+}
+
+@keyframes shimmer-neon {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+
+@keyframes page-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Animations gated derrière prefers-reduced-motion */
+@media (prefers-reduced-motion: no-preference) {
+  .hover-lift { transition: var(--transition-smooth); }
+  .hover-lift:hover { transform: translateY(-2px); }
+
+  .page-enter { animation: page-enter 0.3s cubic-bezier(0.4, 0, 0.2, 1) both; }
+}
+
 /* ── Recharts overrides (thème sombre) ── */
 .recharts-cartesian-axis-tick text { fill: #71717a !important; font-size: 11px; }
 .recharts-cartesian-grid line       { stroke: #1f1f1f !important; }

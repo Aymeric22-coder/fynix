@@ -35,7 +35,14 @@ function CustomTooltip({ active, payload, label }: {
 }) {
   if (!active || !payload?.length) return null
   return (
-    <div className="bg-surface border border-border rounded-lg px-4 py-3 shadow-card min-w-52">
+    <div
+      className="rounded-lg px-4 py-3 min-w-52 backdrop-blur-md"
+      style={{
+        background: 'rgb(17 17 17 / 0.85)',
+        border: '1px solid rgb(var(--accent-rgb) / 0.25)',
+        boxShadow: 'var(--glow-primary-subtle)',
+      }}
+    >
       <p className="text-xs text-secondary mb-2">{formatDate(label, 'medium')}</p>
       {payload.map((p) => {
         const isPnl = p.dataKey === 'total_pnl'
@@ -192,6 +199,7 @@ export function PortfolioEvolutionChart({ data, live }: Props) {
           fill="url(#portfolio-mv)"
           strokeWidth={2}
           dot={false}
+          style={{ filter: 'drop-shadow(0 0 6px rgba(0,255,135,0.45))' }}
         />
         <Line
           yAxisId="pnl"

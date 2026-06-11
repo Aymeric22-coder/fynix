@@ -23,6 +23,7 @@ import { DividendCalendarStrip }      from '@/components/portfolio/dividend-cale
 import { TaxEstimateCard }            from '@/components/portfolio/tax-estimate-card'
 import { BenchmarkComparisonCard }    from '@/components/portfolio/benchmark-comparison-card'
 import { InfoTip }                    from '@/components/ui/info-tip'
+import { AnimatedNumber }             from '@/components/ui/AnimatedNumber'
 import {
   formatCurrency, formatPercent, formatQuantity,
   ASSET_CLASS_LABELS,
@@ -258,7 +259,7 @@ export default async function PortefeuillePage({ searchParams }: Props) {
             <div className="card p-5">
               <p className="text-xs text-secondary uppercase tracking-widest">Capital investi</p>
               <p className="text-xl font-semibold financial-value text-primary mt-2">
-                {formatCurrency(summary.totalCostBasis, summary.referenceCurrency, { compact: true })}
+                <AnimatedNumber value={summary.totalCostBasis} currency={summary.referenceCurrency} compact />
               </p>
               <p className="text-xs text-secondary mt-1">montant total investi</p>
             </div>
@@ -269,7 +270,7 @@ export default async function PortefeuillePage({ searchParams }: Props) {
                 <Wallet size={11} /> Valeur actuelle
               </p>
               <p className="text-xl font-semibold financial-value text-primary mt-2">
-                {formatCurrency(summary.totalMarketValue, summary.referenceCurrency, { compact: true })}
+                <AnimatedNumber value={summary.totalMarketValue} currency={summary.referenceCurrency} compact glow />
               </p>
               <p className="text-xs text-secondary mt-1">
                 {summary.valuedPositionsCount}/{summary.positionsCount} position{summary.positionsCount > 1 ? 's' : ''} valorisée{summary.valuedPositionsCount > 1 ? 's' : ''}
@@ -290,7 +291,7 @@ export default async function PortefeuillePage({ searchParams }: Props) {
               ) : (
                 <>
                   <p className={`text-xl font-semibold financial-value mt-2 ${summary.totalUnrealizedPnL >= 0 ? 'text-accent' : 'text-danger'}`}>
-                    {formatCurrency(summary.totalUnrealizedPnL, summary.referenceCurrency, { compact: true, sign: true })}
+                    <AnimatedNumber value={summary.totalUnrealizedPnL} currency={summary.referenceCurrency} compact sign />
                   </p>
                   <p className={`text-xs mt-1 ${summary.totalUnrealizedPnL >= 0 ? 'text-accent' : 'text-danger'}`}>
                     {formatPercent(summary.totalUnrealizedPnLPct, { sign: true })}

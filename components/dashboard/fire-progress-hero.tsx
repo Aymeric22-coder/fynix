@@ -16,6 +16,7 @@
 import Link from 'next/link'
 import { Sparkles, TrendingUp, Target, Wallet } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils/format'
+import { AnimatedNumber } from '@/components/ui/AnimatedNumber'
 import { CibleFoyer } from '@/components/profil/CibleFoyer'
 import type { CibleFoyerDetail } from '@/lib/profil/cibleFamille'
 
@@ -123,7 +124,7 @@ export function FIREProgressHero({ data }: { data: FireHeroData }) {
             Patrimoine net actuel
           </span>
           <span className="text-xs text-accent font-medium financial-value">
-            {pctProgress.toFixed(1)} % de la cible
+            <AnimatedNumber value={pctProgress} decimals={1} suffix=" % de la cible" />
           </span>
         </div>
         <div className="relative h-3 rounded-full bg-surface-2 overflow-hidden">
