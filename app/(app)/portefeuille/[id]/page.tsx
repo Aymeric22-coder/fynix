@@ -12,6 +12,7 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { PriceHistoryChart, type PricePoint } from '@/components/portfolio/price-history-chart'
 import { AddPriceModalTrigger } from '@/components/portfolio/add-price-modal'
 import { PositionTransactionActions } from '@/components/portfolio/position-transaction-actions'
+import { TransactionsList, type TxRow } from '@/components/portfolio/transactions-list'
 import type { TransactionType } from '@/components/portfolio/add-transaction-modal'
 import {
   computePositionDividendMetrics,
@@ -97,7 +98,7 @@ export default async function PositionDetailPage({ params, searchParams }: Props
   // ── Transactions liées (position_id OU instrument_id) ──────────────
   const { data: txRows } = await supabase
     .from('transactions')
-    .select('id, transaction_type, amount, quantity, unit_price, fees, executed_at, label, notes')
+    .select('id, transaction_type, amount, quantity, unit_price, fees, executed_at, label, notes, position_id, currency')
     .eq('user_id', user!.id)
     .or(`position_id.eq.${position.id},instrument_id.eq.${instrument.id}`)
     .order('executed_at', { ascending: false })
@@ -419,52 +420,13 @@ export default async function PositionDetailPage({ params, searchParams }: Props
             description="Les achats / ventes / dividendes liés à cette position apparaîtront ici."
           />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-surface-2 border-b border-border">
-                <tr className="text-xs text-secondary uppercase tracking-wider">
-                  <th className="text-left  px-4 py-3 font-medium">Date</th>
-                  <th className="text-left  px-4 py-3 font-medium">Type</th>
-                  <th className="text-right px-4 py-3 font-medium">Quantité</th>
-                  <th className="text-right px-4 py-3 font-medium">Prix unitaire</th>
-                  <th className="text-right px-4 py-3 font-medium">Frais</th>
-                  <th className="text-right px-4 py-3 font-medium">Montant</th>
-                  <th className="text-left  px-4 py-3 font-medium">Libellé</th>
-                </tr>
-              </thead>
-              <tbody>
-                {txRows.map((t) => (
-                  <tr key={t.id} className="border-b border-border last:border-0 hover:bg-surface-2/50 transition-colors">
-                    <td className="px-4 py-3 text-xs text-secondary">{formatDate(t.executed_at, 'short')}</td>
-                    <td className="px-4 py-3">
-                      <Badge variant="muted">{t.transaction_type}</Badge>
-                    </td>
-                    <td className="px-4 py-3 text-right financial-value text-secondary">
-                      {t.quantity !== null && t.quantity !== undefined
-                        ? formatQuantity(Number(t.quantity), 8)
-                        : <span className="text-muted">—</span>}
-                    </td>
-                    <td className="px-4 py-3 text-right financial-value text-secondary">
-                      {t.unit_price !== null && t.unit_price !== undefined
-                        ? formatCurrency(Number(t.unit_price), currency, { decimals: 2 })
-                        : <span className="text-muted">—</span>}
-                    </td>
-                    <td className="px-4 py-3 text-right financial-value text-muted text-xs">
-                      {t.fees && Number(t.fees) > 0
-                        ? formatCurrency(Number(t.fees), currency, { decimals: 2 })
-                        : '—'}
-                    </td>
-                    <td className={`px-4 py-3 text-right financial-value font-medium ${Number(t.amount) >= 0 ? 'text-accent' : 'text-danger'}`}>
-                      {formatCurrency(Number(t.amount), currency, { decimals: 2, sign: true })}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-secondary truncate max-w-xs">
-                      {t.label ?? <span className="text-muted">—</span>}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <TransactionsList
+            rows={(txRows as TxRow[])}
+            positionId={String(position.id)}
+            positionCurrency={currency}
+            ticker={instrument.ticker ?? ''}
+            name={instrument.name}
+          />
         )}
       </div>
     </div>
