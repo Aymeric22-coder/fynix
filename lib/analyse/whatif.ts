@@ -12,6 +12,9 @@
  * sur chaque mouvement de slider.
  */
 
+import { calculerCiblePatrimoine, swrPctFromFireType } from './constants'
+import { INFLATION_DEFAUT_PCT } from './projectionFIRE'
+
 // ─────────────────────────────────────────────────────────────────
 // 1. Delta épargne mensuelle
 // ─────────────────────────────────────────────────────────────────
@@ -25,6 +28,8 @@ export interface EpargneDeltaParams {
   ageActuel:           number
   ageCible:            number
   revenuPassifCible:   number    // €/mois (cible FIRE)
+  /** Type FIRE (lean/standard/fat) → SWR. Optionnel : défaut standard (4 %). */
+  fireType?:           string | null
 }
 
 export interface EpargneDeltaResult {
@@ -71,7 +76,14 @@ function ageFireAvecEpargne(
 }
 
 export function simulerEpargneDelta(p: EpargneDeltaParams): EpargneDeltaResult {
-  const cibleCapital = Math.max(0, p.revenuPassifCible * 12 * 25)
+  // P1 — cible unifiée avec la projection FIRE (années réelles + inflation
+  // + SWR du fire_type), au lieu de l'ancien × 25 figé.
+  const cibleCapital = Math.max(0, calculerCiblePatrimoine(
+    p.revenuPassifCible,
+    Math.max(0, p.ageCible - p.ageActuel),
+    INFLATION_DEFAUT_PCT,
+    swrPctFromFireType(p.fireType ?? null),
+  ))
 
   const ageAvant = ageFireAvecEpargne(
     p.patrimoineActuel, p.epargneMensuelle,
@@ -107,6 +119,8 @@ export interface NouvelleAcquisitionParams {
   ageActuel:           number
   ageCible:            number
   revenuPassifCible:   number    // €/mois (cible FIRE)
+  /** Type FIRE (lean/standard/fat) → SWR. Optionnel : défaut standard (4 %). */
+  fireType?:           string | null
 
   /** Paramètres du bien à simuler. */
   prix_bien:           number    // €
@@ -173,8 +187,14 @@ export function simulerNouvelleAcquisition(p: NouvelleAcquisitionParams): Nouvel
   const crd5     = crdApresMois(capitalEmprunte, p.taux_credit_pct, mensualite, 60)
   const equity5  = Math.max(0, valeur5 - crd5)
 
-  // Cible FIRE
-  const cibleCapital = Math.max(0, p.revenuPassifCible * 12 * 25)
+  // Cible FIRE — P1 : unifiée avec la projection (années réelles + inflation
+  // + SWR du fire_type), au lieu de l'ancien × 25 figé.
+  const cibleCapital = Math.max(0, calculerCiblePatrimoine(
+    p.revenuPassifCible,
+    Math.max(0, p.ageCible - p.ageActuel),
+    INFLATION_DEFAUT_PCT,
+    swrPctFromFireType(p.fireType ?? null),
+  ))
 
   // Scénario AVANT : épargne normale, pas de bien.
   const ageAvant = ageFireAvecEpargne(

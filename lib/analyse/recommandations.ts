@@ -11,7 +11,8 @@
  * Pure (pas d'I/O), sérialisable.
  */
 
-import { calculerImpactEpargne } from './projectionFIRE'
+import { calculerImpactEpargne, INFLATION_DEFAUT_PCT } from './projectionFIRE'
+import { calculerCiblePatrimoine, swrPctFromFireType } from './constants'
 import { formatEur } from '@/lib/utils/format'
 import type { PatrimoineComplet, Recommandation, ScoresComplets } from '@/types/analyse'
 import { normalizePriorite, type PrioriteId } from '../profil/calculs'
@@ -265,8 +266,16 @@ export function genererRecommandations(
   // 7. Retard sur objectif FIRE
   // QW9 — Cible AJUSTÉE composition foyer (cf. aggregateur > loadProfile).
   if (p.fireInputs.age && p.fireInputs.age_cible && p.fireInputs.revenu_passif_cible_ajuste > 0) {
-    const cible          = p.fireInputs.revenu_passif_cible_ajuste * 12 * 25
     const anneesObjectif = p.fireInputs.age_cible - p.fireInputs.age
+    // P1 — cible unifiée avec la projection FIRE (années réelles + inflation
+    // + SWR du fire_type), au lieu de l'ancien × 25 figé.
+    const fireType       = (p.fireInputs as { fire_type?: string | null }).fire_type ?? null
+    const cible          = calculerCiblePatrimoine(
+      p.fireInputs.revenu_passif_cible_ajuste,
+      Math.max(0, anneesObjectif),
+      INFLATION_DEFAUT_PCT,
+      swrPctFromFireType(fireType),
+    )
     if (anneesObjectif > 0 && p.totalNet < cible) {
       // anneesNec = à partir des intérêts composés à 7 %
       const r = 0.07 / 12
@@ -283,6 +292,8 @@ export function genererRecommandations(
         // Combien de mois gagnés si l'utilisateur ajoute +200 €/mois d'épargne ?
         // Permet de chiffrer l'impact concret d'un petit effort supplémentaire.
         const DELTA_EPARGNE_TEST = 200
+        // TODO P4 : migrer vers projectionGlobale (calculerImpactEpargne s'appuie
+        // encore sur le legacy simulerProjection, hors périmètre du commit P1).
         const gainAnnees = calculerImpactEpargne({
           patrimoineActuel:    p.totalNet,
           epargneMensuelle:    p.fireInputs.epargne_mensuelle,

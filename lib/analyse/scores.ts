@@ -19,9 +19,10 @@ import type {
   AnalyseAssetType,
 } from '@/types/analyse'
 import {
-  calculerCiblePatrimoine, swrPctFromFireType, SWR_STANDARD_PCT,
+  calculerCiblePatrimoine, swrPctFromFireType,
   RENDEMENT_PAR_CLASSE,
 } from './constants'
+import { INFLATION_DEFAUT_PCT } from './projectionFIRE'
 import { trackingErrorScore, BENCHMARK_CLASSES_PATRIMOINE } from './benchmarks'
 import { normalizeStabiliteRevenus, type StabiliteRevenusId } from '../profil/calculs'
 import { computeMatelasCible } from '@/lib/cash/matelas'
@@ -332,15 +333,44 @@ export function calculerProgressionFIRE(p: PatrimoineComplet): Score {
   // financier n'a besoin de générer que le RESTE.
   const revenuImmoMensuel    = Math.max(0, p.revenuPassifImmo)
   const cibleRestanteMensuel = Math.max(0, revenu_passif_cible - revenuImmoMensuel)
-  // I9 audit : cible calculée via formule centrale (constants.ts).
-  // TODO : intégrer anneesJusquaFIRE réel (cf. yearsToTarget dans aggregateur)
-  // — pour l'instant inflation=0 / yearsToTarget=0 reproduit l'ancien × 25.
-  const swrPct = swrPctFromFireType(null) || SWR_STANDARD_PCT
-  const cible  = calculerCiblePatrimoine(cibleRestanteMensuel, 0, 0, swrPct)
   // Patrimoine financier (les loyers immo couvrent déjà leur part).
   const actuel               = p.totalPortefeuille + p.totalCash
   const anneesObjectif       = age_cible - age
-  if (anneesObjectif <= 0) return insufficientData('Progression FIRE')
+
+  // P3 — Âge cible déjà atteint ou dépassé : l'objectif FIRE n'est plus
+  // dans le futur. On ne renvoie PAS « données insuffisantes » (ce serait
+  // trompeur : les données existent), mais un score plein « atteint/dépassé ».
+  if (anneesObjectif <= 0) {
+    return {
+      value: 100,
+      niveau: niveauScore(100),
+      label: 'Objectif FIRE atteint ou dépassé',
+      details: `Âge cible (${age_cible} ans) déjà atteint`,
+      explanation: {
+        formule:
+          'L\'âge cible FIRE est ≤ à l\'âge actuel : la phase de constitution\n' +
+          'du capital est terminée, le score est plein par convention.',
+        inputs: [
+          { label: 'Âge actuel',      value: `${age} ans` },
+          { label: 'Âge cible FIRE',  value: `${age_cible} ans` },
+          { label: 'Score final',     value: '100 / 100', highlight: true },
+        ],
+        lecture:
+          `Votre âge cible d'indépendance (${age_cible} ans) est déjà atteint ou ` +
+          `dépassé. L'horizon de projection est échu : suivez désormais votre ` +
+          `taux de retrait plutôt que votre trajectoire d'accumulation.`,
+      },
+    }
+  }
+
+  // I9 audit : cible calculée via formule centrale (constants.ts) — P1 :
+  // unifiée avec la projection FIRE (années réelles + inflation + SWR du
+  // fire_type), au lieu de l'ancien × 25 figé (inflation=0, années=0).
+  const fireType = ext(p).fire_type ?? null
+  const swrPct   = swrPctFromFireType(fireType)
+  const cible    = calculerCiblePatrimoine(
+    cibleRestanteMensuel, anneesObjectif, INFLATION_DEFAUT_PCT, swrPct,
+  )
 
   // I10 audit : rendement issu de la composition réelle (avant : 7 % en dur).
   const rendementCompo = rendementDepuisComposition(p)
@@ -386,7 +416,8 @@ export function calculerProgressionFIRE(p: PatrimoineComplet): Score {
       formule:
         'Étape 1 : revenu immo net mensuel REDUIT la cible (déjà acquis)\n' +
         '  cible_restante = max(0, revenu_passif_cible − loyers_nets_actuels)\n' +
-        'Étape 2 : cible patrimoine = cible_restante × 12 × 25 (règle des 4 %)\n' +
+        `Étape 2 : cible patrimoine = (cible_restante × 12 / ${swrPct} %) × (1 + inflation)^années\n` +
+        '  (formule unifiée avec la projection FIRE : SWR du profil + inflation)\n' +
         'Étape 3 : simulation intérêts composés à 7 %/an sur le patrimoine financier\n' +
         'Score = 100 si arrivé, 80+ si dans les temps, dégradé selon le retard',
       inputs: [

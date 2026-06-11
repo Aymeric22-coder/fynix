@@ -277,8 +277,9 @@ describe('QW9 — cohérence Snapshot / score Progression FIRE / reco #7', () =>
     expect(saisiEntry).toBeDefined()
     expect(saisiEntry!.value).toContain('3000')
 
-    // 3) Reco #7 "retard-fire" : la cible utilisée pour `cible = ... * 12 * 25`
-    //    et le delta +200 €/mois portent sur revenu_passif_cible_ajuste.
+    // 3) Reco #7 "retard-fire" : la cible (formule unifiée P1 :
+    //    calculerCiblePatrimoine sur revenu_passif_cible_ajuste) et le delta
+    //    +200 €/mois portent sur revenu_passif_cible_ajuste.
     //    On vérifie indirectement : reco retard-fire est présente (couple 2
     //    enfants à 1000 €/mois d'épargne sur 15 ans n'atteint pas 5100/mois).
     const recoRetard = p.recommandations.find((r) => r.id === 'retard-fire')
@@ -306,8 +307,8 @@ describe('QW9 — cohérence Snapshot / score Progression FIRE / reco #7', () =>
       .find((i) => i.label === 'Revenu passif cible (foyer ajusté)')?.value as string
     expect(cibleScoreText).toContain('5100')
 
-    // c) Reco #7 utilise l'ajusté : la cible employée pour le calcul est
-    //    5100 * 12 * 25 = 1 530 000 €, pas 3000 * 12 * 25 = 900 000 €.
+    // c) Reco #7 utilise l'ajusté : la cible employée (formule unifiée P1,
+    //    calculerCiblePatrimoine) part de 5100 €/mois, pas 3000 €/mois.
     //    On valide via le contenu : la reco doit indiquer un retard,
     //    confirmant que la cible employée est bien la version ajustée.
     const recoRetard = p.recommandations.find((r) => r.id === 'retard-fire')

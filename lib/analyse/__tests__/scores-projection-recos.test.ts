@@ -11,8 +11,11 @@ import {
 } from '../scores'
 import {
   calculerRendementPortefeuille, simulerProjection, calculerImpactEpargne,
+  INFLATION_DEFAUT_PCT,
 } from '../projectionFIRE'
 import { genererRecommandations, type RecommandationEnrichie } from '../recommandations'
+import { calculerCiblePatrimoine, swrPctFromFireType } from '../constants'
+import { simulerEpargneDelta } from '../whatif'
 import type { PatrimoineComplet, EnrichedPosition, AnalyseAssetType } from '@/types/analyse'
 
 // ─────────────────────────────────────────────────────────────────
@@ -163,10 +166,12 @@ describe('calculerCoherenceProfil', () => {
 })
 
 describe('calculerProgressionFIRE', () => {
-  it('100 si patrimoine financier déjà arrivé à la cible (cible = 3000 × 12 × 25 = 900k)', () => {
+  it('100 si patrimoine financier déjà arrivé à la cible (formule unifiée P1)', () => {
     // Phase 8 : actuel = totalPortefeuille + totalCash (financier seul)
+    // P1 — cible = 3000 × 12 / 0,04 × (1,02)^15 ≈ 1 211 281 € (15 ans, SWR 4 %,
+    // inflation 2 %), au lieu de l'ancien × 25 = 900 000 €.
     const s = calculerProgressionFIRE(patrimoine({
-      totalNet: 1_000_000, totalPortefeuille: 950_000, totalCash: 50_000,
+      totalNet: 1_300_000, totalPortefeuille: 1_250_000, totalCash: 50_000,
     totalCashInvestissable: 0,
       fireInputs: { ...patrimoine().fireInputs, revenu_passif_cible: 3000 },
     }))
@@ -182,12 +187,15 @@ describe('calculerProgressionFIRE', () => {
   })
 
   it('haut quand on est dans les temps', () => {
+    // P1 — cible désormais inflatée sur l'horizon (≈ 1,48 M€ sur 25 ans),
+    // on dimensionne patrimoine + épargne pour rester confortablement dans
+    // les temps (sinon le score reflète à juste titre le retard).
     const s = calculerProgressionFIRE(patrimoine({
-      totalNet: 600000, totalPortefeuille: 600_000, totalCash: 0,
+      totalNet: 900_000, totalPortefeuille: 900_000, totalCash: 0,
     totalCashInvestissable: 0,
       fireInputs: {
         ...patrimoine().fireInputs,
-        age: 35, age_cible: 60, epargne_mensuelle: 2000,
+        age: 35, age_cible: 60, epargne_mensuelle: 3000,
         revenu_passif_cible: 3000,
       },
     }))
@@ -199,6 +207,104 @@ describe('calculerProgressionFIRE', () => {
       fireInputs: { ...patrimoine().fireInputs, age: null },
     }))
     expect(s.value).toBeNull()
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────
+// P1 — Unification de la cible FIRE sur calculerCiblePatrimoine
+// (cohérence inter-modules : score Progression FIRE, simulateur What-if,
+//  et la fonction centrale partagée par la projection).
+// ─────────────────────────────────────────────────────────────────
+
+describe('P1 — unification cible FIRE (score / whatif / fonction centrale)', () => {
+  // Profil SANS immo : cibleRestante == revenu_passif_cible_ajuste, donc la
+  // cible du score est directement comparable à calculerCiblePatrimoine.
+  function profilSansImmo(fireType?: string | null): PatrimoineComplet {
+    return patrimoine({
+      revenuPassifImmo: 0, totalImmo: 0,
+      fireInputs: {
+        ...patrimoine().fireInputs,
+        age: 35, age_cible: 50,            // 15 ans d'horizon
+        revenu_passif_cible: 3000,
+        revenu_passif_cible_ajuste: 3000,
+        ...(fireType !== undefined ? { fire_type: fireType } : {}),
+      } as never,
+    })
+  }
+
+  /** Lit la cible patrimoine exposée par le score Progression FIRE. */
+  function cibleFromScore(p: PatrimoineComplet): number {
+    const s = calculerProgressionFIRE(p)
+    const v = s.explanation?.inputs.find(
+      (i) => i.label === 'Patrimoine financier à constituer',
+    )?.value as string
+    return parseFloat(v.replace(/[^0-9.]/g, ''))
+  }
+
+  /** Lit la cible patrimoine calculée par le simulateur What-if épargne. */
+  function cibleFromWhatif(p: PatrimoineComplet, fireType?: string | null): number {
+    return simulerEpargneDelta({
+      patrimoineActuel:    p.totalNet,
+      epargneMensuelle:    p.fireInputs.epargne_mensuelle,
+      rendementCentral:    7,
+      ageActuel:           p.fireInputs.age!,
+      ageCible:            p.fireInputs.age_cible!,
+      revenuPassifCible:   p.fireInputs.revenu_passif_cible_ajuste,
+      fireType,
+      deltaEpargneMensuel: 0,
+    }).cible_capital
+  }
+
+  it('standard : score, whatif et fonction centrale convergent (SWR 4 %)', () => {
+    const p = profilSansImmo('standard')
+    const attendu = calculerCiblePatrimoine(3000, 15, INFLATION_DEFAUT_PCT, swrPctFromFireType('standard'))
+    expect(cibleFromWhatif(p, 'standard')).toBe(attendu)
+    expect(Math.abs(cibleFromScore(p) - attendu)).toBeLessThan(1)
+  })
+
+  it('lean (SWR 3,5 %) produit une cible PLUS élevée que standard', () => {
+    const cibleLean = cibleFromScore(profilSansImmo('lean'))
+    const cibleStd  = cibleFromScore(profilSansImmo('standard'))
+    expect(cibleLean).toBeGreaterThan(cibleStd)
+    // Cohérent avec la fonction centrale.
+    expect(cibleLean).toBeCloseTo(
+      calculerCiblePatrimoine(3000, 15, INFLATION_DEFAUT_PCT, swrPctFromFireType('lean')), 0,
+    )
+  })
+
+  it('fat (SWR 3 %) produit une cible PLUS élevée que lean', () => {
+    const cibleFat  = cibleFromScore(profilSansImmo('fat'))
+    const cibleLean = cibleFromScore(profilSansImmo('lean'))
+    expect(cibleFat).toBeGreaterThan(cibleLean)
+  })
+
+  it('âge cible déjà dépassé → score 100 « atteint ou dépassé » (pas insuffisant)', () => {
+    const s = calculerProgressionFIRE(profilSansImmo('standard'))
+    // sanity : profil normal donne un score chiffré
+    expect(s.value).not.toBeNull()
+    const sDepasse = calculerProgressionFIRE(patrimoine({
+      fireInputs: {
+        ...patrimoine().fireInputs,
+        age: 55, age_cible: 50,   // horizon négatif
+        revenu_passif_cible: 3000, revenu_passif_cible_ajuste: 3000,
+      } as never,
+    }))
+    expect(sDepasse.value).toBe(100)
+    expect(sDepasse.label).toMatch(/atteint ou dépassé/i)
+  })
+
+  it('inflation + horizon : la cible dépasse l\'ancien × 25 figé (900k)', () => {
+    // 3000 × 12 × 25 = 900 000 € (ancienne formule sans inflation ni horizon).
+    expect(cibleFromScore(profilSansImmo('standard'))).toBeGreaterThan(900_000)
+  })
+
+  it('fire_type absent → régression sur SWR standard 4 % (== fire_type standard)', () => {
+    const cibleNull = cibleFromScore(profilSansImmo(null))
+    const cibleStd  = cibleFromScore(profilSansImmo('standard'))
+    expect(cibleNull).toBe(cibleStd)
+    expect(cibleNull).toBeCloseTo(
+      calculerCiblePatrimoine(3000, 15, INFLATION_DEFAUT_PCT, swrPctFromFireType(null)), 0,
+    )
   })
 })
 

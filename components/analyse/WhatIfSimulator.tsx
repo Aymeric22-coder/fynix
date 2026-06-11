@@ -66,6 +66,8 @@ function EpargneTab({ patrimoine }: { patrimoine: PatrimoineComplet }) {
     ageCible:            patrimoine.fireInputs.age_cible ?? 55,
     // QW9 — Cible AJUSTÉE composition foyer (cf. aggregateur > loadProfile).
     revenuPassifCible:   patrimoine.fireInputs.revenu_passif_cible_ajuste,
+    // P1 — SWR du fire_type pour cohérence lean/standard/fat avec la projection.
+    fireType:            (patrimoine.fireInputs as { fire_type?: string | null }).fire_type,
     deltaEpargneMensuel: delta,
   }), [patrimoine, delta])
 
@@ -145,6 +147,8 @@ function ImmoTab({ patrimoine }: { patrimoine: PatrimoineComplet }) {
     ageCible:            patrimoine.fireInputs.age_cible ?? 55,
     // QW9 — Cible AJUSTÉE composition foyer (cf. aggregateur > loadProfile).
     revenuPassifCible:   patrimoine.fireInputs.revenu_passif_cible_ajuste,
+    // P1 — SWR du fire_type pour cohérence lean/standard/fat avec la projection.
+    fireType:            (patrimoine.fireInputs as { fire_type?: string | null }).fire_type,
     prix_bien:           prix,
     loyer_mensuel:       loyer,
     charges_mensuelles:  charges,

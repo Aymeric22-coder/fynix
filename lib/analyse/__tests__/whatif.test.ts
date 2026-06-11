@@ -5,6 +5,13 @@ import { describe, it, expect } from 'vitest'
 import {
   simulerEpargneDelta, simulerNouvelleAcquisition, simulerChangementRendement,
 } from '../whatif'
+import { calculerCiblePatrimoine, swrPctFromFireType } from '../constants'
+import { INFLATION_DEFAUT_PCT } from '../projectionFIRE'
+
+// P1 — cible unifiée : (revenu × 12 / SWR) × (1 + inflation)^années.
+// Pour la fixture `base` (3000 €/mois, 25 ans, SWR standard 4 %, inflation 2 %)
+// ≈ 1 476 545 €, contre l'ancien × 25 figé = 900 000 €.
+const CIBLE_BASE = calculerCiblePatrimoine(3_000, 25, INFLATION_DEFAUT_PCT, swrPctFromFireType(null))
 
 // ─────────────────────────────────────────────────────────────────
 // 1. simulerEpargneDelta
@@ -17,13 +24,13 @@ describe('simulerEpargneDelta', () => {
     rendementCentral:    7,        // 7 % annuel
     ageActuel:           30,
     ageCible:            55,
-    revenuPassifCible:   3_000,    // cible capital = 900 000 €
+    revenuPassifCible:   3_000,    // cible capital P1 ≈ 1 476 545 € (cf. CIBLE_BASE)
     deltaEpargneMensuel: 0,
   }
 
   it('delta = 0 → age_avant === age_apres', () => {
     const r = simulerEpargneDelta(base)
-    expect(r.cible_capital).toBe(900_000)
+    expect(r.cible_capital).toBe(CIBLE_BASE)
     expect(r.age_fire_avant).not.toBeNull()
     expect(r.age_fire_apres).toBe(r.age_fire_avant)
     expect(r.mois_gagnes).toBe(0)
@@ -54,7 +61,8 @@ describe('simulerEpargneDelta', () => {
   })
 
   it('patrimoine déjà au-dessus de la cible → age = ageActuel', () => {
-    const r = simulerEpargneDelta({ ...base, patrimoineActuel: 1_000_000 })
+    // > CIBLE_BASE (~1,48 M€) pour être déjà arrivé.
+    const r = simulerEpargneDelta({ ...base, patrimoineActuel: 1_600_000 })
     expect(r.age_fire_avant).toBe(30)
     expect(r.mois_gagnes).toBe(0)
   })
