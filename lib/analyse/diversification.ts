@@ -1,4 +1,15 @@
 /**
+ * @module diversification (hors-moteur)
+ *
+ * Contient l'implémentation HHI (Herfindahl-Hirschman Index) de la
+ * diversification. NON utilisé par le moteur de scores runtime — celui-ci
+ * passe par `trackingErrorScore` dans scores.ts.
+ *
+ * Conservé comme référence algorithmique et couvert par diversification.test.ts.
+ * Candidat à intégration en Phase 3 si une métrique HHI est ajoutée aux scores.
+ */
+
+/**
  * Score de diversification 0-100 basé sur l'indice Herfindahl-Hirschman
  * normalisé.
  *

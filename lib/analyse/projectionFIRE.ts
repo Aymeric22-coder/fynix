@@ -18,9 +18,9 @@
  *   Cash                  → 3 %/an (taux Livret A constant)
  *
  * Scénarios pour le portefeuille financier :
- *   pessimiste = central − 2 %
+ *   pessimiste = central − 1,5 %
  *   central    = paramètre fourni
- *   optimiste  = central + 2 %
+ *   optimiste  = central + 1,5 %
  */
 
 import type {
@@ -822,6 +822,13 @@ export interface SimulationParams {
   horizonAnnees?:      number
 }
 
+/**
+ * @deprecated Moteur legacy (3 scénarios, cible = revenu × 12 × 25).
+ * Conservé pour compatibilité UI ProjectionFIRE.tsx et appelé par
+ * `calculerImpactEpargne` (recommandations.ts). Sera remplacé par
+ * `projectionGlobale()`.
+ */
+// TODO P4 : remplacer par projectionGlobale
 export function simulerProjection(params: SimulationParams): ProjectionResult {
   const horizon = Math.max(5, Math.min(50, params.horizonAnnees ?? 35))
   const cible   = params.revenuPassifCible * 12 * 25
