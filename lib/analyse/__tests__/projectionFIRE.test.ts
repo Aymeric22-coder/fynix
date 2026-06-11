@@ -181,6 +181,34 @@ describe('projectionGlobale — combinaison complète', () => {
     expect(r.ageIndependanceCentral).not.toBeNull()
     expect(r.ageIndependanceCentral!).toBeLessThan(70)
   })
+
+  // ── P2 — garde d'apport (warning de faisabilité) ──────────────────
+  // Acquisition à l'année 1 ⇒ capital disponible avant la sortie =
+  // trajFinancier[0] = patrimoineFinancierActuel (déterministe).
+
+  it('warning de faisabilité : apport > capital financier disponible (P2)', () => {
+    const r = projectionGlobale({
+      ...baseInputs,
+      patrimoineFinancierActuel: 50_000,
+      acquisitionsFutures: [acq({ nom: 'Bien trop cher', dans_combien_annees: 1, apport: 80_000 })],
+    })
+    const w = r.warnings.find((m) => m.includes('Bien trop cher'))
+    expect(w).toBeDefined()
+    expect(w).toContain('faisabilité')
+    // Le bandeau montre le capital RÉELLEMENT disponible (avant l'apport),
+    // pas le capital post-acquisition.
+    expect(w).toContain('disponible')
+  })
+
+  it('pas de warning si apport < capital financier disponible (P2 — régression)', () => {
+    const r = projectionGlobale({
+      ...baseInputs,
+      patrimoineFinancierActuel: 100_000,
+      acquisitionsFutures: [acq({ nom: 'Bien finançable', dans_combien_annees: 1, apport: 30_000 })],
+    })
+    const w = r.warnings.find((m) => m.includes('Bien finançable'))
+    expect(w).toBeUndefined()
+  })
 })
 
 describe('projectionGlobale — indexation inflation', () => {

@@ -513,13 +513,18 @@ export function projectionGlobale(inputs: ProjectionInputs): ProjectionGlobaleRe
   // 6. Simulation cash
   const trajCash = simulerCash(inputs.cashActuel, horizon)
 
-  // 7. Warnings : apport > capital financier projeté à l'année N
+  // 7. Warnings : apport > capital financier disponible AVANT la sortie.
+  // P2 : `trajFinancier[y]` est le capital de FIN d'année y, déjà amputé de
+  // l'apport et recapitalisé — il ne reflète pas le cash disponible au moment
+  // de payer l'apport. Le bon référentiel est la fin de l'année précédente
+  // `trajFinancier[y - 1]` (capital avant la sortie) ; pour une acquisition
+  // immédiate (y = 0) c'est le patrimoine financier initial = trajFinancier[0].
   for (const acq of inputs.acquisitionsFutures) {
     const y = acq.dans_combien_annees
-    const capitalPrevu = trajFinancier[y] ?? 0
-    if (acq.apport > capitalPrevu + acq.apport) {  // capital prevu avant apport
+    const capitalAvantApport = trajFinancier[y - 1] ?? trajFinancier[y] ?? 0
+    if (acq.apport > capitalAvantApport) {
       warnings.push(
-        `Apport de ${acq.apport.toLocaleString('fr-FR')} € prévu dans ${y} ans pour "${acq.nom}" — votre capital financier projeté sera de ${(capitalPrevu + acq.apport).toLocaleString('fr-FR')} €, vérifiez la faisabilité.`,
+        `Apport de ${acq.apport.toLocaleString('fr-FR')} € prévu dans ${y} ans pour "${acq.nom}" — votre capital financier disponible ne sera que de ${capitalAvantApport.toLocaleString('fr-FR')} €, vérifiez la faisabilité.`,
       )
     }
   }
