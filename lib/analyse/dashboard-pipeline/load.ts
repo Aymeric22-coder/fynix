@@ -16,7 +16,9 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { buildPortfolioFromDb } from '@/lib/portfolio/build-from-db'
 import { computeRealEstatePortfolio } from '@/lib/real-estate/portfolio'
 import type { TransactionForTwr } from '@/lib/portfolio/transaction-segments'
-import type { DashboardPipelineInputs } from './types'
+import { toEur } from '@/lib/providers/fx'
+import type { CurrencyCode } from '@/types/database.types'
+import type { DashboardPipelineInputs, DashboardCashAccountRow } from './types'
 
 interface TransactionRow {
   position_id:        string | null
@@ -41,6 +43,40 @@ const num = (v: number | string | null | undefined): number => {
   if (v === null || v === undefined) return 0
   const n = typeof v === 'number' ? v : Number(v)
   return Number.isFinite(n) ? n : 0
+}
+
+/** Resolver FX cash : (montant, devise locale) → montant EUR. Injectable pour tests. */
+export type CashFxConverter = (amount: number, currency: string) => Promise<number>
+
+const defaultCashFx: CashFxConverter = async (amount, currency) => {
+  const code = (currency ?? 'EUR').toUpperCase()
+  if (code === 'EUR') return amount
+  return toEur(amount, code as CurrencyCode)
+}
+
+/**
+ * Convertit en EUR les `balance` des `cash_accounts` (devise locale → EUR).
+ *
+ * Le pipeline Dashboard (`computeDashboardData`) est synchrone et EUR-pur :
+ * `computeCashTotalsSync` ET le ranking `cashForTop` (calc.ts) assimilent
+ * `balance` à de l'EUR. Sans conversion en amont, un compte en USD/GBP est
+ * compté à sa valeur faciale (dette FX, incohérence vs `/cash` et `/analyse`).
+ * On convertit donc ici, dans le loader (déjà `async`), pour garder `calc.ts`
+ * sync et l'interface publique du pipeline strictement inchangée.
+ *
+ * Resolver injectable (`fx`) pour les tests ; défaut = `toEur` du provider FX
+ * standard — exactement la même source que `/cash` et `/analyse`.
+ */
+export async function convertCashAccountsToEur(
+  rows: DashboardCashAccountRow[],
+  fx: CashFxConverter = defaultCashFx,
+): Promise<DashboardCashAccountRow[]> {
+  return Promise.all(
+    rows.map(async (r) => {
+      const eur = await fx(num(r.balance), r.currency ?? 'EUR')
+      return { ...r, balance: Number.isFinite(eur) ? eur : 0, currency: 'EUR' }
+    }),
+  )
 }
 
 /** Charge tous les inputs Supabase nécessaires à `computeDashboardData()`. */
@@ -262,6 +298,13 @@ export async function loadDashboardInputs(
       .map((row) => (row as { alert_signature: string }).alert_signature),
   )
 
+  // ── FX cash — conversion devise locale → EUR AVANT le pipeline sync ──
+  // Ferme la dette : `computeCashTotalsSync` + ranking `cashForTop` (calc.ts)
+  // traitent `balance` comme de l'EUR. On homogénéise ici (loader async).
+  const cashAccountsEur = await convertCashAccountsToEur(
+    (cashAccountsRes.data ?? []) as DashboardCashAccountRow[],
+  )
+
   return {
     assets:              assetsRes.data ?? [],
     debts:               debtsRes.data  ?? [],
@@ -269,7 +312,7 @@ export async function loadDashboardInputs(
     portfolioSummary,
     portfolioPositions,
     realEstatePortfolio: realEstate,
-    cashAccounts:        cashAccountsRes.data ?? [],
+    cashAccounts:        cashAccountsEur,
     envelopes,
     alertDismissalsActive,
     transactionsPortefeuille,

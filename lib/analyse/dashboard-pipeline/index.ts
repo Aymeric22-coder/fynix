@@ -33,11 +33,16 @@ export async function buildDashboardData(
 
 export { computeDashboardData } from './calc'
 export { loadDashboardInputs }   from './load'
+// V1.1 — conversion FX cash (devise locale → EUR) appliquée dans le loader
+// async, en amont du pipeline sync. Exposée pour les tests d'unité.
+export { convertCashAccountsToEur } from './load'
+export type { CashFxConverter }     from './load'
 export type {
   DashboardData,
   DashboardPipelineInputs,
   DashboardKpis,
   DashboardAllocationSlice,
+  DashboardCashAccountRow,
   // V2.3 — Top 5 consolidé par enveloppe / bien / compte (BUG-5 corrigé).
   TopAssetConsolidated,
   ConsolidatedEnvelopeType,
