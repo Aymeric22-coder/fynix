@@ -36,7 +36,7 @@ import type { PatrimoineComplet, AcquisitionFuture, JalonFIRE } from '@/types/an
 import {
   buildLifeEventAriaLabel, buildLifeEventBreakdown, hasActiveLifeEvents,
 } from '@/lib/profil/lifeEventsExplain'
-import { lifeEventDateToYearMonth } from '@/lib/profil/lifeEventsConstants'
+import { lifeEventDateToYearMonth, LIFE_EVENT_LABELS } from '@/lib/profil/lifeEventsConstants'
 
 interface Props {
   patrimoine: PatrimoineComplet
@@ -99,6 +99,38 @@ function ProjectionTooltip(props: {
         </div>
       ))}
     </div>
+  )
+}
+
+/**
+ * Label custom d'une `ReferenceLine` verticale : affiche UNIQUEMENT une icône
+ * (emoji) au sommet (ou en bas) de la ligne, et expose le texte complet via un
+ * `<title>` SVG natif — tooltip navigateur au survol, zéro dépendance.
+ *
+ * `dy` permet de décaler verticalement l'icône pour désamorcer les
+ * chevauchements quand plusieurs jalons tombent dans la même zone temporelle.
+ * Recharts injecte `viewBox` (position pixel de la ligne dans la zone de tracé).
+ */
+function RefLineLabel(props: {
+  viewBox?: { x?: number; y?: number; width?: number; height?: number }
+  icon:     string
+  title:    string
+  fill:     string
+  dy?:      number
+  bottom?:  boolean
+}) {
+  const { viewBox, icon, title, fill, dy = 0, bottom = false } = props
+  const x   = viewBox?.x ?? 0
+  const top = viewBox?.y ?? 0
+  const h   = viewBox?.height ?? 0
+  const y   = bottom ? top + h - 6 : top + 14
+  return (
+    <g style={{ cursor: 'default' }}>
+      <title>{title}</title>
+      <text x={x} y={y} dy={dy} textAnchor="middle" fontSize={14} fill={fill}>
+        {icon}
+      </text>
+    </g>
   )
 }
 
@@ -255,6 +287,17 @@ function ProjectionFIREInner({ patrimoine, lastUpdatedAt }: Props) {
     `Hypothèses : rendement médian ${rendement.toFixed(1)} %/an, optimiste +1,5 %, pessimiste −1,5 %. `
     + `Cible indexée sur ${inflationGenerale.toFixed(1)} %/an d'inflation, SWR ${swr.toFixed(1)} %. `
     + `Les performances passées ne préjugent pas des performances futures.`
+
+  // Décalage vertical alterné des icônes de jalons quand deux d'entre eux
+  // tombent à ≤ 2 ans d'écart (jalons déjà triés par âge) — évite que les
+  // emojis se superposent sans toucher aux lignes verticales elles-mêmes.
+  const jalonOffsets: number[] = []
+  for (let i = 0; i < result.jalons.length; i++) {
+    const cur  = result.jalons[i]
+    const prev = result.jalons[i - 1]
+    const prevOff = jalonOffsets[i - 1] ?? 0
+    jalonOffsets.push(cur && prev && Math.abs(cur.age - prev.age) <= 2 ? (prevOff === 0 ? -18 : 0) : 0)
+  }
 
   return (
     <div className="card p-5">
@@ -425,8 +468,15 @@ function ProjectionFIREInner({ patrimoine, lastUpdatedAt }: Props) {
             <Area type="monotone" stackId="1" dataKey="equityImmoExistant"  name="Immo existant"    stroke={COLOR_IMMO} fill="url(#gImmo)" strokeWidth={1.5} />
             <Area type="monotone" stackId="1" dataKey="equityImmoFuture"    name="Acquisitions"     stroke={COLOR_ACQ}  fill="url(#gAcq)"  strokeWidth={1.5} />
             <Area type="monotone" stackId="1" dataKey="cash"                name="Cash"             stroke={COLOR_CASH} fill="url(#gCash)" strokeWidth={1.5} />
-            <ReferenceLine x={fi.age_cible} stroke="#71717a" strokeDasharray="3 3" label={{ value: 'Âge cible', fill: '#71717a', fontSize: 11, position: 'top' }} />
-            {/* Sprint 3 Tâche 5 — jalons détectés automatiquement */}
+            <ReferenceLine
+              x={fi.age_cible}
+              stroke="#71717a"
+              strokeDasharray="3 3"
+              label={<RefLineLabel icon="🏁" title={`Âge cible · ${fi.age_cible} ans`} fill="#71717a" />}
+            />
+            {/* Sprint 3 Tâche 5 — jalons détectés automatiquement.
+                Label réduit à l'emoji (1er token du libellé), texte complet
+                dans le <title> SVG au survol. */}
             {result.jalons.map((j, i) => (
               <ReferenceLine
                 key={`${j.type}-${j.age}-${i}`}
@@ -434,12 +484,14 @@ function ProjectionFIREInner({ patrimoine, lastUpdatedAt }: Props) {
                 stroke={JALON_COLOR[j.type]}
                 strokeDasharray={j.type === 'fire' ? '0' : '4 4'}
                 strokeWidth={j.type === 'fire' ? 2 : 1}
-                label={{
-                  value: j.label,
-                  fill: JALON_COLOR[j.type],
-                  fontSize: 10,
-                  position: 'insideTopLeft',
-                }}
+                label={
+                  <RefLineLabel
+                    icon={j.label.split(' ')[0] ?? j.label}
+                    title={`${j.label} · ${j.age} ans`}
+                    fill={JALON_COLOR[j.type]}
+                    dy={jalonOffsets[i] ?? 0}
+                  />
+                }
               />
             ))}
             {/* CS5 — ReferenceLine pour chaque évènement de vie actif. */}
@@ -454,12 +506,18 @@ function ProjectionFIREInner({ patrimoine, lastUpdatedAt }: Props) {
                   stroke="#a78bfa"
                   strokeDasharray="2 4"
                   strokeWidth={1}
-                  label={{
-                    value: e.type === 'capital_exceptionnel' ? '💰' :
-                           e.type === 'retraite' ? '🏖' :
-                           e.type === 'achat_rp' ? '🏠' : '👶',
-                    fill: '#a78bfa', fontSize: 12, position: 'insideBottomLeft',
-                  }}
+                  label={
+                    <RefLineLabel
+                      icon={
+                        e.type === 'capital_exceptionnel' ? '💰' :
+                        e.type === 'retraite' ? '🏖' :
+                        e.type === 'achat_rp' ? '🏠' : '👶'
+                      }
+                      title={`${LIFE_EVENT_LABELS[e.type]}${e.label ? ` (${e.label})` : ''} · ${age} ans`}
+                      fill="#a78bfa"
+                      bottom
+                    />
+                  }
                 />
               )
             })}
