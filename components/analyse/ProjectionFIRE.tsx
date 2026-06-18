@@ -50,6 +50,58 @@ const COLOR_IMMO = '#E8B84B'   // or
 const COLOR_ACQ  = '#3b82f6'   // bleu
 const COLOR_CASH = '#71717a'   // muted
 
+/**
+ * Tooltip custom du graphe de projection.
+ *
+ * Affiche en première ligne le **Patrimoine total** (somme de toutes les
+ * composantes présentes dans le `payload` Recharts), en gras et séparé des
+ * détails, puis chaque composante non nulle. Le total est calculé ici, au
+ * rendu — aucune clé `total` n'existe dans les données source.
+ */
+interface TooltipEntry {
+  name?:     string
+  value?:    number
+  color?:    string
+  dataKey?:  string | number
+}
+function ProjectionTooltip(props: {
+  active?:  boolean
+  payload?: TooltipEntry[]
+  label?:   string | number
+}) {
+  const { active, payload, label } = props
+  if (!active || !payload || payload.length === 0) return null
+
+  const total = payload.reduce((sum, entry) => sum + (entry.value ?? 0), 0)
+  const components = payload.filter((entry) => (entry.value ?? 0) !== 0)
+
+  return (
+    <div style={{ background: '#111', border: '1px solid #222', borderRadius: 8, padding: '8px 12px' }}>
+      <p style={{ color: '#f4f4f5', fontSize: 11, marginBottom: 6 }}>{`${label} ans`}</p>
+      <div
+        style={{
+          display: 'flex', justifyContent: 'space-between', gap: 16,
+          paddingBottom: 6, marginBottom: 6, borderBottom: '1px solid #2a2a2a',
+        }}
+      >
+        <span style={{ color: '#f4f4f5', fontSize: 12, fontWeight: 700 }}>Patrimoine total</span>
+        <span style={{ color: '#f4f4f5', fontSize: 12, fontWeight: 700 }}>
+          {formatCurrency(total, 'EUR', { compact: true })}
+        </span>
+      </div>
+      {components.map((entry) => (
+        <div
+          key={String(entry.dataKey)}
+          style={{ display: 'flex', justifyContent: 'space-between', gap: 16, fontSize: 12, lineHeight: '18px' }}
+        >
+          <span style={{ color: entry.color ?? '#71717a' }}>{entry.name}</span>
+          <span style={{ color: '#f4f4f5' }}>{formatCurrency(entry.value ?? 0, 'EUR', { compact: true })}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 /** Couleurs des jalons sur le graphique (Sprint 3 Tâche 5). */
 const JALON_COLOR: Record<JalonFIRE['type'], string> = {
   fire:       '#10b981',   // emerald — atteinte FIRE
@@ -343,7 +395,7 @@ function ProjectionFIREInner({ patrimoine, lastUpdatedAt }: Props) {
       )}
 
       {/* ─── Graphique stacked area ─── */}
-      <div style={{ width: '100%', height: 320 }}>
+      <div style={{ width: '100%', height: 600 }}>
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={result.points} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
             <defs>
@@ -367,13 +419,7 @@ function ProjectionFIREInner({ patrimoine, lastUpdatedAt }: Props) {
             <CartesianGrid stroke="#222" strokeDasharray="3 3" />
             <XAxis dataKey="age" tick={{ fill: '#71717a', fontSize: 11 }} />
             <YAxis tickFormatter={(v) => formatCurrency(v as number, 'EUR', { compact: true })} tick={{ fill: '#71717a', fontSize: 11 }} width={70} />
-            <Tooltip
-              formatter={(v: number) => formatCurrency(v, 'EUR', { compact: true })}
-              labelFormatter={(age) => `${age} ans`}
-              contentStyle={{ background: '#111', border: '1px solid #222', borderRadius: 8 }}
-              labelStyle={{ color: '#f4f4f5' }}
-              itemStyle={{ color: '#f4f4f5' }}
-            />
+            <Tooltip content={<ProjectionTooltip />} />
             <Legend wrapperStyle={{ fontSize: 11, color: '#71717a' }} />
             <Area type="monotone" stackId="1" dataKey="patrimoineFinancier" name="Financier"        stroke={COLOR_FIN}  fill="url(#gFin)"  strokeWidth={1.5} />
             <Area type="monotone" stackId="1" dataKey="equityImmoExistant"  name="Immo existant"    stroke={COLOR_IMMO} fill="url(#gImmo)" strokeWidth={1.5} />
