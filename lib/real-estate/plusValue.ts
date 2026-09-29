@@ -18,16 +18,21 @@
  *     taxée TMI + 17,2 % cotisations sociales) et LT (12,8 % PFU).
  *     Exonération totale si CA moyen 2 ans < 90 k€, dégressive jusqu'à 126 k€.
  *
- *   - sci_is  → IS au niveau société (15/25 %) puis sortie PFU 30 %
- *     ou remboursement de comptes courants d'associés (CCA) sans imposition.
- *     Pas d'abattement pour durée de détention.
+ *   - sci_is  → IS au niveau société (15/25 %) puis sortie en dividendes au
+ *     PFU (30 % avant 2026, 31,4 % à partir de 2026 — LFSS 2026 ; distribution
+ *     supposée l'année de la cession) ou remboursement de comptes courants
+ *     d'associés (CCA) sans imposition. Pas d'abattement pour durée de détention.
  *
- * Fonction PURE — pas d'I/O, pas de hook React. Réutilise uniquement
- * `PRELEVEMENTS_SOCIAUX_PCT` (lib/analyse/constants) et
- * `calculerQuickProjection` (lib/onboarding) pour estimer l'impact FIRE.
+ * Fonction PURE — pas d'I/O, pas de hook React. Taux de PS / PFU issus de
+ * `./fiscal/prelevements-sociaux` ; réutilise `calculerQuickProjection`
+ * (lib/onboarding) pour estimer l'impact FIRE.
  */
 
-import { PRELEVEMENTS_SOCIAUX_PCT } from '../analyse/constants'
+import {
+  ANNEE_FISCALE_REFERENCE,
+  getTauxPfu,
+  getTauxPrelevementsSociaux,
+} from './fiscal/prelevements-sociaux'
 import {
   calculerQuickProjection,
   type QuickProjectionResult,
@@ -48,13 +53,21 @@ export const TAUX_IS_NORMAL_PCT = 0.25
 /** Taux IS réduit PME (15 %, bénéfice < 42 500 €). */
 export const TAUX_IS_REDUIT_PCT = 0.15
 
-/** PFU global (12,8 % IR + 17,2 % PS = 30 %). */
-export const TAUX_PFU_PCT = 0.30
+/**
+ * PFU global (fraction) à l'année fiscale de référence.
+ * @deprecated Le PFU dépend de l'année depuis la LFSS 2026 : utiliser
+ * `getTauxPfu(anneeRevenus) / 100` (`./fiscal/prelevements-sociaux`).
+ * Conservé pour compatibilité ; n'est plus utilisé par ce module.
+ */
+export const TAUX_PFU_PCT = getTauxPfu(ANNEE_FISCALE_REFERENCE) / 100
 /** Part IR du PFU (12,8 %) — utilisée pour la PV LT en LMP. */
 export const TAUX_PFU_IR_PCT = 0.128
 
-/** Taux PS (17,2 %) sous forme décimale. */
-const TAUX_PS_PCT = PRELEVEMENTS_SOCIAUX_PCT / 100
+/**
+ * Taux PS des plus-values immobilières (17,2 %, inchangé par la LFSS 2026),
+ * sous forme décimale.
+ */
+const TAUX_PS_PCT = getTauxPrelevementsSociaux('plus_value_immo', ANNEE_FISCALE_REFERENCE) / 100
 
 /** Forfait frais d'acquisition (7,5 % du prix d'achat). */
 export const FORFAIT_FRAIS_ACQUISITION_PCT = 0.075
@@ -176,14 +189,16 @@ export interface SimulationReventeInput {
 export interface SciIsDetail {
   /** Net SCI après IS (avant distribution). */
   netApresIS:                       number
-  /** Net pour l'associé après distribution en dividendes (PFU 30 %). */
+  /** Net pour l'associé après distribution en dividendes (PFU de l'année de cession). */
   netApresDistributionDividendes:   number
-  /** Net pour l'associé après remboursement CCA prioritaire (PFU 30 % sur le solde). */
+  /** Net pour l'associé après remboursement CCA prioritaire (PFU sur le solde). */
   netApresRemboursementCCA:         number
   /** Montant effectivement remboursable du CCA (≤ net après IS). */
   montantCCARemboursable:           number
   /** Taux IS appliqué. */
   tauxISPct:                        number
+  /** Taux global du PFU appliqué aux dividendes, en % (30 ou 31,4). */
+  tauxPfuPct:                       number
 }
 
 /** Détail spécifique LMP. */
@@ -946,10 +961,15 @@ function calculerPVSciIs(
     )
   }
 
+  // PFU des dividendes : distribution supposée l'année de la cession (LFSS 2026 :
+  // 30 % avant 2026, 31,4 % à partir de 2026). Taux en % → fraction explicite.
+  const tauxPfuPct = getTauxPfu(input.dateCessionEstimee.getFullYear())
+  const tauxPfu    = tauxPfuPct / 100
+
   avertissements.push(
     'En SCI à l\'IS, pas d\'abattement pour durée de détention. La VNC (prix '
     + 'd\'achat − amortissements) est la base de calcul. La PV est taxée à '
-    + 'l\'IS au niveau de la société puis au PFU (30 %) en cas de distribution. '
+    + `l'IS au niveau de la société puis au PFU (${String(tauxPfuPct).replace('.', ',')} %) en cas de distribution. `
     + 'Le remboursement des comptes courants d\'associés (CCA) se fait sans imposition.',
   )
 
@@ -965,13 +985,13 @@ function calculerPVSciIs(
   const impotIS = Math.round(pvImposableIS * tauxIS)
   const netApresIS = input.prixVenteEstime - fraisAgence - impotIS
 
-  // Scénario A : distribution dividendes (PFU 30 % sur tout le net après IS)
-  const netApresDistributionDividendes = Math.round(netApresIS * (1 - TAUX_PFU_PCT))
+  // Scénario A : distribution dividendes (PFU sur tout le net après IS)
+  const netApresDistributionDividendes = Math.round(netApresIS * (1 - tauxPfu))
 
   // Scénario B : remboursement CCA prioritaire (sans imposition), PFU sur le solde
   const ccaRemboursable = Math.min(cca, Math.max(0, netApresIS))
   const soldeApresCCA = Math.max(0, netApresIS - ccaRemboursable)
-  const netApresRemboursementCCA = Math.round(ccaRemboursable + soldeApresCCA * (1 - TAUX_PFU_PCT))
+  const netApresRemboursementCCA = Math.round(ccaRemboursable + soldeApresCCA * (1 - tauxPfu))
 
   // netVendeur de référence : si CCA fourni > 0, on prend le scénario CCA (meilleur).
   const netVendeur = cca > 0 ? netApresRemboursementCCA : netApresDistributionDividendes
@@ -982,6 +1002,7 @@ function calculerPVSciIs(
     netApresRemboursementCCA,
     montantCCARemboursable: ccaRemboursable,
     tauxISPct: tauxIS * 100,
+    tauxPfuPct,
   }
 
   // Impôt total côté associé = écart entre prix de vente − frais agence et net en poche

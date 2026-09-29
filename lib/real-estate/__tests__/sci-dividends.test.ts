@@ -3,7 +3,9 @@ import { computeDividendDistribution } from '../fiscal/sci-is'
 
 describe('computeDividendDistribution — CGI art. 200 A', () => {
   it('TMI 11 % : barème plus avantageux que PFU', () => {
-    // PFU = 30 %, barème = 11×0.6 + 17.2 = 6.6 + 17.2 = 23.8 %
+    // Sprint H — sans anneeRevenus → ANNEE_FISCALE_REFERENCE (2026) :
+    // PFU = 31,4 %, barème = 11×0,6 + 18,6 = 6,6 + 18,6 = 25,2 %
+    // (avant LFSS 2026 : PFU 30 % / barème 23,8 % → 1 260 / 999,6).
     const r = computeDividendDistribution({
       netProfitAfterIS:  4_200,
       dividendAmount:    4_200,
@@ -12,15 +14,16 @@ describe('computeDividendDistribution — CGI art. 200 A', () => {
       tmiPct:            11,
     })
     expect(r.optimalOption).toBe('bareme')
-    expect(r.pfuTax).toBeCloseTo(1_260, 2)        // 4200 × 0,30
-    expect(r.netAfterPfu).toBeCloseTo(2_940, 2)
-    // Barème = 4200×0,6×0,11 + 4200×0,172 = 277,2 + 722,4 = 999,6
-    expect(r.baremeTax).toBeCloseTo(999.6, 1)
-    expect(r.netAfterBareme).toBeCloseTo(3_200.4, 1)
+    expect(r.pfuTax).toBeCloseTo(1_318.8, 2)      // 4200 × 0,314
+    expect(r.netAfterPfu).toBeCloseTo(2_881.2, 2)
+    // Barème = 4200×0,6×0,11 + 4200×0,186 = 277,2 + 781,2 = 1 058,4
+    expect(r.baremeTax).toBeCloseTo(1_058.4, 1)
+    expect(r.netAfterBareme).toBeCloseTo(3_141.6, 1)
   })
 
   it('TMI 30 % : seuil quasi à égalité (barème encore légèrement meilleur)', () => {
-    // Barème = 30×0,6 + 17,2 = 18 + 17,2 = 35,2 % > 30 % PFU
+    // Réf. 2026 : barème = 30×0,6 + 18,6 = 36,6 % > 31,4 % PFU
+    // (avant LFSS 2026 : 35,2 % > 30 %).
     // Donc PFU optimal à TMI 30 %
     const r = computeDividendDistribution({
       netProfitAfterIS: 5_000, dividendAmount: 5_000,
@@ -31,14 +34,15 @@ describe('computeDividendDistribution — CGI art. 200 A', () => {
   })
 
   it('TMI 41 % : PFU systématiquement plus avantageux', () => {
-    // Barème = 41×0,6 + 17,2 = 24,6 + 17,2 = 41,8 % >> 30 % PFU
+    // Sprint H — réf. 2026 : barème = 41×0,6 + 18,6 = 24,6 + 18,6 = 43,2 % >> 31,4 % PFU
+    // (avant LFSS 2026 : net PFU 7 000 / barème 4 180).
     const r = computeDividendDistribution({
       netProfitAfterIS: 10_000, dividendAmount: 10_000,
       ccaAmount: 0, availableCashYear: 0, tmiPct: 41,
     })
     expect(r.optimalOption).toBe('pfu')
-    expect(r.netAfterPfu).toBeCloseTo(7_000, 2)   // 10000 × 0,70
-    expect(r.baremeTax).toBeCloseTo(4_180, 1)
+    expect(r.netAfterPfu).toBeCloseTo(6_860, 2)   // 10000 × 0,686
+    expect(r.baremeTax).toBeCloseTo(4_320, 1)
   })
 
   it('CCA partiellement disponible : capping correct par le cash', () => {

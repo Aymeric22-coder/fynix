@@ -11,14 +11,12 @@
  *    indéfiniment dans un stock séparé (`unusedAmortStock`).
  *  - Déficit BIC (résultat avant amortissement < 0) : reportable 10 ans **uniquement
  *    sur BIC non-pro**.
- *  - Imposition : résultat fiscal positif × (TMI + 17,2 %)
+ *  - Imposition : résultat fiscal positif × (TMI + PS BIC meublé non pro,
+ *    cf. `prelevements-sociaux.ts` : 18,6 % à partir des revenus 2025)
  */
 
-import {
-  ageDeficits,
-  consumeDeficits,
-  PRELEVEMENTS_SOCIAUX_PCT,
-} from './common'
+import { ageDeficits, consumeDeficits } from './common'
+import { ANNEE_FISCALE_REFERENCE, getTauxPrelevementsSociaux } from './prelevements-sociaux'
 import type {
   CarryForwardState,
   FiscalCalculator,
@@ -76,7 +74,10 @@ export function makeLmnpReelCalculator(tmiPct: number): FiscalCalculator {
       const { consumed, remaining } = consumeDeficits(bicDeficits, resultAfterAmort)
       bicDeficits = remaining
       taxableBase = Math.max(0, resultAfterAmort - consumed)
-      taxPaid = taxableBase * (tmiPct + PRELEVEMENTS_SOCIAUX_PCT) / 100
+      const psPct = getTauxPrelevementsSociaux(
+        'bic_meuble_non_pro', inputs.calendarYear ?? ANNEE_FISCALE_REFERENCE,
+      )
+      taxPaid = taxableBase * (tmiPct + psPct) / 100
     } else if (resultAfterAmort < 0) {
       // Déficit BIC reportable 10 ans
       bicDeficits = [(bicDeficits[0] ?? 0) + (-resultAfterAmort), ...bicDeficits.slice(1)]

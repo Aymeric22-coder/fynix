@@ -6,6 +6,11 @@ import { formatCurrency, formatPercent } from '@/lib/utils/format'
 import { computeDividendDistribution } from '@/lib/real-estate/fiscal/sci-is'
 import { InfoTip } from '@/components/ui/info-tip'
 
+/** Taux issus du moteur (30 / 31,4 / 17,2 / 18,6) au format FR : « 31,4 % ». */
+function pctFr(pct: number): string {
+  return `${String(Math.round(pct * 10) / 10).replace('.', ',')} %`
+}
+
 /**
  * V17 — Pédagogie InfoTip sur la ligne « Remboursement CCA ».
  *
@@ -147,7 +152,7 @@ export function SciDistribution({ netProfitAfterIS, ccaAmount, availableCashYear
             {!ccaIsBest && result.optimalOption === 'pfu' && (
               <Star size={12} className="text-accent fill-accent" />
             )}
-            <span className="text-sm text-primary">PFU (Flat Tax 30 %)</span>
+            <span className="text-sm text-primary">PFU (Flat Tax {pctFr(result.pfuRatePct)})</span>
           </div>
           <div className="text-right">
             <p className="text-sm financial-value text-primary">
@@ -165,7 +170,7 @@ export function SciDistribution({ netProfitAfterIS, ccaAmount, availableCashYear
             {!ccaIsBest && result.optimalOption === 'bareme' && (
               <Star size={12} className="text-accent fill-accent" />
             )}
-            <span className="text-sm text-primary">Barème IR (abattement 40 % + PS 17,2 %)</span>
+            <span className="text-sm text-primary">Barème IR (abattement 40 % + PS {pctFr(result.psRatePct)})</span>
           </div>
           <div className="text-right">
             <p className="text-sm financial-value text-primary">

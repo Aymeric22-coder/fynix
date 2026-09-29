@@ -20,7 +20,7 @@
  * choix produit verrouillé V8.1 (pas un bug).
  */
 
-import { PRELEVEMENTS_SOCIAUX_PCT } from './common'
+import { ANNEE_FISCALE_REFERENCE, getTauxPrelevementsSociaux } from './prelevements-sociaux'
 import type {
   CarryForwardState,
   FiscalCalculator,
@@ -49,7 +49,8 @@ export function makeFoncierMicroCalculator(
 ): FiscalCalculator {
   return (inputs: YearAccountingInputs, state: CarryForwardState): YearTaxOutput => {
     const taxableBase = inputs.netRent * (100 - ABATTEMENT_PCT) / 100
-    const taxPaid     = taxableBase * (tmiPct + PRELEVEMENTS_SOCIAUX_PCT) / 100
+    const psPct       = getTauxPrelevementsSociaux('foncier_nu', inputs.calendarYear ?? ANNEE_FISCALE_REFERENCE)
+    const taxPaid     = taxableBase * (tmiPct + psPct) / 100
 
     const forcedRegimeSwitch = inputs.netRent > ceiling ? true : undefined
 

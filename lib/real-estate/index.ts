@@ -90,6 +90,7 @@ export {
   getFiscalCalculator,
   regimeSupportsAmortization,
   regimeAllowsAcquisitionFeesDeduction,
+  /** @deprecated Réexport de compatibilité — voir `getTauxPrelevementsSociaux`. */
   PRELEVEMENTS_SOCIAUX_PCT,
 } from './fiscal'
 export * from './types'

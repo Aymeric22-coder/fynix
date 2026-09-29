@@ -13,6 +13,11 @@ import type {
   YearAccountingInputs,
   YearTaxOutput,
 } from './common'
+import {
+  ANNEE_FISCALE_REFERENCE,
+  getTauxPfu,
+  getTauxPrelevementsSociaux,
+} from './prelevements-sociaux'
 
 /** Calcul de l'IS avec les seuils 2024+ */
 export function computeIS(taxableBase: number): number {
@@ -75,12 +80,13 @@ export const calculateSciIs: FiscalCalculator = (
 // ─────────────────────────────────────────────────────────────────────
 /**
  * CGI art. 200 A — Imposition des dividendes.
- * Dernière mise à jour réglementaire : 2024.
+ * Dernière mise à jour réglementaire : LFSS 2026 (cf. prelevements-sociaux.ts).
  *
  * Une SCI à l'IS génère un résultat net après IS. Pour que l'associé
  * y accède, deux mécanismes :
- *  - Dividendes : PFU 30 % (12,8 % IR + 17,2 % PS) OU option barème IR
- *    (abattement 40 % + PS 17,2 % sur brut).
+ *  - Dividendes : PFU (12,8 % IR + PS `dividendes_placement` : 30 % avant
+ *    2026, 31,4 % à partir de 2026) OU option barème IR (abattement 40 % +
+ *    PS sur brut).
  *  - Remboursement Compte Courant d'Associé : fiscalement neutre,
  *    plafonné aux apports effectifs de l'associé ET à la trésorerie
  *    disponible (et NON au bénéfice comptable — une SCI fortement
@@ -107,6 +113,11 @@ export interface DividendDistributionInput {
   availableCashYear: number
   /** TMI du foyer pour comparer PFU et barème. */
   tmiPct:           number
+  /**
+   * Année de perception des dividendes (taux de PS / PFU, LFSS 2026).
+   * Défaut : ANNEE_FISCALE_REFERENCE.
+   */
+  anneeRevenus?:    number
 }
 
 export interface DividendDistributionResult {
@@ -114,11 +125,11 @@ export interface DividendDistributionResult {
   dividendAmount:      number
   ccaReimbursement:    number   // = min(ccaAmount, max(0, availableCashYear))
 
-  // Option A — PFU (Flat Tax 30 %)
+  // Option A — PFU (12,8 % IR + PS dividendes : 30 % avant 2026, 31,4 % ensuite)
   pfuTax:              number
   netAfterPfu:         number
 
-  // Option B — Barème IR (abattement 40 % + PS 17,2 % sur brut)
+  // Option B — Barème IR (abattement 40 % + PS sur brut)
   baremeTax:           number
   netAfterBareme:      number
 
@@ -129,27 +140,50 @@ export interface DividendDistributionResult {
   /** Note de plafonnement si l'utilisateur demande plus de CCA que disponible. */
   ccaCapped:           boolean
   ccaAvailable:        number
+
+  /** Taux global du PFU appliqué, en % (30 avant 2026, 31,4 à partir de 2026). */
+  pfuRatePct:          number
+  /** Taux de prélèvements sociaux appliqué (option barème), en %. */
+  psRatePct:           number
 }
 
-/** Taux PFU : 30 % flat (12,8 IR + 17,2 PS). */
-export const PFU_RATE = 0.30
+/**
+ * Taux PFU global (fraction) à l'année fiscale de référence.
+ * @deprecated Le taux dépend de l'année (LFSS 2026) : utiliser
+ * `getTauxPfu(anneeRevenus) / 100`. Conservé pour compatibilité.
+ */
+export const PFU_RATE = getTauxPfu(ANNEE_FISCALE_REFERENCE) / 100
 /** Abattement dividende barème IR : 40 %. */
 export const BAREME_DIVIDEND_ABATTEMENT = 0.40
-/** Prélèvements sociaux 17,2 %. */
-export const PS_RATE = 0.172
+/**
+ * Prélèvements sociaux sur dividendes (fraction) à l'année fiscale de référence.
+ * @deprecated Utiliser `getTauxPrelevementsSociaux('dividendes_placement', annee) / 100`.
+ */
+export const PS_RATE = getTauxPrelevementsSociaux('dividendes_placement', ANNEE_FISCALE_REFERENCE) / 100
+
+/** « 30 % » / « 31,4 % » (format FR, sans dépendance UI). */
+function formatPctFr(pct: number): string {
+  return `${String(Math.round(pct * 10) / 10).replace('.', ',')} %`
+}
 
 export function computeDividendDistribution(
   input: DividendDistributionInput,
 ): DividendDistributionResult {
   const dividend = Math.max(0, input.dividendAmount)
+  const annee    = input.anneeRevenus ?? ANNEE_FISCALE_REFERENCE
+  // Taux en % (source unique) → conversion explicite en fraction.
+  const pfuRatePct = getTauxPfu(annee)
+  const psRatePct  = getTauxPrelevementsSociaux('dividendes_placement', annee)
+  const pfuRate    = pfuRatePct / 100
+  const psRate     = psRatePct / 100
 
-  // PFU : 30 % flat sur le brut
-  const pfuTax      = dividend * PFU_RATE
+  // PFU : taux global sur le brut
+  const pfuTax      = dividend * pfuRate
   const netAfterPfu = dividend - pfuTax
 
   // Barème : IR sur (dividende × 60 %) au taux TMI + PS sur brut
   const irBareme       = dividend * (1 - BAREME_DIVIDEND_ABATTEMENT) * (input.tmiPct / 100)
-  const psBareme       = dividend * PS_RATE
+  const psBareme       = dividend * psRate
   const baremeTax      = irBareme + psBareme
   const netAfterBareme = dividend - baremeTax
 
@@ -175,10 +209,12 @@ export function computeDividendDistribution(
     netAfterBareme,
     optimalOption,
     optimalOptionLabel: optimalOption === 'pfu'
-      ? 'Flat Tax 30 % (PFU) — plus avantageux'
+      ? `Flat Tax ${formatPctFr(pfuRatePct)} (PFU) — plus avantageux`
       : 'Barème IR — plus avantageux',
     optimalNetAmount: Math.max(netAfterPfu, netAfterBareme),
     ccaCapped,
     ccaAvailable,
+    pfuRatePct,
+    psRatePct,
   }
 }

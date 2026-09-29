@@ -2,8 +2,16 @@
  * Types et utilitaires partagés par les calculateurs fiscaux.
  */
 
-/** Prélèvements sociaux (PS) en France — constante */
-export const PRELEVEMENTS_SOCIAUX_PCT = 17.2
+import { ANNEE_FISCALE_REFERENCE, getTauxPrelevementsSociaux } from './prelevements-sociaux'
+
+/**
+ * Prélèvements sociaux (PS) des revenus fonciers nus, en %.
+ * @deprecated Utiliser `getTauxPrelevementsSociaux(categorie, anneeRevenus)`
+ * (`./prelevements-sociaux`) : depuis la LFSS 2026, le taux dépend de la
+ * catégorie de revenu et de l'année. Conservé pour compatibilité ; vaut le
+ * taux `foncier_nu` (inchangé).
+ */
+export const PRELEVEMENTS_SOCIAUX_PCT = getTauxPrelevementsSociaux('foncier_nu', ANNEE_FISCALE_REFERENCE)
 
 /**
  * Données comptables brutes d'une année (avant fiscalité) que l'on passe
@@ -11,6 +19,12 @@ export const PRELEVEMENTS_SOCIAUX_PCT = 17.2
  */
 export interface YearAccountingInputs {
   yearIndex:        number    // 1, 2, ...
+  /**
+   * Année calendaire des revenus (année de simulationDate + yearIndex − 1).
+   * Optionnelle : à défaut, les calculateurs utilisent ANNEE_FISCALE_REFERENCE.
+   * Sert à choisir le taux de prélèvements sociaux (LFSS 2026).
+   */
+  calendarYear?:    number
   netRent:          number    // loyers nets de vacance
   // Charges déductibles
   pno:              number

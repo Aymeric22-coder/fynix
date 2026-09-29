@@ -711,7 +711,7 @@ function ResultsView({ result, onEdit }: {
             <ScenarioCard
               label="Dividendes"
               value={result.sciIsDetail.netApresDistributionDividendes}
-              sub="(PFU 30 % sur tout)"
+              sub={`(PFU ${String(result.sciIsDetail.tauxPfuPct).replace('.', ',')} % sur tout)`}
               tone={result.sciIsDetail.montantCCARemboursable === 0 ? 'accent' : 'muted'}
             />
             <ScenarioCard

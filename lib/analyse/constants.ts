@@ -15,10 +15,23 @@
  * verifier les tests via `npx vitest run`.
  */
 
+import {
+  ANNEE_FISCALE_REFERENCE,
+  getTauxPrelevementsSociaux,
+} from '@/lib/real-estate/fiscal/prelevements-sociaux'
+
 // ── Fiscalite financiere ─────────────────────────────────────────────
 
-/** Prelevements sociaux (CSG/CRDS + solidarite + maladie). */
-export const PRELEVEMENTS_SOCIAUX_PCT = 17.2
+/**
+ * Prelevements sociaux (CSG/CRDS + solidarite + maladie) — valeur `foncier_nu`
+ * (17,2 %, inchangee par la LFSS 2026).
+ * @deprecated Depuis la LFSS 2026, le taux depend de la categorie de revenu et
+ * de l'annee : utiliser `getTauxPrelevementsSociaux(categorie, annee)`
+ * (`@/lib/real-estate/fiscal/prelevements-sociaux`). Conserve pour
+ * compatibilite des consommateurs portefeuille (optimiseurFiscal,
+ * projectionFIRE) non migres par le sprint H.
+ */
+export const PRELEVEMENTS_SOCIAUX_PCT = getTauxPrelevementsSociaux('foncier_nu', ANNEE_FISCALE_REFERENCE)
 
 /** Prelevement Forfaitaire Unique (flat tax) = PFU IR 12,8 + PS 17,2. */
 export const PFU_PCT = 30

@@ -11,6 +11,7 @@ import {
   regimeSupportsAmortization,
 } from './fiscal'
 import type { YearAccountingInputs } from './fiscal/common'
+import { ANNEE_FISCALE_REFERENCE } from './fiscal/prelevements-sociaux'
 import type {
   AmortizationSchedule,
   LoanInput,
@@ -53,6 +54,12 @@ export function computeProjection(input: SimulationInput): {
   // Pour 1 seul crédit : aggregateLoans([x]).schedule == buildAmortizationSchedule(x).
   // Garanti par multi-credit-consistency.test.ts.
   const simDate = input.simulationDate ?? new Date()
+  // Année calendaire des revenus de l'année 1 (taux de PS LFSS 2026). Sans
+  // simulationDate explicite on retombe sur ANNEE_FISCALE_REFERENCE : les taux
+  // ne dépendent jamais de l'horloge système.
+  const firstCalendarYear = input.simulationDate
+    ? input.simulationDate.getFullYear()
+    : ANNEE_FISCALE_REFERENCE
   const amortization: AmortizationSchedule | null =
     activeLoans.length > 0
       ? aggregateLoans(activeLoans, simDate).schedule
@@ -165,6 +172,7 @@ export function computeProjection(input: SimulationInput): {
     // Inputs comptables → calculateur fiscal
     const accInputs: YearAccountingInputs = {
       yearIndex:        y,
+      calendarYear:     firstCalendarYear + y - 1,
       netRent,
       pno:              charges.pno         * chargesFactor,
       gli,

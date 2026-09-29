@@ -17,7 +17,8 @@
  * approximation acceptable et standard dans les simulateurs.
  */
 
-import { ageDeficits, consumeDeficits, PRELEVEMENTS_SOCIAUX_PCT } from './common'
+import { ageDeficits, consumeDeficits } from './common'
+import { ANNEE_FISCALE_REFERENCE, getTauxPrelevementsSociaux } from './prelevements-sociaux'
 import type {
   CarryForwardState,
   FiscalCalculator,
@@ -54,7 +55,7 @@ export function makeFoncierReelCalculator(tmiPct: number): FiscalCalculator {
         consumeDeficits(foncierDeficits, fiscalResult)
       foncierDeficits = remaining
       taxableBase = Math.max(0, fiscalResult - consumed)
-      taxPaid = taxableBase * (tmiPct + PRELEVEMENTS_SOCIAUX_PCT) / 100
+      taxPaid = taxableBase * (tmiPct + getTauxPrelevementsSociaux('foncier_nu', inputs.calendarYear ?? ANNEE_FISCALE_REFERENCE)) / 100
     } else {
       // Déficit de l'année.
       // Part imputable sur revenu global = min(|déficit hors intérêts|, 10 700)

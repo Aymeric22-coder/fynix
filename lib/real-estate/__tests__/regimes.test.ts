@@ -11,8 +11,11 @@
 import { describe, it, expect } from 'vitest'
 import { runSimulation } from '..'
 import { LMNP_MICRO_ABATTEMENTS, makeLmnpMicroCalculator } from '../fiscal/lmnp-micro'
-import { makeInitialCarryForward, PRELEVEMENTS_SOCIAUX_PCT } from '../fiscal/common'
+import { makeInitialCarryForward } from '../fiscal/common'
 import type { FiscalRegime, SimulationInput } from '../types'
+
+/** PS BIC meublé non pro à l'année de référence (LFSS 2026 : 18,6 %). */
+const PS_BIC_REF = 18.6
 
 const BASE_INPUT = (regime: FiscalRegime): SimulationInput => ({
   property: {
@@ -272,9 +275,11 @@ describe('LF 2025 — LMNP micro-BIC : plafonds et basculements', () => {
     const { rate, ceiling } = LMNP_MICRO_ABATTEMENTS.tourism_unclassified
     const calc = makeLmnpMicroCalculator(TMI, rate * 100, ceiling)
     const out = calc(inputs(12_000), makeInitialCarryForward())
-    // base = 12000 × (1 − 0,30) = 8400 ; impôt = 8400 × (30 + 17,2) %
+    // base = 12000 × (1 − 0,30) = 8400 ; impôt = 8400 × (30 + PS BIC) %
+    // Sprint H — sans calendarYear → ANNEE_FISCALE_REFERENCE (2026) : PS 18,6 %
+    // → 4 082,4 (était 3 964,8 à 17,2 %).
     expect(out.taxableBase).toBeCloseTo(12_000 * (1 - rate), 2)
-    expect(out.taxPaid).toBeCloseTo(8_400 * (TMI + PRELEVEMENTS_SOCIAUX_PCT) / 100, 2)
+    expect(out.taxPaid).toBeCloseTo(8_400 * (TMI + PS_BIC_REF) / 100, 2)
     expect(out.forcedRegimeSwitch).toBeUndefined()
   })
 
@@ -283,8 +288,9 @@ describe('LF 2025 — LMNP micro-BIC : plafonds et basculements', () => {
     const calc = makeLmnpMicroCalculator(TMI, rate * 100, ceiling)
     const out = calc(inputs(60_000), makeInitialCarryForward())
     // base = 60000 × 0,5 = 30 000
+    // Sprint H — PS BIC 18,6 % (réf. 2026) → 14 580 (était 14 160 à 17,2 %).
     expect(out.taxableBase).toBeCloseTo(30_000, 2)
-    expect(out.taxPaid).toBeCloseTo(30_000 * (TMI + PRELEVEMENTS_SOCIAUX_PCT) / 100, 2)
+    expect(out.taxPaid).toBeCloseTo(30_000 * (TMI + PS_BIC_REF) / 100, 2)
     expect(out.forcedRegimeSwitch).toBeUndefined()
   })
 

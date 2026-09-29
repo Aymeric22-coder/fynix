@@ -49,7 +49,14 @@ export function regimeAllowsAcquisitionFeesDeduction(regime: FiscalRegime): bool
       || regime.kind === 'lmp'
 }
 
+/** @deprecated Réexport de compatibilité — voir `getTauxPrelevementsSociaux`. */
 export { PRELEVEMENTS_SOCIAUX_PCT } from './common'
+export {
+  ANNEE_FISCALE_REFERENCE,
+  getTauxPrelevementsSociaux,
+  getTauxPfu,
+} from './prelevements-sociaux'
+export type { CategorieRevenuPS } from './prelevements-sociaux'
 export type {
   YearAccountingInputs,
   YearTaxOutput,

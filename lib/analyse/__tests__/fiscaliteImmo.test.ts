@@ -47,18 +47,20 @@ describe('calculerImpotFoncier', () => {
     const r = calculerImpotFoncier({ ...baseInputs, fiscal_regime: 'lmnp_micro' })
     // base = 12 000 × 0,50 = 6 000
     expect(r.base_imposable).toBe(6_000)
-    // impôt = 6 000 × 47,2 % = 2 832
-    expect(r.impot_annuel).toBe(2_832)
+    // Sprint H — LFSS 2026 : PS BIC meublé non pro 18,6 % (ANNEE_FISCALE_REFERENCE)
+    // impôt = 6 000 × 48,6 % = 2 916 (était 2 832 à 47,2 %)
+    expect(r.impot_annuel).toBe(2_916)
   })
 
-  it('lmnp_reel sans amortissement (D18) : base = loyer − charges − intérêts, TMI + PS 17,2 %', () => {
+  it('lmnp_reel sans amortissement (D18) : base = loyer − charges − intérêts, TMI + PS BIC 18,6 %', () => {
     const r = calculerImpotFoncier({ ...baseInputs, fiscal_regime: 'lmnp_reel' })
     expect(r.base_imposable).toBe(7_000)
     // D18 audit : TMI + PS — avant on appliquait TMI seul, ce qui minorait
     // le cashflow net de 17 points.
-    expect(r.taux_effectif_pct).toBeCloseTo(30 + PRELEVEMENTS_SOCIAUX_PCT, 1)
-    // impôt = 7 000 × 47,2 % = 3 304
-    expect(r.impot_annuel).toBe(3_304)
+    // Sprint H — LFSS 2026 : PS BIC meublé non pro 18,6 % (était 17,2 %).
+    expect(r.taux_effectif_pct).toBeCloseTo(30 + 18.6, 1)
+    // impôt = 7 000 × 48,6 % = 3 402 (était 3 304 à 47,2 %)
+    expect(r.impot_annuel).toBe(3_402)
   })
 
   it('lmnp_reel AVEC amortissement (D18) : base réduite, toujours TMI + PS sur bénéfice positif', () => {
@@ -70,8 +72,8 @@ describe('calculerImpotFoncier', () => {
     })
     // base = 12 000 − 2 000 − 3 000 − 5 000 = 2 000
     expect(r.base_imposable).toBe(2_000)
-    // 2 000 × 47,2 % = 944
-    expect(r.impot_annuel).toBe(944)
+    // Sprint H — 2 000 × 48,6 % = 972 (était 944 à 47,2 %)
+    expect(r.impot_annuel).toBe(972)
   })
 
   it('lmnp_reel D18 — déficit (charges + amortissement > loyers) → impôt = 0, pas de PS', () => {

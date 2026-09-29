@@ -9,12 +9,13 @@
  * Avant LF 2025 : non classé 50 % / 77 700 €, classé 71 % / 188 700 €.
  *
  * - Pas de charges déductibles, pas d'amortissement, pas de déficit possible.
- * - Imposition : loyers × (1 − abattement) × (TMI + 17,2 %)
+ * - Imposition : loyers × (1 − abattement) × (TMI + PS BIC meublé non pro,
+ *   cf. `prelevements-sociaux.ts` : 18,6 % à partir des revenus 2025)
  * - Dépassement du plafond → basculement obligatoire au régime réel
  *   (signalé via `forcedRegimeSwitch: true`).
  */
 
-import { PRELEVEMENTS_SOCIAUX_PCT } from './common'
+import { ANNEE_FISCALE_REFERENCE, getTauxPrelevementsSociaux } from './prelevements-sociaux'
 import type {
   CarryForwardState,
   FiscalCalculator,
@@ -93,7 +94,10 @@ export function makeLmnpMicroCalculator(
 ): FiscalCalculator {
   return (inputs: YearAccountingInputs, state: CarryForwardState): YearTaxOutput => {
     const taxableBase = inputs.netRent * (100 - abattementPct) / 100
-    const taxPaid     = taxableBase * (tmiPct + PRELEVEMENTS_SOCIAUX_PCT) / 100
+    const psPct       = getTauxPrelevementsSociaux(
+      'bic_meuble_non_pro', inputs.calendarYear ?? ANNEE_FISCALE_REFERENCE,
+    )
+    const taxPaid     = taxableBase * (tmiPct + psPct) / 100
 
     // Si on a un plafond et que les loyers le dépassent, on signale
     // un basculement forcé vers le régime réel.

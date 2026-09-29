@@ -21,6 +21,18 @@
 
 import type { FiscalRegime } from '@/types/database.types'
 import { PRELEVEMENTS_SOCIAUX_PCT, TMI_FALLBACK_PCT } from './constants'
+import {
+  ANNEE_FISCALE_REFERENCE,
+  getTauxPrelevementsSociaux,
+} from '@/lib/real-estate/fiscal/prelevements-sociaux'
+
+/**
+ * PS des revenus LMNP (BIC meublé non professionnel) — LFSS 2026 : 18,6 % à
+ * partir des revenus 2025. Estimation annuelle sans année explicite →
+ * ANNEE_FISCALE_REFERENCE.
+ */
+const PS_BIC_MEUBLE_PCT   = getTauxPrelevementsSociaux('bic_meuble_non_pro', ANNEE_FISCALE_REFERENCE)
+const PS_BIC_MEUBLE_LABEL = `${String(PS_BIC_MEUBLE_PCT).replace('.', ',')} %`
 
 // Re-export pour conserver la surface d'API publique du module
 // (consommateurs qui faisaient `import { PRELEVEMENTS_SOCIAUX_PCT } from '@/lib/analyse/fiscaliteImmo'`).
@@ -128,8 +140,8 @@ export function calculerImpotFoncier(inputs: ImpotFoncierInputs): ImpotFoncierRe
 
     case 'lmnp_micro':
       base    = loyer * 0.50
-      tauxPct = tmiPct + PRELEVEMENTS_SOCIAUX_PCT
-      notes   = 'LMNP micro-BIC : abattement forfaitaire 50 %, imposition TMI + 17,2 % PS.'
+      tauxPct = tmiPct + PS_BIC_MEUBLE_PCT
+      notes   = `LMNP micro-BIC : abattement forfaitaire 50 %, imposition TMI + ${PS_BIC_MEUBLE_LABEL} PS.`
       break
 
     case 'lmnp_reel':
@@ -139,10 +151,10 @@ export function calculerImpotFoncier(inputs: ImpotFoncierInputs): ImpotFoncierRe
       // cashflow net d'environ 17 points et gonflait artificiellement
       // l'écart micro-BIC vs réel.
       base    = loyer - charges - interets - amortissement
-      tauxPct = tmiPct + PRELEVEMENTS_SOCIAUX_PCT
+      tauxPct = tmiPct + PS_BIC_MEUBLE_PCT
       notes   = valeurAmort > 0
-        ? `LMNP réel : base = loyer − charges − intérêts − amortissement (${LMNP_AMORT_DEFAULT_PCT} % du bâti), imposition TMI + 17,2 % PS sur bénéfice positif.`
-        : 'LMNP réel : base = loyer − charges − intérêts, imposition TMI + 17,2 % PS sur bénéfice positif. Amortissement non estimé (renseignez la valeur amortissable).'
+        ? `LMNP réel : base = loyer − charges − intérêts − amortissement (${LMNP_AMORT_DEFAULT_PCT} % du bâti), imposition TMI + ${PS_BIC_MEUBLE_LABEL} PS sur bénéfice positif.`
+        : `LMNP réel : base = loyer − charges − intérêts, imposition TMI + ${PS_BIC_MEUBLE_LABEL} PS sur bénéfice positif. Amortissement non estimé (renseignez la valeur amortissable).`
       break
 
     case 'lmp':
